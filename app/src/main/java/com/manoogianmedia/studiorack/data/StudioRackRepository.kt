@@ -12,6 +12,8 @@ import androidx.work.WorkManager
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 class StudioRackRepository(
@@ -22,6 +24,7 @@ class StudioRackRepository(
 ) {
     fun signedIn() = tokenStore.isSignedIn()
     fun records(type: String): Flow<List<CachedRecord>> = dao.observeRecords(type)
+    fun cachedAttachments(): Flow<List<CachedAttachment>> = dao.observeCachedAttachments()
     fun syncState(): Flow<SyncState?> = dao.observeSyncState()
 
     suspend fun signIn(email: String, accessCode: String, mfaCode: String) {
@@ -45,6 +48,7 @@ class StudioRackRepository(
             applyPull(response)
             cursor = response.getLong("cursor")
         } while (response.optBoolean("has_more", false))
+        refreshAttachmentCache()
     }
 
     fun syncNow() {
@@ -119,6 +123,75 @@ class StudioRackRepository(
         dao.putState(state)
     }
 
+    private suspend fun refreshAttachmentCache() {
+        val records = dao.records("song_attachment")
+        val existing = dao.cachedAttachments().associateBy { it.attachmentId }
+        val activeIds = records.mapTo(mutableSetOf()) { it.entityId }
+
+        existing.values.filter { it.attachmentId !in activeIds }.forEach { stale ->
+            stale.localPath?.let { runCatching { File(it).delete() } }
+            dao.deleteCachedAttachment(stale.attachmentId)
+        }
+
+        records.forEach { record ->
+            val data = JSONObject(record.json)
+            val fileRef = data.optString("file_ref")
+            val current = existing[record.entityId]
+            if (fileRef.isBlank()) {
+                current?.localPath?.let { runCatching { File(it).delete() } }
+                dao.putCachedAttachment(record.toManifest(data, status = "unavailable"))
+                return@forEach
+            }
+            if (fileRef.startsWith("http://", true) || fileRef.startsWith("https://", true)) {
+                current?.localPath?.let { runCatching { File(it).delete() } }
+                dao.putCachedAttachment(record.toManifest(data, status = "remote_only"))
+                return@forEach
+            }
+            val currentFile = current?.localPath?.let(::File)
+            if (current?.status == "ready" && current.revision == record.revision && current.fileRef == fileRef &&
+                currentFile?.isFile == true && current.sha256 != null && current.sha256 == sha256(currentFile)
+            ) {
+                return@forEach
+            }
+
+            val destination = File(attachmentDirectory(), record.entityId + attachmentExtension(fileRef))
+            runCatching { client.downloadAttachment(data.getString("download_path"), destination) }
+                .onSuccess { download ->
+                    if (download.localFile != null) {
+                        dao.putCachedAttachment(
+                            record.toManifest(
+                                data,
+                                status = "ready",
+                                localPath = download.localFile.absolutePath,
+                                mimeType = download.mimeType ?: attachmentMime(fileRef),
+                                sha256 = download.sha256,
+                                byteCount = download.byteCount,
+                                cachedAt = System.currentTimeMillis(),
+                            )
+                        )
+                    } else {
+                        dao.putCachedAttachment(record.toManifest(data, status = "remote_only"))
+                    }
+                }
+                .onFailure { error ->
+                    dao.putCachedAttachment(
+                        record.toManifest(
+                            data,
+                            status = "failed",
+                            localPath = current?.localPath?.takeIf { File(it).isFile },
+                            mimeType = current?.mimeType,
+                            sha256 = current?.sha256,
+                            byteCount = current?.byteCount,
+                            cachedAt = current?.cachedAt,
+                            error = error.message ?: "Download failed.",
+                        )
+                    )
+                }
+        }
+    }
+
+    private fun attachmentDirectory(): File = File(context.filesDir, "offline-attachments").also(File::mkdirs)
+
     private fun flattenEntities(groups: JSONObject): List<CachedRecord> = buildList {
         groups.keys().forEach { type ->
             val rows = groups.getJSONArray(type)
@@ -138,4 +211,58 @@ class StudioRackRepository(
             }
         }
     }
+}
+
+private fun CachedRecord.toManifest(
+    data: JSONObject,
+    status: String,
+    localPath: String? = null,
+    mimeType: String? = null,
+    sha256: String? = null,
+    byteCount: Long? = null,
+    cachedAt: Long? = null,
+    error: String? = null,
+) = CachedAttachment(
+    attachmentId = entityId,
+    songId = data.optString("song_id"),
+    revision = revision,
+    fileRef = data.optString("file_ref"),
+    displayName = data.optString("display_name").ifBlank { data.optString("attachment_type", "Chart") },
+    attachmentType = data.optString("attachment_type", "chart"),
+    localPath = localPath,
+    mimeType = mimeType,
+    sha256 = sha256,
+    byteCount = byteCount,
+    status = status,
+    error = error,
+    cachedAt = cachedAt,
+)
+
+internal fun attachmentExtension(fileRef: String): String {
+    val suffix = fileRef.substringBefore('?').substringAfterLast('.', "").lowercase()
+    return when (suffix) {
+        "pdf", "png", "jpg", "jpeg", "webp" -> ".$suffix"
+        else -> ".bin"
+    }
+}
+
+internal fun attachmentMime(fileRef: String): String? = when (attachmentExtension(fileRef)) {
+    ".pdf" -> "application/pdf"
+    ".png" -> "image/png"
+    ".jpg", ".jpeg" -> "image/jpeg"
+    ".webp" -> "image/webp"
+    else -> null
+}
+
+private fun sha256(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            digest.update(buffer, 0, count)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
 }

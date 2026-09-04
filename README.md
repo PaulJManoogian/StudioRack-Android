@@ -13,6 +13,9 @@ Native offline-first Android client for StudioRack.
 - Queued mutation, conflict, revision, and tombstone storage.
 - Upcoming sessions dashboard.
 - Offline Gig Mode list for synchronized event set lists.
+- Authenticated, checksum-backed offline attachment cache.
+- Native full-screen image and paged PDF viewing in Gig Mode.
+- Per-event offline packet readiness on the sessions dashboard.
 
 ## Build
 
@@ -29,4 +32,3 @@ https://www.manoogianmedia.com/studiorack/api/v1
 ```
 
 The sync protocol is documented in the StudioRack web repository at `drumdb/docs/mobile-sync-api.md`.
-

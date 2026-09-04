@@ -10,6 +10,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "records", primaryKeys = ["entityType", "entityId"])
@@ -48,6 +50,23 @@ data class SyncState(
     val lastError: String? = null,
 )
 
+@Entity(tableName = "cached_attachments")
+data class CachedAttachment(
+    @androidx.room.PrimaryKey val attachmentId: String,
+    val songId: String,
+    val revision: Int,
+    val fileRef: String,
+    val displayName: String,
+    val attachmentType: String,
+    val localPath: String?,
+    val mimeType: String?,
+    val sha256: String?,
+    val byteCount: Long?,
+    val status: String,
+    val error: String? = null,
+    val cachedAt: Long? = null,
+)
+
 @Dao
 interface StudioRackDao {
     @Query("SELECT * FROM records WHERE entityType=:type ORDER BY entityId")
@@ -58,6 +77,12 @@ interface StudioRackDao {
 
     @Query("SELECT * FROM supporting_records WHERE entityType=:type ORDER BY entityId")
     suspend fun supporting(type: String): List<SupportingRecord>
+
+    @Query("SELECT * FROM cached_attachments ORDER BY attachmentId")
+    fun observeCachedAttachments(): Flow<List<CachedAttachment>>
+
+    @Query("SELECT * FROM cached_attachments ORDER BY attachmentId")
+    suspend fun cachedAttachments(): List<CachedAttachment>
 
     @Query("SELECT * FROM sync_state WHERE id=1")
     fun observeSyncState(): Flow<SyncState?>
@@ -79,6 +104,12 @@ interface StudioRackDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putConflict(conflict: SyncConflict)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putCachedAttachment(attachment: CachedAttachment)
+
+    @Query("DELETE FROM cached_attachments WHERE attachmentId=:id")
+    suspend fun deleteCachedAttachment(id: String)
 
     @Query("DELETE FROM records WHERE entityType=:type AND entityId=:id")
     suspend fun deleteRecord(type: String, id: String)
@@ -103,18 +134,40 @@ interface StudioRackDao {
 }
 
 @Database(
-    entities = [CachedRecord::class, SupportingRecord::class, PendingMutation::class, SyncConflict::class, SyncState::class],
-    version = 1,
+    entities = [CachedRecord::class, SupportingRecord::class, PendingMutation::class, SyncConflict::class, SyncState::class, CachedAttachment::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class StudioRackDatabase : RoomDatabase() {
     abstract fun dao(): StudioRackDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS cached_attachments (
+                        attachmentId TEXT NOT NULL PRIMARY KEY,
+                        songId TEXT NOT NULL,
+                        revision INTEGER NOT NULL,
+                        fileRef TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        attachmentType TEXT NOT NULL,
+                        localPath TEXT,
+                        mimeType TEXT,
+                        sha256 TEXT,
+                        byteCount INTEGER,
+                        status TEXT NOT NULL,
+                        error TEXT,
+                        cachedAt INTEGER
+                    )""".trimIndent()
+                )
+            }
+        }
+
         fun create(context: Context): StudioRackDatabase = Room.databaseBuilder(
             context,
             StudioRackDatabase::class.java,
             "studiorack-offline.db",
-        ).build()
+        ).addMigrations(MIGRATION_1_2).build()
     }
 }

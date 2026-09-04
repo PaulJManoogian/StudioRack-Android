@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.manoogianmedia.studiorack.data.CachedRecord
+import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.StudioRackRepository
 import com.manoogianmedia.studiorack.data.SyncState
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +24,10 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
     val sections: StateFlow<List<CachedRecord>> = repository.records("set_list_section")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val entries: StateFlow<List<CachedRecord>> = repository.records("set_list_entry")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val attachments: StateFlow<List<CachedRecord>> = repository.records("song_attachment")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val cachedAttachments: StateFlow<List<CachedAttachment>> = repository.cachedAttachments()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val syncState: StateFlow<SyncState?> = repository.syncState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
