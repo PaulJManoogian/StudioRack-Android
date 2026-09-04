@@ -103,6 +103,7 @@ class StudioRackRepository(
         val state = SyncState(
             cursor = response.getLong("cursor"),
             accountJson = response.getJSONObject("account").toString(),
+            performanceSettingsJson = response.optJSONObject("performance_settings")?.toString() ?: "{}",
             lastSyncAt = System.currentTimeMillis(),
         )
         val supporting = flattenSupporting(response.getJSONObject("supporting_entities"))

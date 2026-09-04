@@ -46,6 +46,7 @@ data class SyncState(
     @androidx.room.PrimaryKey val id: Int = 1,
     val cursor: Long = 0,
     val accountJson: String = "{}",
+    val performanceSettingsJson: String = "{}",
     val lastSyncAt: Long? = null,
     val lastError: String? = null,
 )
@@ -135,7 +136,7 @@ interface StudioRackDao {
 
 @Database(
     entities = [CachedRecord::class, SupportingRecord::class, PendingMutation::class, SyncConflict::class, SyncState::class, CachedAttachment::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class StudioRackDatabase : RoomDatabase() {
@@ -164,10 +165,16 @@ abstract class StudioRackDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sync_state ADD COLUMN performanceSettingsJson TEXT NOT NULL DEFAULT '{}'")
+            }
+        }
+
         fun create(context: Context): StudioRackDatabase = Room.databaseBuilder(
             context,
             StudioRackDatabase::class.java,
             "studiorack-offline.db",
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }

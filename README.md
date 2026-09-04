@@ -16,6 +16,8 @@ Native offline-first Android client for StudioRack.
 - Authenticated, checksum-backed offline attachment cache.
 - Native full-screen image and paged PDF viewing in Gig Mode.
 - Per-event offline packet readiness on the sessions dashboard.
+- Native metronome with tempo, downbeat, mute, auto-start, and four sound profiles.
+- Configurable four-pedal Bluetooth keyboard control matching web Gig Mode settings.
 
 ## Build
 

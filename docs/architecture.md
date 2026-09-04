@@ -29,14 +29,19 @@ Synchronized attachment metadata is stored with the rest of the account data. A 
 
 External media URLs remain marked as online-only. StudioRack-hosted PDF and image attachments are cached automatically after each successful synchronization. The dashboard compares each event's chosen or default performance attachments with the manifest and reports whether its offline packet is ready. Gig Mode reads only local files and uses Android `PdfRenderer` for paged PDFs.
 
+## Native performance controls
+
+The mobile sync response includes the account's existing Gig Mode settings. The Android activity captures directional key events only while enabled Gig Mode pedal support is active, then sends those events to Compose. The configured previous, next, metronome, and mute assignments therefore work with Bluetooth pedals that present themselves as keyboards, including the Donner DBM-50 and AirTurn BT500 S-4 modes that emit arrow keys.
+
+The native metronome synthesizes its click through `AudioTrack`, so it remains available without a network connection. Tempo and time signature come from the active song. Tempo-only and emphasized-downbeat modes, mute with continued visual pulse, auto-start, and tone, clave, woodblock, and cowbell profiles mirror the web controls.
+
 ## Security boundary
 
 The app receives a device token only after email, StudioRack access code, and authenticator code verification. The token is encrypted at rest and is scoped by the server to one registration and one account. Studio Buddy provider settings, API credentials, administrator records, and other tenants are outside the mobile protocol.
 
 ## Next functional layers
 
-1. Bluetooth page-turner key mapping and the existing StudioRack metronome behavior.
-2. Offline song, set-list, and schedule editors backed by the mutation queue.
-3. Conflict resolution UI, especially for concurrent set-list reordering.
-4. Selective download controls and storage-budget management for very large libraries.
-5. Signed release builds, tablet/phone visual QA, and Play Store internal testing.
+1. Offline song, set-list, and schedule editors backed by the mutation queue.
+2. Conflict resolution UI, especially for concurrent set-list reordering.
+3. Selective download controls and storage-budget management for very large libraries.
+4. Signed release builds, tablet/phone visual QA, and Play Store internal testing.

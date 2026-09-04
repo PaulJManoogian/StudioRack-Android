@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,6 +33,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,7 +53,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.CachedRecord
+import com.manoogianmedia.studiorack.performance.NativeMetronome
+import com.manoogianmedia.studiorack.performance.PedalAction
+import com.manoogianmedia.studiorack.performance.PerformanceSettings
+import com.manoogianmedia.studiorack.performance.mappedPedalAction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -64,14 +73,14 @@ private val Cyan = Color(0xFF71D8FF)
 private val TextSoft = Color(0xFFB9C0D3)
 
 @Composable
-fun StudioRackApp(model: StudioRackViewModel) {
+fun StudioRackApp(model: StudioRackViewModel, hardwareKeys: Flow<Int>, onGigModeActive: (Boolean) -> Unit) {
     val uiState by model.uiState.collectAsState()
     MaterialTheme(colorScheme = darkColorScheme(background = Ink, surface = Panel, primary = Amber, secondary = Cyan)) {
         Surface(Modifier.fillMaxSize(), color = Ink) {
             var selectedEvent by remember { mutableStateOf<String?>(null) }
             when {
                 !uiState.signedIn -> LoginScreen(model, uiState)
-                selectedEvent != null -> GigModeScreen(model, selectedEvent!!) { selectedEvent = null }
+                selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys, onGigModeActive) { selectedEvent = null }
                 else -> DashboardScreen(model, uiState) { selectedEvent = it }
             }
         }
@@ -155,13 +164,26 @@ private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () ->
 }
 
 @Composable
-private fun GigModeScreen(model: StudioRackViewModel, eventId: String, back: () -> Unit) {
+private fun GigModeScreen(
+    model: StudioRackViewModel,
+    eventId: String,
+    hardwareKeys: Flow<Int>,
+    onGigModeActive: (Boolean) -> Unit,
+    back: () -> Unit,
+) {
     val events by model.events.collectAsState()
     val songs by model.songs.collectAsState()
     val sections by model.sections.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
+    val syncState by model.syncState.collectAsState()
+    val settings = remember(syncState?.performanceSettingsJson) {
+        PerformanceSettings.fromJson(syncState?.performanceSettingsJson ?: "{}")
+    }
+    val metronome = remember { NativeMetronome() }
+    val metronomeState by metronome.state.collectAsState()
+    val listState = rememberLazyListState()
     val event = events.firstOrNull { it.entityId == eventId }?.let(::recordJson) ?: JSONObject()
     val setListId = event.optString("set_list_id")
     val songMap = songs.associate { it.entityId to recordJson(it) }
@@ -169,12 +191,66 @@ private fun GigModeScreen(model: StudioRackViewModel, eventId: String, back: () 
     val entryRows = entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") }
     val attachmentsBySong = attachments.map(::recordJson).groupBy { it.optString("song_id") }
     val cacheById = cachedAttachments.associateBy(CachedAttachment::attachmentId)
-    var viewing by remember { mutableStateOf<GigAttachment?>(null) }
-    viewing?.let { selected ->
-        OfflineAttachmentViewer(selected, close = { viewing = null })
+    val performanceSongs = sectionRows.flatMap { section ->
+        entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
+            val song = songMap[entry.optString("song_id")]
+            val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
+            GigSong(section.optString("name", "Set"), entry, song, attachment, attachment?.optString("id")?.let(cacheById::get))
+        }
+    }
+    var currentSong by remember(eventId) { mutableIntStateOf(0) }
+    var detailOpen by remember(eventId) { mutableStateOf(false) }
+
+    DisposableEffect(settings.pedalEnabled) {
+        onGigModeActive(settings.pedalEnabled)
+        onDispose {
+            onGigModeActive(false)
+            metronome.close()
+        }
+    }
+    LaunchedEffect(settings.metronomeMuted) { metronome.setMuted(settings.metronomeMuted) }
+    LaunchedEffect(currentSong, performanceSongs.size, settings.metronomeMode, settings.metronomeSound) {
+        performanceSongs.getOrNull(currentSong)?.song?.let { song ->
+            metronome.configure(song.optString("tempo"), song.optString("time_signature"), settings.metronomeMode, settings.metronomeSound)
+            if (settings.metronomeAutostart) metronome.start()
+        }
+    }
+    LaunchedEffect(settings, detailOpen, performanceSongs.size) {
+        hardwareKeys.collect { keyCode ->
+            if (!settings.pedalEnabled) return@collect
+            when (mappedPedalAction(keyCode, settings)) {
+                PedalAction.METRONOME -> metronome.toggle()
+                PedalAction.MUTE -> metronome.toggleMuted()
+                PedalAction.PREVIOUS, PedalAction.NEXT -> {
+                    val action = mappedPedalAction(keyCode, settings) ?: return@collect
+                    val direction = if (action == PedalAction.PREVIOUS) -1 else 1
+                    if (!detailOpen && settings.pedalMode == "scroll") {
+                        val fraction = when (settings.pedalScrollAmount) { "small" -> 0.2f; "full" -> 0.85f; else -> 0.5f }
+                        listState.scrollBy(listState.layoutInfo.viewportSize.height * fraction * direction)
+                    } else if (performanceSongs.isNotEmpty()) {
+                        currentSong = (currentSong + direction).coerceIn(0, performanceSongs.lastIndex)
+                        if (!detailOpen) listState.animateScrollToItem(gigListItemIndex(currentSong, performanceSongs))
+                    }
+                }
+                null -> Unit
+            }
+        }
+    }
+
+    if (detailOpen && performanceSongs.isNotEmpty()) {
+        PerformanceSongScreen(
+            item = performanceSongs[currentSong],
+            position = currentSong,
+            total = performanceSongs.size,
+            metronome = metronome,
+            metronomeState = metronomeState,
+            close = { detailOpen = false },
+            previous = { currentSong = (currentSong - 1).coerceAtLeast(0) },
+            next = { currentSong = (currentSong + 1).coerceAtMost(performanceSongs.lastIndex) },
+        )
         return
     }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = back, colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Ink)) { Text("Back") }
@@ -192,9 +268,8 @@ private fun GigModeScreen(model: StudioRackViewModel, eventId: String, back: () 
                 val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
                 val cached = attachment?.optString("id")?.let(cacheById::get)
                 SongRow(entry, song, attachment, cached) {
-                    if (attachment != null && cached?.status == "ready" && cached.localPath != null) {
-                        viewing = GigAttachment(song, attachment, cached)
-                    }
+                    currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
+                    detailOpen = true
                 }
             }
         }
@@ -208,7 +283,7 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
     Card(
         colors = CardDefaults.cardColors(containerColor = PanelRaised),
         shape = RoundedCornerShape(6.dp),
-        modifier = Modifier.fillMaxWidth().then(if (availableOffline) Modifier.clickable(onClick = openAttachment) else Modifier),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = openAttachment),
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -232,19 +307,29 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
+            if (attachment == null) Text("Open performance details", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
         }
     }
 }
 
 @Composable
-private fun OfflineAttachmentViewer(item: GigAttachment, close: () -> Unit) {
-    val path = item.cache.localPath.orEmpty()
-    val isPdf = item.cache.mimeType == "application/pdf" || path.endsWith(".pdf", true)
+private fun PerformanceSongScreen(
+    item: GigSong,
+    position: Int,
+    total: Int,
+    metronome: NativeMetronome,
+    metronomeState: com.manoogianmedia.studiorack.performance.MetronomeState,
+    close: () -> Unit,
+    previous: () -> Unit,
+    next: () -> Unit,
+) {
+    val path = item.cache?.localPath.orEmpty()
+    val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
     val pageCount = remember(path, isPdf) { if (isPdf) pdfPageCount(path) else 1 }
     var page by remember(path) { mutableIntStateOf(0) }
     val rendered by produceState(initialValue = AttachmentRender(), path, page) {
         val bitmap = withContext(Dispatchers.IO) {
-            if (isPdf) renderPdfPage(path, page) else decodeAttachmentImage(path)
+            if (path.isBlank()) null else if (isPdf) renderPdfPage(path, page) else decodeAttachmentImage(path)
         }
         value = AttachmentRender(bitmap = bitmap, complete = true)
     }
@@ -252,23 +337,57 @@ private fun OfflineAttachmentViewer(item: GigAttachment, close: () -> Unit) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = close, colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Ink)) { Text("Back") }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(item.song?.optString("title", item.attachment.optString("display_name")) ?: item.attachment.optString("display_name"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text(attachmentLabel(item.attachment) + if (pageCount > 1) "  |  Page ${page + 1} of $pageCount" else "", color = TextSoft, fontSize = 12.sp)
+                Text(item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("${item.sectionName}  |  Song ${position + 1} of $total", color = TextSoft, fontSize = 12.sp)
             }
-            if (pageCount > 1) {
-                Button(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0) { Text("<") }
+            Button(onClick = previous, enabled = position > 0) { Text("<") }
+            Spacer(Modifier.size(6.dp))
+            Button(onClick = next, enabled = position < total - 1) { Text(">") }
+        }
+        Box(
+            Modifier.fillMaxWidth().height(5.dp).padding(top = 2.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Surface(
+                Modifier.fillMaxWidth().height(if (metronomeState.pulse) 5.dp else 2.dp),
+                color = if (metronomeState.downbeat) Cyan else Amber,
+            ) {}
+        }
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = metronome::toggle) { Text(if (metronomeState.running) "Stop" else "Start") }
+            Button(onClick = metronome::toggleMuted, colors = ButtonDefaults.buttonColors(containerColor = PanelRaised)) { Text(if (metronomeState.muted) "Unmute" else "Mute") }
+            Text(listOf(item.song?.optString("starts_by"), item.song?.optString("tempo"), item.song?.optString("time_signature"), item.song?.optString("style")).filterNotNull().filter(String::isNotBlank).joinToString("  |  "), color = TextSoft, modifier = Modifier.weight(1f))
+        }
+        if (item.attachment != null) {
+            Text(attachmentLabel(item.attachment) + if (pageCount > 1) "  |  Page ${page + 1} of $pageCount" else "", color = TextSoft, fontSize = 12.sp)
+        }
+        if (pageCount > 1) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0) { Text("Previous page") }
                 Spacer(Modifier.size(6.dp))
-                Button(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1) { Text(">") }
+                Button(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1) { Text("Next page") }
             }
         }
         Box(Modifier.fillMaxSize().padding(top = 10.dp), contentAlignment = Alignment.Center) {
             val renderedBitmap = rendered.bitmap
             when {
                 !rendered.complete -> CircularProgressIndicator()
-                renderedBitmap == null -> Text("This attachment is cached, but Android cannot display its file format.", color = TextSoft)
-                else -> Image(renderedBitmap.asImageBitmap(), contentDescription = attachmentLabel(item.attachment), modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                renderedBitmap == null -> SongDetailFallback(item)
+                else -> Image(renderedBitmap.asImageBitmap(), contentDescription = item.attachment?.let(::attachmentLabel), modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             }
         }
+    }
+}
+
+@Composable
+private fun SongDetailFallback(item: GigSong) {
+    Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(item.song?.optString("artist").orEmpty(), color = Cyan, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text(listOf("Starts: ${item.song?.optString("starts_by").orEmpty()}", "Tempo: ${item.song?.optString("tempo").orEmpty()}", "Time: ${item.song?.optString("time_signature").orEmpty()}", "Style: ${item.song?.optString("style").orEmpty()}").joinToString("  |  "), color = Color.White)
+        val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
+        if (patch.isNotBlank()) Text("Patch: $patch", color = Amber)
+        item.song?.optString("notes")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft) }
+        if (item.attachment != null && item.cache?.status != "ready") Text("${attachmentLabel(item.attachment)} is not available offline.", color = TextSoft)
     }
 }
 
@@ -279,9 +398,20 @@ private fun EmptyCard(text: String) {
 
 private fun recordJson(record: CachedRecord): JSONObject = runCatching { JSONObject(record.json) }.getOrDefault(JSONObject())
 
-private data class GigAttachment(val song: JSONObject?, val attachment: JSONObject, val cache: CachedAttachment)
+private data class GigSong(
+    val sectionName: String,
+    val entry: JSONObject,
+    val song: JSONObject?,
+    val attachment: JSONObject?,
+    val cache: CachedAttachment?,
+)
 private data class PacketReadiness(val ready: Int, val total: Int)
 private data class AttachmentRender(val bitmap: Bitmap? = null, val complete: Boolean = false)
+
+private fun gigListItemIndex(songIndex: Int, songs: List<GigSong>): Int {
+    val sectionHeaders = songs.take(songIndex + 1).map(GigSong::sectionName).distinct().size
+    return 1 + sectionHeaders + songIndex
+}
 
 private fun eventPacketReadiness(
     event: JSONObject,
