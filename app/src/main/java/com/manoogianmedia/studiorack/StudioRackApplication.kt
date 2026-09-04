@@ -1,0 +1,20 @@
+package com.manoogianmedia.studiorack
+
+import android.app.Application
+import com.manoogianmedia.studiorack.data.StudioRackDatabase
+import com.manoogianmedia.studiorack.data.StudioRackRepository
+import com.manoogianmedia.studiorack.data.SyncClient
+import com.manoogianmedia.studiorack.data.TokenStore
+
+class StudioRackApplication : Application() {
+    val repository: StudioRackRepository by lazy {
+        val tokenStore = TokenStore(this)
+        StudioRackRepository(this, StudioRackDatabase.create(this).dao(), tokenStore, SyncClient(tokenStore))
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        if (repository.signedIn()) repository.scheduleAutomaticSync()
+    }
+}
+
