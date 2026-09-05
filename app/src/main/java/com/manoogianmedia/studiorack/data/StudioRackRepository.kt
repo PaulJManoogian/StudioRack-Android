@@ -31,6 +31,67 @@ class StudioRackRepository(
     fun pendingCount(): Flow<Int> = dao.observePendingCount()
     fun conflicts(): Flow<List<SyncConflict>> = dao.observeConflicts()
 
+    suspend fun saveSetList(
+        setListId: String,
+        setList: JSONObject,
+        sections: List<Pair<String, JSONObject>>,
+        entries: List<Pair<String, JSONObject>>,
+    ) {
+        val desired = buildList {
+            add(Triple("set_list", setListId, setList))
+            sections.forEach { add(Triple("set_list_section", it.first, it.second)) }
+            entries.forEach { add(Triple("set_list_entry", it.first, it.second)) }
+        }
+        val existingChildren = (dao.records("set_list_section") + dao.records("set_list_entry"))
+            .filter { JSONObject(it.json).optString("set_list_id") == setListId }
+        val desiredKeys = desired.mapTo(mutableSetOf()) { it.first to it.second }
+        val removed = existingChildren.filter { it.entityType to it.entityId !in desiredKeys }
+        val existingByKey = (existingChildren + listOfNotNull(dao.record("set_list", setListId)))
+            .associateBy { it.entityType to it.entityId }
+        val orderedChanges = mutableListOf<PendingMutation>()
+        var sequence = System.currentTimeMillis()
+
+        desired.forEach { (type, id, json) ->
+            val current = existingByKey[type to id]
+            orderedChanges += mutation(type, id, "upsert", current?.revision ?: 0, json.toString(), sequence++)
+        }
+        // Child rows must be removed before their parent section.
+        removed.sortedBy { if (it.entityType == "set_list_entry") 0 else 1 }.forEach { current ->
+            orderedChanges += mutation(current.entityType, current.entityId, "delete", current.revision, current.json, sequence++)
+        }
+        dao.applyLocalBundle(
+            upserts = desired.map { (type, id, json) -> CachedRecord(type, id, existingByKey[type to id]?.revision ?: 0, json.toString()) },
+            deletes = removed.map { RecordRef(it.entityType, it.entityId) },
+            mutations = orderedChanges,
+        )
+        syncNow()
+    }
+
+    suspend fun deleteSetList(setListId: String) {
+        val children = (dao.records("set_list_entry") + dao.records("set_list_section"))
+            .filter { JSONObject(it.json).optString("set_list_id") == setListId }
+            .sortedBy { if (it.entityType == "set_list_entry") 0 else 1 }
+        val root = dao.record("set_list", setListId) ?: return
+        var sequence = System.currentTimeMillis()
+        val records = children + root
+        dao.applyLocalBundle(
+            upserts = emptyList(),
+            deletes = records.map { RecordRef(it.entityType, it.entityId) },
+            mutations = records.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) },
+        )
+        syncNow()
+    }
+
+    private fun mutation(type: String, id: String, operation: String, revision: Int, json: String, createdAt: Long) = PendingMutation(
+        mutationId = "mutation_${UUID.randomUUID().toString().replace("-", "")}",
+        entityType = type,
+        entityId = id,
+        operation = operation,
+        baseRevision = revision,
+        json = json,
+        createdAt = createdAt,
+    )
+
     suspend fun save(entityType: String, entityId: String, data: JSONObject) {
         val current = dao.record(entityType, entityId)
         val revision = current?.revision ?: 0

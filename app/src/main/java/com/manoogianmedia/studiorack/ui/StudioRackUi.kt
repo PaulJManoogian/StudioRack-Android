@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -84,12 +85,12 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
-private val Ink = Color(0xFF080B13)
-private val Panel = Color(0xFF151A27)
+private val Ink = Color(0xFF07090F)
+private val Panel = Color(0xFF121621)
 private val PanelRaised = Color(0xFF202635)
-private val Amber = Color(0xFFFFA300)
-private val Cyan = Color(0xFF71D8FF)
-private val TextSoft = Color(0xFFB9C0D3)
+private val Amber = Color(0xFFFF9D1E)
+private val Cyan = Color(0xFF42D9FF)
+private val TextSoft = Color(0xFFAEB8CB)
 private val StudioFont = FontFamily(Font(R.font.inter))
 private val StudioTypography = Typography().run {
     copy(
@@ -152,7 +153,13 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
                     NavigationBarItem(
                         selected = section == destination,
                         onClick = { section = destination },
-                        icon = { Text(destination.mark, fontSize = 9.sp, fontWeight = FontWeight.Black) },
+                        icon = {
+                            Surface(
+                                modifier = Modifier.width(if (section == destination) 24.dp else 8.dp).height(4.dp),
+                                color = if (section == destination) Amber else TextSoft.copy(alpha = 0.38f),
+                                shape = RoundedCornerShape(50),
+                            ) {}
+                        },
                         label = { Text(destination.label, fontSize = 10.sp) },
                     )
                 }
@@ -349,12 +356,17 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     var tab by remember { mutableStateOf("Songs") }
     var query by remember { mutableStateOf("") }
     var editingSong by remember { mutableStateOf<EditorTarget?>(null) }
+    var editingSetList by remember { mutableStateOf<CachedRecord?>(null) }
+    var creatingSetList by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("LIBRARY", "Songs and Set Lists") }
         item { ChoiceStrip(listOf("Songs", "Set Lists"), tab) { tab = it; query = "" } }
-        if (tab == "Songs") item {
-            Button(onClick = { editingSong = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Song") }
+        item {
+            Button(
+                onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (tab == "Songs") "Add Song" else "Create Set List") }
         }
         item { OutlinedTextField(query, { query = it }, label = { Text(if (tab == "Songs") "Find a song" else "Find a set list") }, modifier = Modifier.fillMaxWidth()) }
         if (tab == "Songs") {
@@ -383,7 +395,10 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 val row = recordJson(record)
                 val setSections = sections.filter { recordJson(it).optString("set_list_id") == record.entityId }
                 val setEntries = entries.filter { recordJson(it).optString("set_list_id") == record.entityId }
-                ExpandableRecordCard(row.optString("name", "Unnamed set list"), row.optString("description"), listOf("${setSections.size} sets", "${setEntries.size} songs")) {
+                ExpandableRecordCard(
+                    row.optString("name", "Unnamed set list"), row.optString("description"), listOf("${setSections.size} sets", "${setEntries.size} songs"),
+                    actionLabel = "Edit", action = { editingSetList = record },
+                ) {
                     setSections.sortedBy { recordJson(it).optInt("position") }.forEach { section ->
                         val sectionJson = recordJson(section)
                         Text(sectionJson.optString("name", "Set"), color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
@@ -392,12 +407,20 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                             DetailLine((entryJson.optInt("position") + 1).toString(), songNames[entryJson.optString("song_id")].orEmpty().ifBlank { entryJson.optString("manual_title") })
                         }
                     }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { editingSetList = record }) { Text("Edit Set List", color = Amber) }
+                    }
                 }
             }
         }
     }
     editingSong?.let { target ->
         SongEditor(target, model, close = { editingSong = null })
+    }
+    if (creatingSetList || editingSetList != null) {
+        Dialog(onDismissRequest = { creatingSetList = false; editingSetList = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            SetListEditor(editingSetList, sections, entries, songs, attachments, model) { creatingSetList = false; editingSetList = null }
+        }
     }
     }
 }
@@ -562,7 +585,14 @@ private fun ChoiceStrip(options: List<String>, selected: String, choose: (String
 }
 
 @Composable
-private fun ExpandableRecordCard(title: String, subtitle: String, chips: List<String>, details: @Composable ColumnScope.() -> Unit) {
+private fun ExpandableRecordCard(
+    title: String,
+    subtitle: String,
+    chips: List<String>,
+    actionLabel: String? = null,
+    action: (() -> Unit)? = null,
+    details: @Composable ColumnScope.() -> Unit,
+) {
     var expanded by remember(title, subtitle) { mutableStateOf(false) }
     Card(
         Modifier.fillMaxWidth().clickable { expanded = !expanded },
@@ -576,6 +606,7 @@ private fun ExpandableRecordCard(title: String, subtitle: String, chips: List<St
                     Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     if (subtitle.isNotBlank()) Text(subtitle, color = TextSoft, fontSize = 13.sp)
                 }
+                if (actionLabel != null && action != null) TextButton(onClick = action) { Text(actionLabel, color = Amber, fontWeight = FontWeight.Bold) }
                 Text(if (expanded) "-" else "+", color = Amber, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -816,6 +847,7 @@ private fun GigModeScreen(
 ) {
     val events by model.events.collectAsState()
     val songs by model.songs.collectAsState()
+    val setLists by model.setLists.collectAsState()
     val sections by model.sections.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
@@ -829,6 +861,7 @@ private fun GigModeScreen(
     val listState = rememberLazyListState()
     val event = events.firstOrNull { it.entityId == eventId }?.let(::recordJson) ?: JSONObject()
     val setListId = event.optString("set_list_id")
+    val setList = setLists.firstOrNull { it.entityId == setListId }?.let(::recordJson)
     val songMap = songs.associate { it.entityId to recordJson(it) }
     val sectionRows = sections.map(::recordJson).filter { it.optString("set_list_id") == setListId }.sortedBy { it.optInt("position") }
     val entryRows = entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") }
@@ -887,25 +920,41 @@ private fun GigModeScreen(
             total = performanceSongs.size,
             metronome = metronome,
             metronomeState = metronomeState,
+            previousItem = performanceSongs.getOrNull(currentSong - 1),
+            nextItem = performanceSongs.getOrNull(currentSong + 1),
             close = { detailOpen = false },
             previous = { currentSong = (currentSong - 1).coerceAtLeast(0) },
             next = { currentSong = (currentSong + 1).coerceAtMost(performanceSongs.lastIndex) },
         )
         return
     }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).padding(horizontal = 14.dp),
+        state = listState,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         item {
-            Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = back, colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Ink)) { Text("Back") }
-                Column(Modifier.padding(start = 14.dp)) {
-                    Text("GIG MODE", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                    Text(event.optString("title", "Set List"), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text(event.optString("location"), color = TextSoft)
+            Surface(color = Color(0xF207090F), shape = RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp), border = BorderStroke(1.dp, Color(0x2EFF9D1E))) {
+                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    GigCircleButton("<", back)
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text("SET LIST", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        Text(setList?.optString("name")?.ifBlank { null } ?: event.optString("title", "Set List"), color = Color.White, fontFamily = FontFamily.Serif, fontSize = 22.sp, maxLines = 1)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(event.optString("location"), color = TextSoft, fontSize = 11.sp, maxLines = 1)
+                        Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString("  "), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
         sectionRows.forEach { section ->
-            item { Text(section.optString("name", "Set"), color = Amber, fontSize = 25.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) }
+            item {
+                Text(
+                    section.optString("name", "Set"), color = Amber, fontFamily = FontFamily.Serif, fontSize = 34.sp,
+                    modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
             items(entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }) { entry ->
                 val song = songMap[entry.optString("song_id")]
                 val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
@@ -924,34 +973,41 @@ private fun GigModeScreen(
 private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, openAttachment: () -> Unit) {
     val availableOffline = cached?.status == "ready" && cached.localPath != null
     Card(
-        colors = CardDefaults.cardColors(containerColor = PanelRaised),
+        colors = CardDefaults.cardColors(containerColor = Color(0xE8202635)),
         shape = RoundedCornerShape(6.dp),
         modifier = Modifier.fillMaxWidth().clickable(onClick = openAttachment),
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.optString("manual_title", "Untitled"), color = Amber, fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text(listOf(song?.optString("tempo"), song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).joinToString("  "), color = Color.White, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val compact = maxWidth < 650.dp
+                Column {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text((entry.optInt("position") + 1).toString(), color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
+                        Text(song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.optString("manual_title", "Untitled"), color = Amber, fontFamily = FontFamily.Serif, fontSize = 27.sp, modifier = Modifier.weight(1f))
+                        if (!compact) GigSongCues(song)
+                    }
+                    if (compact) Row(Modifier.fillMaxWidth().padding(top = 7.dp), horizontalArrangement = Arrangement.End) { GigSongCues(song) }
+                }
             }
-            Text(listOf(song?.optString("artist"), song?.optString("starts_by"), song?.optString("style")).filterNotNull().filter(String::isNotBlank).joinToString("  |  "), color = TextSoft)
+            Text(song?.optString("artist").orEmpty(), color = TextSoft, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
             val patch = listOf(song?.optString("patch_name"), song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
-            if (patch.isNotBlank()) Text("Patch: $patch", color = Cyan, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            if (patch.isNotBlank()) Text("Patch: $patch", color = TextSoft, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
             if (attachment != null) {
-                Text(
-                    when {
-                        availableOffline -> "Open ${attachmentLabel(attachment)} offline"
-                        cached?.status == "failed" -> "${attachmentLabel(attachment)} could not be cached"
-                        cached?.status == "remote_only" -> "${attachmentLabel(attachment)} requires internet"
-                        else -> "${attachmentLabel(attachment)} is not cached yet"
-                    },
-                    color = if (availableOffline) Amber else TextSoft,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                    GigPill(if (availableOffline) attachmentLabel(attachment) else "${attachmentLabel(attachment)} unavailable")
+                }
             }
-            if (attachment == null) Text("Open performance details", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
         }
+    }
+}
+
+@Composable
+private fun GigSongCues(song: JSONObject?) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf(song?.optString("starts_by"), song?.optString("style")).filterNotNull().filter(String::isNotBlank).forEach {
+            Text(it, color = Color.White, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+        }
+        listOf(song?.optString("tempo"), song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).forEach { GigValueChip(it) }
     }
 }
 
@@ -962,6 +1018,8 @@ private fun PerformanceSongScreen(
     total: Int,
     metronome: NativeMetronome,
     metronomeState: com.manoogianmedia.studiorack.performance.MetronomeState,
+    previousItem: GigSong?,
+    nextItem: GigSong?,
     close: () -> Unit,
     previous: () -> Unit,
     next: () -> Unit,
@@ -976,16 +1034,26 @@ private fun PerformanceSongScreen(
         }
         value = AttachmentRender(bitmap = bitmap, complete = true)
     }
-    Column(Modifier.fillMaxSize().padding(12.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = close, colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Ink)) { Text("Back") }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("${item.sectionName}  |  Song ${position + 1} of $total", color = TextSoft, fontSize = 12.sp)
+    Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).padding(12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            GigCircleButton("<", close)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    GigCircleButton("<", previous, position > 0)
+                    Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                        Text(item.sectionName, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        nextItem?.let { Text("> ${gigSongTitle(it)}  ${gigSongCue(it)}", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+                        previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = 9.sp, maxLines = 1) }
+                    }
+                    GigCircleButton(">", next, position < total - 1)
+                }
             }
-            Button(onClick = previous, enabled = position > 0) { Text("<") }
-            Spacer(Modifier.size(6.dp))
-            Button(onClick = next, enabled = position < total - 1) { Text(">") }
+            GigCircleButton(if (metronomeState.running) "||" else "♪", metronome::toggle)
+        }
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"), color = Color.White, fontFamily = FontFamily.Serif, fontSize = 34.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(item.song?.optString("artist").orEmpty(), color = TextSoft, fontFamily = FontFamily.Serif, fontSize = 21.sp)
         }
         Box(
             Modifier.fillMaxWidth().height(5.dp).padding(top = 2.dp),
@@ -996,10 +1064,26 @@ private fun PerformanceSongScreen(
                 color = if (metronomeState.downbeat) Cyan else Amber,
             ) {}
         }
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = metronome::toggle) { Text(if (metronomeState.running) "Stop" else "Start") }
-            Button(onClick = metronome::toggleMuted, colors = ButtonDefaults.buttonColors(containerColor = PanelRaised)) { Text(if (metronomeState.muted) "Unmute" else "Mute") }
-            Text(listOf(item.song?.optString("starts_by"), item.song?.optString("tempo"), item.song?.optString("time_signature"), item.song?.optString("style")).filterNotNull().filter(String::isNotBlank).joinToString("  |  "), color = TextSoft, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GigDetail("Starts", item.song?.optString("starts_by").orEmpty())
+            GigDetail("Tempo", item.song?.optString("tempo").orEmpty())
+            GigDetail("Time", item.song?.optString("time_signature").orEmpty())
+            GigDetail("Style", item.song?.optString("style").orEmpty())
+            val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
+            GigDetail("Patch", patch)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            GigPill(if (metronomeState.muted) "Unmute" else "Mute", metronome::toggleMuted)
+        }
+        val entryNote = item.entry.optString("entry_notes")
+        val songNote = item.song?.optString("notes").orEmpty()
+        if (entryNote.isNotBlank() || songNote.isNotBlank()) {
+            Surface(color = Color(0x0FFFFFFF), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Amber.copy(alpha = 0.16f)), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Column(Modifier.padding(12.dp)) {
+                    if (entryNote.isNotBlank()) Text("Set Note: $entryNote", color = TextSoft)
+                    if (songNote.isNotBlank()) Text("Song Note: $songNote", color = TextSoft)
+                }
+            }
         }
         if (item.attachment != null) {
             Text(attachmentLabel(item.attachment) + if (pageCount > 1) "  |  Page ${page + 1} of $pageCount" else "", color = TextSoft, fontSize = 12.sp)
@@ -1021,6 +1105,40 @@ private fun PerformanceSongScreen(
         }
     }
 }
+
+@Composable
+private fun GigCircleButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    Surface(
+        color = Amber.copy(alpha = if (enabled) 1f else 0.28f), contentColor = Ink, shape = RoundedCornerShape(50),
+        modifier = Modifier.size(46.dp).clickable(enabled = enabled, onClick = onClick),
+    ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = if (label == "♪") 24.sp else 20.sp, fontWeight = FontWeight.Black) } }
+}
+
+@Composable
+private fun GigValueChip(value: String) {
+    Surface(color = Amber.copy(alpha = 0.13f), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0x2FFFFFFF))) {
+        Text(value, color = Color.White, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+    }
+}
+
+@Composable
+private fun GigPill(label: String, onClick: (() -> Unit)? = null) {
+    Surface(
+        color = Amber.copy(alpha = 0.14f), contentColor = Amber, shape = RoundedCornerShape(50), border = BorderStroke(1.dp, Amber.copy(alpha = 0.52f)),
+        modifier = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick),
+    ) { Text(label.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) }
+}
+
+@Composable
+private fun GigDetail(label: String, value: String) {
+    Column(Modifier.width(118.dp).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label.uppercase(), color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
+        Text(value.ifBlank { "Not set" }, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 20.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+private fun gigSongTitle(item: GigSong) = item.song?.optString("title")?.takeIf(String::isNotBlank) ?: item.entry.optString("manual_title", "Untitled")
+private fun gigSongCue(item: GigSong) = listOf(item.song?.optString("starts_by"), item.song?.optString("tempo"), item.song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
 
 @Composable
 private fun SongDetailFallback(item: GigSong) {

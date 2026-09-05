@@ -95,6 +95,44 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
 
     fun deleteEvent(id: String, done: () -> Unit) = deleteRecord("studio_event", id, done)
 
+    fun saveSetList(draft: SetListDraft, done: () -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                repository.saveSetList(
+                    draft.id,
+                    JSONObject().put("id", draft.id).put("name", draft.name.trim())
+                        .put("description", draft.description.trim()).put("notes", draft.notes.trim())
+                        .put("print_charts", if (draft.attachmentPrintMode == "none") 0 else 1)
+                        .put("attachment_print_mode", draft.attachmentPrintMode).put("is_favorite", if (draft.favorite) 1 else 0),
+                    draft.sections.mapIndexed { index, section ->
+                        section.id to JSONObject().put("id", section.id).put("set_list_id", draft.id)
+                            .put("name", section.name.trim().ifBlank { "Set ${index + 1}" }).put("position", index).put("notes", section.notes.trim())
+                    },
+                    draft.sections.flatMap { section ->
+                        section.entries.mapIndexed { entryIndex, entry ->
+                            entry.id to JSONObject().put("id", entry.id).put("set_list_id", draft.id)
+                                .put("section_id", section.id).put("song_id", entry.songId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                                .put("position", entryIndex).put("manual_title", entry.manualTitle.trim())
+                                .put("entry_notes", entry.notes.trim())
+                                .put("performance_attachment_id", entry.performanceAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                        }
+                    },
+                )
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(message = "Set list saved offline. Sync is queued.")
+                done()
+            }.onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save set list.") }
+        }
+    }
+
+    fun deleteSetList(id: String, done: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.deleteSetList(id) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Set list deletion queued for sync."); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not delete set list.") }
+        }
+    }
+
     fun resolveConflict(conflict: SyncConflict, keepLocal: Boolean) {
         viewModelScope.launch { repository.resolveConflict(conflict, keepLocal) }
     }
@@ -117,6 +155,25 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
 }
 
 data class StudioRackUiState(val signedIn: Boolean, val busy: Boolean = false, val message: String = "")
+
+data class SetListDraft(
+    val id: String,
+    val name: String = "",
+    val description: String = "",
+    val notes: String = "",
+    val attachmentPrintMode: String = "none",
+    val favorite: Boolean = false,
+    val sections: List<SetSectionDraft> = emptyList(),
+)
+
+data class SetSectionDraft(val id: String, val name: String = "", val notes: String = "", val entries: List<SetEntryDraft> = emptyList())
+data class SetEntryDraft(
+    val id: String,
+    val songId: String? = null,
+    val manualTitle: String = "",
+    val notes: String = "",
+    val performanceAttachmentId: String? = null,
+)
 
 class StudioRackViewModelFactory(private val repository: StudioRackRepository) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")

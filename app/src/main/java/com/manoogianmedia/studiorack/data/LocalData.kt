@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
 @Entity(tableName = "records", primaryKeys = ["entityType", "entityId"])
 data class CachedRecord(val entityType: String, val entityId: String, val revision: Int, val json: String)
 
+data class RecordRef(val entityType: String, val entityId: String)
+
 @Entity(tableName = "supporting_records", primaryKeys = ["entityType", "entityId"])
 data class SupportingRecord(val entityType: String, val entityId: String, val json: String)
 
@@ -98,7 +100,7 @@ interface StudioRackDao {
     @Query("SELECT * FROM sync_state WHERE id=1")
     suspend fun syncState(): SyncState?
 
-    @Query("SELECT * FROM pending_mutations ORDER BY createdAt LIMIT :limit")
+    @Query("SELECT * FROM pending_mutations ORDER BY createdAt, mutationId LIMIT :limit")
     suspend fun pending(limit: Int = 100): List<PendingMutation>
 
     @Query("SELECT COUNT(*) FROM pending_mutations")
@@ -145,6 +147,19 @@ interface StudioRackDao {
 
     @Query("DELETE FROM sync_conflicts WHERE mutationId=:id")
     suspend fun removeConflict(id: String)
+
+    @Transaction
+    suspend fun applyLocalBundle(upserts: List<CachedRecord>, deletes: List<RecordRef>, mutations: List<PendingMutation>) {
+        deletes.forEach { ref ->
+            deleteRecord(ref.entityType, ref.entityId)
+            removePendingForEntity(ref.entityType, ref.entityId)
+        }
+        upserts.forEach { record ->
+            putRecords(listOf(record))
+            removePendingForEntity(record.entityType, record.entityId)
+        }
+        mutations.forEach { putPending(it) }
+    }
 
     @Transaction
     suspend fun replaceSnapshot(records: List<CachedRecord>, supporting: List<SupportingRecord>, state: SyncState) {
