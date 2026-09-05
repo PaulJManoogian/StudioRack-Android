@@ -162,6 +162,16 @@ interface StudioRackDao {
     }
 
     @Transaction
+    suspend fun queueSongBundle(upserts: List<CachedRecord>, mutations: List<PendingMutation>, cached: List<CachedAttachment>) {
+        upserts.forEach { record ->
+            putRecords(listOf(record))
+            removePendingForEntity(record.entityType, record.entityId)
+        }
+        mutations.forEach { putPending(it) }
+        cached.forEach { putCachedAttachment(it) }
+    }
+
+    @Transaction
     suspend fun replaceSnapshot(records: List<CachedRecord>, supporting: List<SupportingRecord>, state: SyncState) {
         clearRecords()
         clearSupporting()

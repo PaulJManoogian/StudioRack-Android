@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.DataOutputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -39,6 +40,38 @@ class SyncClient(
 
     suspend fun runAiReport(question: String): JSONObject =
         request("/reports/ai", "POST", JSONObject().put("question", question))
+
+    suspend fun uploadAttachment(file: File, displayName: String, mimeType: String): JSONObject = withContext(Dispatchers.IO) {
+        val boundary = "StudioRack-${System.currentTimeMillis()}"
+        val connection = URL("$baseUrl/attachments/upload").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 60_000
+            connection.doOutput = true
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            val token = tokenStore.token() ?: throw SyncException(401, "This device is signed out.")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "-").ifBlank { file.name }
+            DataOutputStream(connection.outputStream).use { output ->
+                output.writeBytes("--$boundary\r\n")
+                output.writeBytes("Content-Disposition: form-data; name=\"upload\"; filename=\"$safeName\"\r\n")
+                output.writeBytes("Content-Type: ${mimeType.ifBlank { "application/octet-stream" }}\r\n\r\n")
+                file.inputStream().use { it.copyTo(output) }
+                output.writeBytes("\r\n--$boundary--\r\n")
+                output.flush()
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val payload = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = if (payload.isBlank()) JSONObject() else JSONObject(payload)
+            if (status !in 200..299) throw SyncException(status, json.optString("detail", "Attachment upload failed."))
+            json
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     suspend fun downloadAttachment(path: String, destination: File): AttachmentDownload = withContext(Dispatchers.IO) {
         val url = URL(resolveDownloadUrl(baseUrl, path))

@@ -3,6 +3,7 @@ package com.manoogianmedia.studiorack
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.manoogianmedia.studiorack.data.CachedRecord
+import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.StudioRackDatabase
 import com.manoogianmedia.studiorack.data.SyncState
 import com.manoogianmedia.studiorack.data.TokenStore
@@ -15,6 +16,12 @@ import kotlinx.coroutines.withTimeout
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.ui.mediaIntent
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import java.io.File
+import java.io.FileOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +54,31 @@ class OfflineSetListFixtureTest {
                 CachedRecord("set_list_section", "sls_fixture", 1, """{"id":"sls_fixture","set_list_id":"setlist_fixture","name":"Part 1","position":0,"notes":""}"""),
                 CachedRecord("set_list_entry", "sle_fixture", 1, """{"id":"sle_fixture","set_list_id":"setlist_fixture","section_id":"sls_fixture","song_id":"song_fixture_2","position":0,"manual_title":"","entry_notes":""}"""),
                 CachedRecord("studio_event", "event_fixture", 1, """{"id":"event_fixture","event_type":"rehearsal","title":"Personal Rehearsal","event_date":"2026-09-12","start_time":"20:00","location":"Lansdale, PA","set_list_id":"setlist_fixture","event_status":"scheduled"}"""),
+                CachedRecord("song_attachment", "attachment_fixture", 1, """{"id":"attachment_fixture","song_id":"song_fixture_2","attachment_type":"chart","display_name":"Proud Mary Chart","file_ref":"/studiorack/static/charts/proud-mary.png","is_gig_default":1,"include_in_print":1,"position":1}"""),
+            )
+        )
+        val chartFile = File(context.filesDir, "fixture-chart.png")
+        val bitmap = Bitmap.createBitmap(1200, 1600, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; strokeWidth = 5f; textSize = 72f }
+        canvas.drawText("Proud Mary", 80f, 120f, paint)
+        repeat(8) { row -> canvas.drawLine(80f, 260f + row * 140f, 1120f, 260f + row * 140f, paint) }
+        FileOutputStream(chartFile).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        dao.putCachedAttachment(
+            CachedAttachment(
+                attachmentId = "attachment_fixture",
+                songId = "song_fixture_2",
+                revision = 1,
+                fileRef = "/studiorack/static/charts/proud-mary.png",
+                displayName = "Proud Mary Chart",
+                attachmentType = "chart",
+                localPath = chartFile.absolutePath,
+                mimeType = "image/png",
+                sha256 = null,
+                byteCount = chartFile.length(),
+                status = "ready",
             )
         )
         dao.putState(SyncState(accountJson = """{"studio_name":"Manoogian Media Studio","city":"Lansdale","state":"PA"}"""))

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.manoogianmedia.studiorack.data.CachedRecord
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.StudioRackRepository
+import com.manoogianmedia.studiorack.data.SongAttachmentInput
 import com.manoogianmedia.studiorack.data.SyncState
 import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SyncConflict
@@ -31,6 +32,8 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
     val entries: StateFlow<List<CachedRecord>> = repository.records("set_list_entry")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val attachments: StateFlow<List<CachedRecord>> = repository.records("song_attachment")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val maintenanceNotes: StateFlow<List<CachedRecord>> = repository.records("maintenance_note")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val cachedAttachments: StateFlow<List<CachedAttachment>> = repository.cachedAttachments()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -111,13 +114,33 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         }
     }
 
-    fun saveSong(id: String?, data: JSONObject, done: () -> Unit) = saveRecord("song", id ?: "song_${UUID.randomUUID().toString().replace("-", "")}", data, done)
+    fun saveSong(id: String?, data: JSONObject, attachments: List<SongAttachmentInput>, done: () -> Unit) {
+        val songId = id ?: "song_${UUID.randomUUID().toString().replace("-", "")}"
+        viewModelScope.launch {
+            runCatching { repository.saveSong(songId, data, attachments) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(message = "Song and attachments saved offline. Sync is queued.")
+                    done()
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save the song.") }
+        }
+    }
 
     fun deleteSong(id: String, done: () -> Unit) = deleteRecord("song", id, done)
 
     fun saveEvent(id: String?, data: JSONObject, done: () -> Unit) = saveRecord("studio_event", id ?: "event_${UUID.randomUUID().toString().replace("-", "")}", data, done)
 
     fun deleteEvent(id: String, done: () -> Unit) = deleteRecord("studio_event", id, done)
+
+    fun saveMaintenanceNote(itemId: String, note: String, done: () -> Unit) {
+        val id = "maintenance_${UUID.randomUUID().toString().replace("-", "")}"
+        saveRecord(
+            "maintenance_note",
+            id,
+            JSONObject().put("item_id", itemId).put("note", note.trim()).put("status", "pending").put("source", "android"),
+            done,
+        )
+    }
 
     fun saveSetList(draft: SetListDraft, done: () -> Unit) {
         viewModelScope.launch {

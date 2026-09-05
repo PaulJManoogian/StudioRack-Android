@@ -1,7 +1,6 @@
 package com.manoogianmedia.studiorack.data
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AttachmentCacheTest {
@@ -16,7 +15,10 @@ class AttachmentCacheTest {
     fun infersDisplayMimeTypes() {
         assertEquals("application/pdf", attachmentMime("chart.pdf"))
         assertEquals("image/webp", attachmentMime("chart.webp"))
-        assertNull(attachmentMime("notes.docx"))
+        assertEquals(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            attachmentMime("notes.docx"),
+        )
     }
 
     @Test

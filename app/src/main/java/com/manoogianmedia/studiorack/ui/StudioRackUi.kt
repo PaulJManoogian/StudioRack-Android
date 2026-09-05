@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -18,7 +19,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -27,7 +33,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -83,6 +91,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.CachedRecord
 import com.manoogianmedia.studiorack.data.SupportingRecord
+import com.manoogianmedia.studiorack.data.SongAttachmentInput
 import com.manoogianmedia.studiorack.data.cacheImageFile
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
@@ -372,20 +381,31 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
     val items by model.items.collectAsState()
     val specs by model.itemSpecs.collectAsState()
     val units by model.itemUnits.collectAsState()
+    val maintenanceNotes by model.maintenanceNotes.collectAsState()
     val categories by model.categories.collectAsState()
     val types by model.itemTypes.collectAsState()
     val locations by model.locations.collectAsState()
     var query by remember { mutableStateOf("") }
+    var addingMaintenance by remember { mutableStateOf(false) }
     val categoryNames = categories.associate { it.entityId to supportingJson(it).optString("name") }
     val typeNames = types.associate { it.entityId to supportingJson(it).optString("name") }
     val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
     val filtered = items.filter { supportingJson(it).let { row -> query.isBlank() || row.toString().contains(query, true) } }
-    RecordListScreen("EQUIPMENT", "Items", query, { query = it }, "Find an item") {
+    Box(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { SectionHeading("EQUIPMENT", "Items") }
+        item {
+            StudioButton(onClick = { addingMaintenance = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Add Maintenance Note", color = Ink, fontWeight = FontWeight.Black)
+            }
+        }
+        item { OutlinedTextField(query, { query = it }, label = { Text("Find an item") }, modifier = Modifier.fillMaxWidth()) }
         if (filtered.isEmpty()) item { EmptyCard("No equipment matches this search.") }
         items(filtered, key = { it.entityId }) { record ->
             val row = supportingJson(record)
             val itemSpecs = specs.filter { supportingJson(it).optString("item_id") == record.entityId }.map(::supportingJson)
             val itemUnits = units.filter { supportingJson(it).optString("item_id") == record.entityId }.map(::supportingJson)
+            val fieldNotes = maintenanceNotes.filter { recordJson(it).optString("item_id") == record.entityId }.map(::recordJson)
             ExpandableRecordCard(
                 title = row.optString("display_name", "Unnamed item"),
                 subtitle = listOf(categoryNames[row.optString("category_id")], typeNames[row.optString("type_id")]).filterNotNull().filter(String::isNotBlank).joinToString(" / "),
@@ -394,10 +414,45 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
             ) {
                 DetailLine("Location", locationNames[row.optString("default_location_id")].orEmpty())
                 DetailLine("Notes", row.optString("notes"))
+                fieldNotes.forEach { note -> DetailLine("Field note - ${note.optString("status", "pending").humanize()}", note.optString("note")) }
                 itemUnits.forEach { unit -> DetailLine(unit.optString("unit_label", "Unit"), listOf(unit.optString("serial_number"), unit.optString("status")).filter(String::isNotBlank).joinToString(" / ")) }
                 itemSpecs.sortedBy { it.optString("key") }.forEach { spec -> DetailLine(spec.optString("key").humanize(), spec.optString("value")) }
             }
         }
+        item { Spacer(Modifier.height(20.dp)) }
+    }
+    if (addingMaintenance) MaintenanceNoteEditor(items, model) { addingMaintenance = false }
+    }
+}
+
+@Composable
+private fun MaintenanceNoteEditor(items: List<SupportingRecord>, model: StudioRackViewModel, close: () -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var selectedId by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    val matches = items.filter { query.isBlank() || supportingJson(it).optString("display_name").contains(query, true) }.take(12)
+    EditorDialog("Add Maintenance Note", close) {
+        Text("Equipment", color = TextSoft, fontWeight = FontWeight.Bold)
+        StudioField("Find equipment", query) { query = it }
+        Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            matches.forEach { item ->
+                val label = supportingJson(item).optString("display_name", "Unnamed item")
+                val selected = selectedId == item.entityId
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable { selectedId = item.entityId },
+                    color = if (selected) Amber else Panel,
+                    contentColor = if (selected) Ink else Color.White,
+                    border = BorderStroke(1.dp, if (selected) Amber else Color(0x33FFFFFF)),
+                    shape = RoundedCornerShape(8.dp),
+                ) { Text(label, fontWeight = FontWeight.Bold, modifier = Modifier.padding(12.dp)) }
+            }
+        }
+        StudioField("What needs attention?", note, singleLine = false) { note = it }
+        EditorActions(
+            canSave = selectedId.isNotBlank() && note.isNotBlank(),
+            save = { model.saveMaintenanceNote(selectedId, note, close) },
+            delete = null,
+        )
     }
 }
 
@@ -919,8 +974,13 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun ChoiceStrip(options: List<String>, selected: String, choose: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
         options.forEach { option ->
             StudioButton(
                 onClick = { choose(option) },
@@ -1194,7 +1254,12 @@ private data class EditorTarget(val id: String?, val data: JSONObject)
 
 @Composable
 private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: () -> Unit) {
+    val context = LocalContext.current
     val original = target.data
+    val allAttachments by model.attachments.collectAsState()
+    val cachedAttachments by model.cachedAttachments.collectAsState()
+    val existingAttachments = allAttachments.filter { recordJson(it).optString("song_id") == target.id }
+    val cacheById = cachedAttachments.associateBy(CachedAttachment::attachmentId)
     var title by remember { mutableStateOf(original.optString("title")) }
     var artist by remember { mutableStateOf(original.optString("artist")) }
     var style by remember { mutableStateOf(original.optString("style")) }
@@ -1206,13 +1271,40 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     var media by remember { mutableStateOf(original.optString("media_ref")) }
     var notes by remember { mutableStateOf(original.optString("notes")) }
     var favorite by remember { mutableStateOf(original.optInt("is_favorite") == 1) }
+    var attachmentType by remember { mutableStateOf("Chart") }
+    var newAttachments by remember(target.id) { mutableStateOf(emptyList<SongAttachmentInput>()) }
+    var preview by remember { mutableStateOf<CachedAttachment?>(null) }
+    val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val displayName = contentDisplayName(context, uri)
+            newAttachments = newAttachments + SongAttachmentInput(
+                uri = uri.toString(),
+                displayName = displayName,
+                attachmentType = attachmentType.lowercase().replace(' ', '_'),
+                mimeType = context.contentResolver.getType(uri).orEmpty(),
+            )
+        }
+    }
     EditorDialog(if (target.id == null) "Add Song" else "Edit Song", close) {
         StudioField("Song title", title) { title = it }
         StudioField("Artist", artist) { artist = it }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) { StudioField("Style", style) { style = it } }
-            Box(Modifier.weight(1f)) { StudioField("Tempo", tempo) { tempo = it.filter(Char::isDigit).take(3) } }
-            Box(Modifier.weight(1f)) { StudioField("Time signature", signature) { signature = it.take(12) } }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth < 520.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StudioField("Style", style) { style = it }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.weight(1f)) { StudioField("Tempo", tempo) { tempo = it.filter(Char::isDigit).take(3) } }
+                        Box(Modifier.weight(1f)) { StudioField("Time signature", signature) { signature = it.take(12) } }
+                    }
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.weight(1f)) { StudioField("Style", style) { style = it } }
+                    Box(Modifier.weight(1f)) { StudioField("Tempo", tempo) { tempo = it.filter(Char::isDigit).take(3) } }
+                    Box(Modifier.weight(1f)) { StudioField("Time signature", signature) { signature = it.take(12) } }
+                }
+            }
         }
         StudioField("Who starts", starts) { starts = it }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1222,6 +1314,30 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
         StudioField("Listen / media URL", media) { media = it }
         StudioField("Notes", notes, singleLine = false) { notes = it }
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(favorite, { favorite = it }); Text("Favorite", color = Color.White) }
+        Text("Attachments", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        Text("Add charts, lyrics, tablature, or sheet music now. Files are copied to this device immediately and uploaded on the next sync.", color = TextSoft, fontSize = 11.sp)
+        ChoiceStrip(listOf("Chart", "Lyrics", "Tab", "Sheet Music", "Other"), attachmentType) { attachmentType = it }
+        StudioButton(
+            onClick = { attachmentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
+            modifier = Modifier.fillMaxWidth(),
+            kind = StudioButtonKind.Secondary,
+        ) { Text("Add $attachmentType File", color = Color.White, fontWeight = FontWeight.Bold) }
+        existingAttachments.forEach { record ->
+            val attachment = recordJson(record)
+            val cached = cacheById[record.entityId]
+            AttachmentEditorRow(
+                label = attachmentLabel(attachment),
+                detail = if (cached?.status == "ready") "Available offline" else "Will download when connected",
+                view = cached?.takeIf { it.status == "ready" && !it.localPath.isNullOrBlank() }?.let { { preview = it } },
+            )
+        }
+        newAttachments.forEachIndexed { index, attachment ->
+            AttachmentEditorRow(
+                label = attachment.displayName,
+                detail = "${attachment.attachmentType.humanize()} - queued locally",
+                remove = { newAttachments = newAttachments.filterIndexed { itemIndex, _ -> itemIndex != index } },
+            )
+        }
         EditorActions(
             canSave = title.isNotBlank(),
             save = {
@@ -1229,11 +1345,64 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                     .put("title", title.trim()).put("artist", artist.trim()).put("style", style.trim())
                     .put("tempo", tempo.trim()).put("time_signature", signature.trim()).put("starts_by", starts.trim())
                     .put("patch_name", patchName.trim()).put("patch_number", patchNumber.trim())
-                    .put("media_ref", media.trim()).put("notes", notes.trim()).put("is_favorite", if (favorite) 1 else 0), close)
+                    .put("media_ref", media.trim()).put("notes", notes.trim()).put("is_favorite", if (favorite) 1 else 0), newAttachments, close)
             },
             delete = target.id?.let { id -> { model.deleteSong(id, close) } },
         )
     }
+    preview?.let { AttachmentPreviewDialog(it) { preview = null } }
+}
+
+@Composable
+private fun AttachmentEditorRow(label: String, detail: String, view: (() -> Unit)? = null, remove: (() -> Unit)? = null) {
+    Surface(color = Panel, border = BorderStroke(1.dp, Color(0x33FFFFFF)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(label, color = Color.White, fontWeight = FontWeight.Bold)
+                Text(detail, color = TextSoft, fontSize = 11.sp)
+            }
+            view?.let { TextButton(onClick = it) { Text("View", color = Cyan, fontWeight = FontWeight.Bold) } }
+            remove?.let { TextButton(onClick = it) { Text("Remove", color = Amber, fontWeight = FontWeight.Bold) } }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> Unit) {
+    val path = attachment.localPath.orEmpty()
+    val isPdf = attachment.mimeType == "application/pdf" || path.endsWith(".pdf", true)
+    val pageCount = remember(path) { if (isPdf) pdfPageCount(path) else 1 }
+    var page by remember(path) { mutableIntStateOf(0) }
+    val bitmap by produceState<Bitmap?>(initialValue = null, path, page) {
+        value = withContext(Dispatchers.IO) { if (isPdf) renderPdfPage(path, page) else decodeAttachmentImage(path) }
+    }
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Ink) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(attachment.displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = close) { Text("Close", color = Cyan) }
+                }
+                if (pageCount > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0) { Text("Previous", color = if (page > 0) Amber else TextSoft) }
+                    Text("${page + 1} / $pageCount", color = TextSoft, modifier = Modifier.padding(12.dp))
+                    TextButton(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1) { Text("Next", color = if (page < pageCount - 1) Amber else TextSoft) }
+                }
+                val rendered = bitmap
+                if (rendered == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Cyan) }
+                else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    Image(rendered.asImageBitmap(), attachment.displayName, Modifier.fillMaxWidth().aspectRatio(rendered.width.toFloat() / rendered.height.toFloat()), contentScale = ContentScale.FillWidth)
+                }
+            }
+        }
+    }
+}
+
+private fun contentDisplayName(context: Context, uri: Uri): String {
+    val fromProvider = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
+    }
+    return fromProvider?.takeIf(String::isNotBlank) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "attachment.pdf"
 }
 
 @Composable
@@ -1561,7 +1730,15 @@ private fun PerformanceSongScreen(
         }
         value = AttachmentRender(bitmap = bitmap, complete = true)
     }
-    Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).statusBarsPadding().navigationBarsPadding().padding(12.dp)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B))))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(12.dp)
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             GigCircleButton("<", close)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
@@ -1625,12 +1802,22 @@ private fun PerformanceSongScreen(
                 StudioButton(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1) { Text("Next page", color = Ink, fontWeight = FontWeight.Black) }
             }
         }
-        Box(Modifier.fillMaxSize().padding(top = 10.dp), contentAlignment = Alignment.Center) {
-            val renderedBitmap = rendered.bitmap
+        val renderedBitmap = rendered.bitmap
+        val chartModifier = if (renderedBitmap != null && renderedBitmap.height > 0) {
+            Modifier.fillMaxWidth().aspectRatio(renderedBitmap.width.toFloat() / renderedBitmap.height.toFloat())
+        } else {
+            Modifier.fillMaxWidth().heightIn(min = 320.dp)
+        }
+        Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {
             when {
                 !rendered.complete -> CircularProgressIndicator()
                 renderedBitmap == null -> SongDetailFallback(item)
-                else -> Image(renderedBitmap.asImageBitmap(), contentDescription = item.attachment?.let(::attachmentLabel), modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                else -> Image(
+                    renderedBitmap.asImageBitmap(),
+                    contentDescription = item.attachment?.let(::attachmentLabel),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.FillWidth,
+                )
             }
         }
     }

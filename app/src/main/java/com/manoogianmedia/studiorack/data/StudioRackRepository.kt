@@ -1,6 +1,7 @@
 package com.manoogianmedia.studiorack.data
 
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.work.Constraints
@@ -36,6 +37,55 @@ class StudioRackRepository(
     suspend fun reportOverview(): JSONObject = client.reportOverview()
 
     suspend fun runAiReport(question: String): JSONObject = client.runAiReport(question)
+
+    suspend fun saveSong(songId: String, data: JSONObject, newAttachments: List<SongAttachmentInput>) {
+        val currentSong = dao.record("song", songId)
+        val records = mutableListOf(CachedRecord("song", songId, currentSong?.revision ?: 0, data.toString()))
+        val mutations = mutableListOf(
+            mutation("song", songId, "upsert", currentSong?.revision ?: 0, data.toString(), System.currentTimeMillis())
+        )
+        val cached = mutableListOf<CachedAttachment>()
+        var sequence = System.currentTimeMillis() + 1
+        val existingAttachmentCount = dao.records("song_attachment").count { JSONObject(it.json).optString("song_id") == songId }
+        newAttachments.forEachIndexed { index, input ->
+            val attachmentId = "att_${UUID.randomUUID().toString().replace("-", "")}"
+            val extension = attachmentExtension(input.displayName)
+            val destination = File(attachmentDirectory(), attachmentId + extension)
+            withContext(Dispatchers.IO) {
+                context.contentResolver.openInputStream(Uri.parse(input.uri))?.use { source ->
+                    destination.outputStream().use(source::copyTo)
+                } ?: error("The selected attachment could not be opened.")
+            }
+            val attachment = JSONObject()
+                .put("id", attachmentId)
+                .put("song_id", songId)
+                .put("attachment_type", input.attachmentType)
+                .put("display_name", input.displayName.substringBeforeLast('.').ifBlank { input.attachmentType })
+                .put("instrument_role", "")
+                .put("file_ref", "pending-upload://$attachmentId")
+                .put("is_gig_default", if (existingAttachmentCount == 0 && index == 0) 1 else 0)
+                .put("include_in_print", 1)
+                .put("position", existingAttachmentCount + index + 1)
+            records += CachedRecord("song_attachment", attachmentId, 0, attachment.toString())
+            mutations += mutation("song_attachment", attachmentId, "upsert", 0, attachment.toString(), sequence++)
+            cached += CachedAttachment(
+                attachmentId = attachmentId,
+                songId = songId,
+                revision = 0,
+                fileRef = attachment.getString("file_ref"),
+                displayName = attachment.getString("display_name"),
+                attachmentType = input.attachmentType,
+                localPath = destination.absolutePath,
+                mimeType = input.mimeType.ifBlank { attachmentMime(input.displayName).orEmpty() },
+                sha256 = sha256(destination),
+                byteCount = destination.length(),
+                status = "ready",
+                cachedAt = System.currentTimeMillis(),
+            )
+        }
+        dao.queueSongBundle(records, mutations, cached)
+        syncNow()
+    }
 
     suspend fun saveSetList(
         setListId: String,
@@ -170,6 +220,7 @@ class StudioRackRepository(
     }
 
     suspend fun sync() {
+        pushPendingAttachments()
         pushPending()
         var cursor = dao.syncState()?.cursor ?: 0
         do {
@@ -227,6 +278,24 @@ class StudioRackRepository(
                     dao.removeMutation(mutation.mutationId)
                 }
             }
+        }
+    }
+
+    private suspend fun pushPendingAttachments() {
+        val pending = dao.records("song_attachment").filter { JSONObject(it.json).optString("file_ref").startsWith("pending-upload://") }
+        val cachedById = dao.cachedAttachments().associateBy(CachedAttachment::attachmentId)
+        pending.forEach { record ->
+            val data = JSONObject(record.json)
+            val cached = cachedById[record.entityId] ?: error("The local attachment file is unavailable.")
+            val localFile = cached.localPath?.let(::File)?.takeIf(File::isFile)
+                ?: error("The local attachment file is unavailable.")
+            val uploaded = client.uploadAttachment(localFile, localFile.name, cached.mimeType.orEmpty())
+            data.put("file_ref", uploaded.getString("file_ref"))
+            data.put("download_path", "/api/v1/attachments/${record.entityId}")
+            dao.putRecords(listOf(record.copy(json = data.toString())))
+            dao.removePendingForEntity("song_attachment", record.entityId)
+            dao.putPending(mutation("song_attachment", record.entityId, "upsert", record.revision, data.toString(), System.currentTimeMillis()))
+            dao.putCachedAttachment(cached.copy(fileRef = data.getString("file_ref"), status = "ready", error = null))
         }
     }
 
@@ -395,7 +464,7 @@ private fun CachedRecord.toManifest(
 internal fun attachmentExtension(fileRef: String): String {
     val suffix = fileRef.substringBefore('?').substringAfterLast('.', "").lowercase()
     return when (suffix) {
-        "pdf", "png", "jpg", "jpeg", "webp" -> ".$suffix"
+        "pdf", "png", "jpg", "jpeg", "gif", "webp", "txt", "doc", "docx" -> ".$suffix"
         else -> ".bin"
     }
 }
@@ -405,8 +474,19 @@ internal fun attachmentMime(fileRef: String): String? = when (attachmentExtensio
     ".png" -> "image/png"
     ".jpg", ".jpeg" -> "image/jpeg"
     ".webp" -> "image/webp"
+    ".gif" -> "image/gif"
+    ".txt" -> "text/plain"
+    ".doc" -> "application/msword"
+    ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     else -> null
 }
+
+data class SongAttachmentInput(
+    val uri: String,
+    val displayName: String,
+    val attachmentType: String,
+    val mimeType: String,
+)
 
 private fun sha256(file: File): String {
     val digest = MessageDigest.getInstance("SHA-256")
