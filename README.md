@@ -33,4 +33,12 @@ The production API root is configured as:
 https://www.manoogianmedia.com/studiorack/api/v1
 ```
 
+## Alpha install
+
+Download the current Android alpha directly from the StudioRack server:
+
+https://www.manoogianmedia.com/studiorack/StudioRack-alpha.apk
+
+Android may require the browser or Files app to be allowed to install unknown apps. The initial sign-in and synchronization require an internet connection; synchronized content remains available offline afterward.
+
 The sync protocol is documented in the StudioRack web repository at `drumdb/docs/mobile-sync-api.md`.
