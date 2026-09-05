@@ -23,8 +23,9 @@ Native offline-first Android client for StudioRack.
 - Searchable song and set-list library.
 - Offline reports, Studio Buddy skills/history, reference data, and account details.
 - Offline-first song and scheduled-event creation, editing, and deletion.
+- Offline set-list creation and editing, including named sets, ordered songs, manual entries, per-entry notes, performance attachment choices, and deletion.
 - Durable queued mutations with explicit server/device conflict resolution.
-- Bundled Inter typography and StudioRack-branded navigation.
+- StudioRack palette and typography throughout, with a phone/tablet Gig Mode presentation aligned to the web experience.
 
 ## Build
 
