@@ -6,6 +6,7 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
@@ -31,6 +32,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -39,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -53,12 +56,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.CachedRecord
 import com.manoogianmedia.studiorack.data.SupportingRecord
@@ -66,6 +75,7 @@ import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
+import com.manoogianmedia.studiorack.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -80,11 +90,21 @@ private val PanelRaised = Color(0xFF202635)
 private val Amber = Color(0xFFFFA300)
 private val Cyan = Color(0xFF71D8FF)
 private val TextSoft = Color(0xFFB9C0D3)
+private val StudioFont = FontFamily(Font(R.font.inter))
+private val StudioTypography = Typography().run {
+    copy(
+        displayLarge = displayLarge.copy(fontFamily = StudioFont), displayMedium = displayMedium.copy(fontFamily = StudioFont),
+        headlineLarge = headlineLarge.copy(fontFamily = StudioFont), headlineMedium = headlineMedium.copy(fontFamily = StudioFont),
+        titleLarge = titleLarge.copy(fontFamily = StudioFont), titleMedium = titleMedium.copy(fontFamily = StudioFont),
+        bodyLarge = bodyLarge.copy(fontFamily = StudioFont), bodyMedium = bodyMedium.copy(fontFamily = StudioFont),
+        labelLarge = labelLarge.copy(fontFamily = StudioFont), labelMedium = labelMedium.copy(fontFamily = StudioFont),
+    )
+}
 
 @Composable
 fun StudioRackApp(model: StudioRackViewModel, hardwareKeys: Flow<Int>, onGigModeActive: (Boolean) -> Unit) {
     val uiState by model.uiState.collectAsState()
-    MaterialTheme(colorScheme = darkColorScheme(background = Ink, surface = Panel, primary = Amber, secondary = Cyan)) {
+    MaterialTheme(colorScheme = darkColorScheme(background = Ink, surface = Panel, primary = Amber, secondary = Cyan), typography = StudioTypography) {
         Surface(Modifier.fillMaxSize(), color = Ink) {
             var selectedEvent by remember { mutableStateOf<String?>(null) }
             when {
@@ -108,8 +128,24 @@ private enum class AppSection(val label: String, val mark: String) {
 @Composable
 private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, openGig: (String) -> Unit) {
     var section by remember { mutableStateOf(AppSection.DASHBOARD) }
+    val pending by model.pendingCount.collectAsState()
+    val conflicts by model.conflicts.collectAsState()
     Scaffold(
         containerColor = Ink,
+        topBar = {
+            Surface(color = Color(0xF20A0D15), shadowElevation = 8.dp) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Image(painterResource(R.drawable.studiorack_logo), "StudioRack", Modifier.size(38.dp))
+                    Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                        Text("StudioRack", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text(if (pending == 0) "OFFLINE READY" else "$pending CHANGE${if (pending == 1) "" else "S"} QUEUED", color = if (pending == 0) Cyan else Amber, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    }
+                    if (conflicts.isNotEmpty()) Surface(color = Color(0xFF8B2F3A), shape = RoundedCornerShape(8.dp)) {
+                        Text("${conflicts.size} CONFLICT${if (conflicts.size == 1) "" else "S"}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+                    }
+                }
+            }
+        },
         bottomBar = {
             NavigationBar(containerColor = Panel) {
                 AppSection.entries.forEach { destination ->
@@ -123,7 +159,7 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.fillMaxSize().padding(padding).background(Brush.linearGradient(listOf(Ink, Color(0xFF101A29), Ink)))) {
             when (section) {
                 AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
                 AppSection.EQUIPMENT -> EquipmentScreen(model)
@@ -142,7 +178,10 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
     var code by remember { mutableStateOf("") }
     var mfa by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-        Text("StudioRack", color = Amber, fontSize = 38.sp, fontWeight = FontWeight.Black)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(painterResource(R.drawable.studiorack_logo), "StudioRack", Modifier.size(54.dp))
+            Text("StudioRack", color = Amber, fontSize = 38.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 10.dp))
+        }
         Text("Your performance library, available offline.", color = TextSoft)
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
@@ -201,7 +240,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
         if (upcoming.isEmpty()) item { EmptyCard("No upcoming sessions are stored on this device.") }
         items(upcoming.take(5), key = { it.getString("id") }) { event ->
             val readiness = eventPacketReadiness(event, entries, attachments, cachedAttachments)
-            EventCard(event, readiness) { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) }
+            EventCard(event, readiness, open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) })
         }
         item { SectionHeading("CARE READINESS", "What needs hands on it?") }
         item { CareSummary(specRows) }
@@ -276,19 +315,27 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     val cachedAttachments by model.cachedAttachments.collectAsState()
     var query by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("All") }
+    var editingEvent by remember { mutableStateOf<EditorTarget?>(null) }
     val rows = events.map(::recordJson).filter {
         (type == "All" || it.optString("event_type").humanize() == type) && (query.isBlank() || it.toString().contains(query, true))
     }.sortedBy { it.optString("event_date") + it.optString("start_time") }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("SESSIONS", "Schedule") }
+        item { Button(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event") } }
         item { OutlinedTextField(query, { query = it }, label = { Text("Find scheduled work") }, modifier = Modifier.fillMaxWidth()) }
         item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
         if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
         items(rows, key = { it.getString("id") }) { event ->
-            EventCard(event, eventPacketReadiness(event, entries, attachments, cachedAttachments)) {
-                if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id"))
-            }
+            EventCard(
+                event,
+                eventPacketReadiness(event, entries, attachments, cachedAttachments),
+                open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) },
+                edit = { editingEvent = EditorTarget(event.optString("id"), event) },
+            )
         }
+    }
+    editingEvent?.let { target -> EventEditor(target, model, close = { editingEvent = null }) }
     }
 }
 
@@ -301,9 +348,14 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     val attachments by model.attachments.collectAsState()
     var tab by remember { mutableStateOf("Songs") }
     var query by remember { mutableStateOf("") }
+    var editingSong by remember { mutableStateOf<EditorTarget?>(null) }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("LIBRARY", "Songs and Set Lists") }
         item { ChoiceStrip(listOf("Songs", "Set Lists"), tab) { tab = it; query = "" } }
+        if (tab == "Songs") item {
+            Button(onClick = { editingSong = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Song") }
+        }
         item { OutlinedTextField(query, { query = it }, label = { Text(if (tab == "Songs") "Find a song" else "Find a set list") }, modifier = Modifier.fillMaxWidth()) }
         if (tab == "Songs") {
             val filtered = songs.filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
@@ -319,6 +371,9 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     DetailLine("Notes", song.optString("notes"))
                     if (song.optString("media_ref").isNotBlank()) DetailLine("Listen", song.optString("media_ref"))
                     songAttachments.forEach { DetailLine("Attachment", attachmentLabel(recordJson(it))) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { editingSong = EditorTarget(record.entityId, song) }) { Text("Edit", color = Amber) }
+                    }
                 }
             }
         } else {
@@ -341,6 +396,10 @@ private fun LibraryScreen(model: StudioRackViewModel) {
             }
         }
     }
+    editingSong?.let { target ->
+        SongEditor(target, model, close = { editingSong = null })
+    }
+    }
 }
 
 @Composable
@@ -348,12 +407,39 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
     var tab by remember { mutableStateOf("Reports") }
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("STUDIORACK", "More") }
-        item { ChoiceStrip(listOf("Reports", "Studio Buddy", "Reference", "Settings"), tab) { tab = it } }
+        item { ChoiceStrip(listOf("Reports", "Studio Buddy", "Reference", "Sync", "Settings"), tab) { tab = it } }
         when (tab) {
             "Reports" -> reportsContent(model)
             "Studio Buddy" -> buddyContent(model)
             "Reference" -> referenceContent(model)
+            "Sync" -> syncContent(model, uiState)
             else -> settingsContent(model, uiState)
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.syncContent(model: StudioRackViewModel, uiState: StudioRackUiState) {
+    item {
+        val pending by model.pendingCount.collectAsState()
+        val conflicts by model.conflicts.collectAsState()
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Offline Changes", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricCard("Queued", pending.toString(), Modifier.weight(1f)); MetricCard("Conflicts", conflicts.size.toString(), Modifier.weight(1f))
+            }
+            Button(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text("Sync Now") }
+            if (conflicts.isEmpty()) Text("No synchronization conflicts.", color = TextSoft)
+            conflicts.forEach { conflict ->
+                InfoCard {
+                    Text(conflict.entityType.humanize(), color = Amber, fontWeight = FontWeight.Bold)
+                    Text(conflict.entityId, color = TextSoft, fontSize = 11.sp)
+                    Text("This record changed both here and on the server.", color = Color.White)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { model.resolveConflict(conflict, false) }, colors = ButtonDefaults.buttonColors(containerColor = Panel)) { Text("Use Server") }
+                        Button(onClick = { model.resolveConflict(conflict, true) }) { Text("Keep Device") }
+                    }
+                }
+            }
         }
     }
 }
@@ -564,8 +650,135 @@ private fun studioAddress(account: JSONObject): String = listOf(
     listOf(account.optString("city"), account.optString("region"), account.optString("postal_code")).filter(String::isNotBlank).joinToString(" "),
 ).filter(String::isNotBlank).joinToString(" | ").ifBlank { "Offline StudioRack workspace" }
 
+private data class EditorTarget(val id: String?, val data: JSONObject)
+
 @Composable
-private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit) {
+private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: () -> Unit) {
+    val original = target.data
+    var title by remember { mutableStateOf(original.optString("title")) }
+    var artist by remember { mutableStateOf(original.optString("artist")) }
+    var style by remember { mutableStateOf(original.optString("style")) }
+    var tempo by remember { mutableStateOf(original.optString("tempo")) }
+    var signature by remember { mutableStateOf(original.optString("time_signature", "4/4")) }
+    var starts by remember { mutableStateOf(original.optString("starts_by")) }
+    var patchName by remember { mutableStateOf(original.optString("patch_name")) }
+    var patchNumber by remember { mutableStateOf(original.optString("patch_number")) }
+    var media by remember { mutableStateOf(original.optString("media_ref")) }
+    var notes by remember { mutableStateOf(original.optString("notes")) }
+    var favorite by remember { mutableStateOf(original.optInt("is_favorite") == 1) }
+    EditorDialog(if (target.id == null) "Add Song" else "Edit Song", close) {
+        StudioField("Song title", title) { title = it }
+        StudioField("Artist", artist) { artist = it }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { StudioField("Style", style) { style = it } }
+            Box(Modifier.weight(1f)) { StudioField("Tempo", tempo) { tempo = it.filter(Char::isDigit).take(3) } }
+            Box(Modifier.weight(1f)) { StudioField("Time signature", signature) { signature = it.take(12) } }
+        }
+        StudioField("Who starts", starts) { starts = it }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { StudioField("Patch name", patchName) { patchName = it } }
+            Box(Modifier.weight(1f)) { StudioField("Patch number", patchNumber) { patchNumber = it } }
+        }
+        StudioField("Listen / media URL", media) { media = it }
+        StudioField("Notes", notes, singleLine = false) { notes = it }
+        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(favorite, { favorite = it }); Text("Favorite", color = Color.White) }
+        EditorActions(
+            canSave = title.isNotBlank(),
+            save = {
+                model.saveSong(target.id, JSONObject()
+                    .put("title", title.trim()).put("artist", artist.trim()).put("style", style.trim())
+                    .put("tempo", tempo.trim()).put("time_signature", signature.trim()).put("starts_by", starts.trim())
+                    .put("patch_name", patchName.trim()).put("patch_number", patchNumber.trim())
+                    .put("media_ref", media.trim()).put("notes", notes.trim()).put("is_favorite", if (favorite) 1 else 0), close)
+            },
+            delete = target.id?.let { id -> { model.deleteSong(id, close) } },
+        )
+    }
+}
+
+@Composable
+private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close: () -> Unit) {
+    val original = target.data
+    val setLists by model.setLists.collectAsState()
+    var title by remember { mutableStateOf(original.optString("title")) }
+    var type by remember { mutableStateOf(original.optString("event_type", "performance")) }
+    var status by remember { mutableStateOf(original.optString("event_status", "scheduled")) }
+    var date by remember { mutableStateOf(original.optString("event_date")) }
+    var time by remember { mutableStateOf(original.optString("start_time")) }
+    var location by remember { mutableStateOf(original.optString("location")) }
+    var setListId by remember { mutableStateOf(original.optString("set_list_id")) }
+    var notes by remember { mutableStateOf(original.optString("notes")) }
+    var reminder by remember { mutableStateOf(original.optInt("reminder_enabled", 1) == 1) }
+    var lead by remember { mutableStateOf(original.optString("reminder_lead_value", "2")) }
+    var unit by remember { mutableStateOf(original.optString("reminder_lead_unit", "days")) }
+    EditorDialog(if (target.id == null) "Add Scheduled Event" else "Edit Scheduled Event", close) {
+        StudioField("Name", title) { title = it }
+        Text("Type", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("performance", "rehearsal", "studio_session", "other"), type) { type = it }
+        Text("Status", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("scheduled", "ended"), status) { status = it }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { StudioField("Date (YYYY-MM-DD)", date) { date = it.take(10) } }
+            Box(Modifier.weight(1f)) { StudioField("Time", time) { time = it.take(8) } }
+        }
+        StudioField("Location", location) { location = it }
+        Text("Set list", color = TextSoft, fontWeight = FontWeight.Bold)
+        ChoiceStrip(listOf("None") + setLists.map { recordJson(it).optString("name") }, setLists.firstOrNull { it.entityId == setListId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
+            setListId = setLists.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
+        }
+        StudioField("Notes", notes, singleLine = false) { notes = it }
+        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(reminder, { reminder = it }); Text("Studio Buddy reminder", color = Color.White) }
+        if (reminder) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { StudioField("How close", lead) { lead = it.filter(Char::isDigit).take(3) } }
+            Box(Modifier.weight(1f)) { Text("Unit", color = TextSoft); ChoiceStrip(listOf("hours", "days", "weeks"), unit) { unit = it } }
+        }
+        EditorActions(
+            canSave = title.isNotBlank(),
+            save = {
+                model.saveEvent(target.id, JSONObject()
+                    .put("event_type", type).put("event_status", status).put("title", title.trim())
+                    .put("event_date", date.trim()).put("start_time", time.trim()).put("location", location.trim())
+                    .put("set_list_id", setListId.ifBlank { JSONObject.NULL }).put("notes", notes.trim())
+                    .put("reminder_enabled", if (reminder) 1 else 0).put("reminder_lead_value", lead.toIntOrNull() ?: 2)
+                    .put("reminder_lead_unit", unit), close)
+            },
+            delete = target.id?.let { id -> { model.deleteEvent(id, close) } },
+        )
+    }
+}
+
+@Composable
+private fun EditorDialog(title: String, close: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Ink) {
+            LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) { Text("CREATE / EDIT", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black); Text(title, color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold) }
+                        TextButton(onClick = close) { Text("Close", color = Cyan) }
+                    }
+                }
+                item { InfoCard(content) }
+                item { Spacer(Modifier.height(20.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudioField(label: String, value: String, singleLine: Boolean = true, update: (String) -> Unit) {
+    OutlinedTextField(value, update, label = { Text(label) }, singleLine = singleLine, minLines = if (singleLine) 1 else 3, modifier = Modifier.fillMaxWidth())
+}
+
+@Composable
+private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Unit)?) {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(onClick = save, enabled = canSave, modifier = Modifier.weight(1f)) { Text("Save Offline") }
+        if (delete != null) Button(onClick = delete, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B2F3A))) { Text("Delete") }
+    }
+    Text("This change is stored on this device immediately and synchronized when a connection is available.", color = TextSoft, fontSize = 11.sp)
+}
+
+@Composable
+private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit, edit: (() -> Unit)? = null) {
     Card(
         Modifier.fillMaxWidth().clickable(onClick = open),
         colors = CardDefaults.cardColors(containerColor = PanelRaised),
@@ -586,6 +799,9 @@ private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () ->
                 )
             }
             if (event.optString("set_list_id").isNotBlank()) Text("Open Gig Mode", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+            if (edit != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = edit) { Text("Edit", color = Amber) }
+            }
         }
     }
 }

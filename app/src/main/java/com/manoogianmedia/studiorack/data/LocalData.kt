@@ -39,6 +39,7 @@ data class SyncConflict(
     val localJson: String,
     val serverJson: String?,
     val serverRevision: Int,
+    val operation: String = "upsert",
 )
 
 @Entity(tableName = "sync_state")
@@ -76,6 +77,9 @@ interface StudioRackDao {
     @Query("SELECT * FROM records WHERE entityType=:type ORDER BY entityId")
     suspend fun records(type: String): List<CachedRecord>
 
+    @Query("SELECT * FROM records WHERE entityType=:type AND entityId=:id LIMIT 1")
+    suspend fun record(type: String, id: String): CachedRecord?
+
     @Query("SELECT * FROM supporting_records WHERE entityType=:type ORDER BY entityId")
     suspend fun supporting(type: String): List<SupportingRecord>
 
@@ -97,6 +101,12 @@ interface StudioRackDao {
     @Query("SELECT * FROM pending_mutations ORDER BY createdAt LIMIT :limit")
     suspend fun pending(limit: Int = 100): List<PendingMutation>
 
+    @Query("SELECT COUNT(*) FROM pending_mutations")
+    fun observePendingCount(): Flow<Int>
+
+    @Query("SELECT * FROM sync_conflicts ORDER BY entityType, entityId")
+    fun observeConflicts(): Flow<List<SyncConflict>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putRecords(records: List<CachedRecord>)
 
@@ -108,6 +118,9 @@ interface StudioRackDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putConflict(conflict: SyncConflict)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putPending(mutation: PendingMutation)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putCachedAttachment(attachment: CachedAttachment)
@@ -127,6 +140,12 @@ interface StudioRackDao {
     @Query("DELETE FROM pending_mutations WHERE mutationId=:id")
     suspend fun removeMutation(id: String)
 
+    @Query("DELETE FROM pending_mutations WHERE entityType=:type AND entityId=:id")
+    suspend fun removePendingForEntity(type: String, id: String)
+
+    @Query("DELETE FROM sync_conflicts WHERE mutationId=:id")
+    suspend fun removeConflict(id: String)
+
     @Transaction
     suspend fun replaceSnapshot(records: List<CachedRecord>, supporting: List<SupportingRecord>, state: SyncState) {
         clearRecords()
@@ -139,7 +158,7 @@ interface StudioRackDao {
 
 @Database(
     entities = [CachedRecord::class, SupportingRecord::class, PendingMutation::class, SyncConflict::class, SyncState::class, CachedAttachment::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class StudioRackDatabase : RoomDatabase() {
@@ -174,10 +193,17 @@ abstract class StudioRackDatabase : RoomDatabase() {
             }
         }
 
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sync_conflicts ADD COLUMN operation TEXT NOT NULL DEFAULT 'upsert'")
+            }
+        }
+
         fun create(context: Context): StudioRackDatabase = Room.databaseBuilder(
             context,
             StudioRackDatabase::class.java,
             "studiorack-offline.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
     }
 }

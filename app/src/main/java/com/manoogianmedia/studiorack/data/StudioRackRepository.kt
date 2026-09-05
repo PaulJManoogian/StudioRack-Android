@@ -15,6 +15,7 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import java.util.UUID
 
 class StudioRackRepository(
     private val context: Context,
@@ -27,6 +28,66 @@ class StudioRackRepository(
     fun supporting(type: String): Flow<List<SupportingRecord>> = dao.observeSupporting(type)
     fun cachedAttachments(): Flow<List<CachedAttachment>> = dao.observeCachedAttachments()
     fun syncState(): Flow<SyncState?> = dao.observeSyncState()
+    fun pendingCount(): Flow<Int> = dao.observePendingCount()
+    fun conflicts(): Flow<List<SyncConflict>> = dao.observeConflicts()
+
+    suspend fun save(entityType: String, entityId: String, data: JSONObject) {
+        val current = dao.record(entityType, entityId)
+        val revision = current?.revision ?: 0
+        dao.putRecords(listOf(CachedRecord(entityType, entityId, revision, data.toString())))
+        dao.removePendingForEntity(entityType, entityId)
+        dao.putPending(
+            PendingMutation(
+                mutationId = "mutation_${UUID.randomUUID().toString().replace("-", "")}",
+                entityType = entityType,
+                entityId = entityId,
+                operation = "upsert",
+                baseRevision = revision,
+                json = data.toString(),
+            )
+        )
+        syncNow()
+    }
+
+    suspend fun delete(entityType: String, entityId: String) {
+        val current = dao.record(entityType, entityId) ?: return
+        dao.deleteRecord(entityType, entityId)
+        dao.removePendingForEntity(entityType, entityId)
+        dao.putPending(
+            PendingMutation(
+                mutationId = "mutation_${UUID.randomUUID().toString().replace("-", "")}",
+                entityType = entityType,
+                entityId = entityId,
+                operation = "delete",
+                baseRevision = current.revision,
+                json = current.json,
+            )
+        )
+        syncNow()
+    }
+
+    suspend fun resolveConflict(conflict: SyncConflict, keepLocal: Boolean) {
+        if (keepLocal) {
+            if (conflict.operation == "delete") dao.deleteRecord(conflict.entityType, conflict.entityId)
+            else dao.putRecords(listOf(CachedRecord(conflict.entityType, conflict.entityId, conflict.serverRevision, conflict.localJson)))
+            dao.putPending(
+                PendingMutation(
+                    mutationId = "mutation_${UUID.randomUUID().toString().replace("-", "")}",
+                    entityType = conflict.entityType,
+                    entityId = conflict.entityId,
+                    operation = conflict.operation,
+                    baseRevision = conflict.serverRevision,
+                    json = conflict.localJson,
+                )
+            )
+        } else if (conflict.serverJson == null) {
+            dao.deleteRecord(conflict.entityType, conflict.entityId)
+        } else {
+            dao.putRecords(listOf(CachedRecord(conflict.entityType, conflict.entityId, conflict.serverRevision, conflict.serverJson)))
+        }
+        dao.removeConflict(conflict.mutationId)
+        if (keepLocal) syncNow()
+    }
 
     suspend fun signIn(email: String, accessCode: String, mfaCode: String) {
         val stableId = tokenStore.deviceId() ?: "android_" + Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
@@ -92,6 +153,7 @@ class StudioRackRepository(
                             mutation.json,
                             result.optJSONObject("server_data")?.toString(),
                             result.optInt("server_revision"),
+                            mutation.operation,
                         )
                     )
                     dao.removeMutation(mutation.mutationId)

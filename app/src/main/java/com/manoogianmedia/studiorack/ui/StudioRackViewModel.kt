@@ -8,12 +8,15 @@ import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.StudioRackRepository
 import com.manoogianmedia.studiorack.data.SyncState
 import com.manoogianmedia.studiorack.data.SupportingRecord
+import com.manoogianmedia.studiorack.data.SyncConflict
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.util.UUID
 
 class StudioRackViewModel(private val repository: StudioRackRepository) : ViewModel() {
     val events: StateFlow<List<CachedRecord>> = repository.records("studio_event")
@@ -58,6 +61,10 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val syncState: StateFlow<SyncState?> = repository.syncState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val pendingCount: StateFlow<Int> = repository.pendingCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val conflicts: StateFlow<List<SyncConflict>> = repository.conflicts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _uiState = MutableStateFlow(StudioRackUiState(repository.signedIn()))
     val uiState: StateFlow<StudioRackUiState> = _uiState.asStateFlow()
@@ -77,6 +84,34 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
             runCatching { repository.sync() }
                 .onSuccess { _uiState.value = _uiState.value.copy(busy = false, message = "Synced.") }
                 .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = "Offline: showing the last synchronized data.") }
+        }
+    }
+
+    fun saveSong(id: String?, data: JSONObject, done: () -> Unit) = saveRecord("song", id ?: "song_${UUID.randomUUID().toString().replace("-", "")}", data, done)
+
+    fun deleteSong(id: String, done: () -> Unit) = deleteRecord("song", id, done)
+
+    fun saveEvent(id: String?, data: JSONObject, done: () -> Unit) = saveRecord("studio_event", id ?: "event_${UUID.randomUUID().toString().replace("-", "")}", data, done)
+
+    fun deleteEvent(id: String, done: () -> Unit) = deleteRecord("studio_event", id, done)
+
+    fun resolveConflict(conflict: SyncConflict, keepLocal: Boolean) {
+        viewModelScope.launch { repository.resolveConflict(conflict, keepLocal) }
+    }
+
+    private fun saveRecord(type: String, id: String, data: JSONObject, done: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.save(type, id, data) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Saved offline. Sync is queued."); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save.") }
+        }
+    }
+
+    private fun deleteRecord(type: String, id: String, done: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.delete(type, id) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Deletion queued for sync."); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not delete.") }
         }
     }
 }
