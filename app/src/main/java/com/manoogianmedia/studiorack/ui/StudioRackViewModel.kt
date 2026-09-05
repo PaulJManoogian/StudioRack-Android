@@ -55,6 +55,8 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val itemTypes: StateFlow<List<SupportingRecord>> = repository.supporting("item_type")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val brands: StateFlow<List<SupportingRecord>> = repository.supporting("brand")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val locations: StateFlow<List<SupportingRecord>> = repository.supporting("location")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val statuses: StateFlow<List<SupportingRecord>> = repository.supporting("status_option")

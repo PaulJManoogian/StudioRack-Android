@@ -10,6 +10,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -172,6 +174,7 @@ class StudioRackRepository(
             cursor = response.getLong("cursor")
         } while (response.optBoolean("has_more", false))
         refreshAttachmentCache()
+        refreshImageCache()
     }
 
     fun syncNow() {
@@ -314,6 +317,17 @@ class StudioRackRepository(
                     )
                 }
         }
+    }
+
+    private suspend fun refreshImageCache() = withContext(Dispatchers.IO) {
+        val account = JSONObject(dao.syncState()?.accountJson ?: "{}")
+        val imageUrls = buildList {
+            add(account.optString("studio_logo_url"))
+            for (type in listOf("item", "kit")) {
+                dao.supporting(type).forEach { add(JSONObject(it.json).optString("image_url")) }
+            }
+        }.filter(String::isNotBlank).distinct()
+        imageUrls.forEach { cacheImageFile(context, it) }
     }
 
     private fun attachmentDirectory(): File = File(context.filesDir, "offline-attachments").also(File::mkdirs)

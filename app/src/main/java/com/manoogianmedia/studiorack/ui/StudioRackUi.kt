@@ -63,10 +63,13 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -81,6 +84,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.CachedRecord
 import com.manoogianmedia.studiorack.data.SupportingRecord
+import com.manoogianmedia.studiorack.data.cacheImageFile
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
@@ -92,6 +96,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.text.DateFormat
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.Date
 
 private val Ink = Color(0xFF07090F)
@@ -229,6 +235,8 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val events by model.events.collectAsState()
     val items by model.items.collectAsState()
     val kits by model.kits.collectAsState()
+    val brands by model.brands.collectAsState()
+    val locations by model.locations.collectAsState()
     val specs by model.itemSpecs.collectAsState()
     val actions by model.buddyActions.collectAsState()
     val entries by model.entries.collectAsState()
@@ -239,18 +247,47 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val upcoming = events.map(::recordJson).filter { it.optString("event_status") != "ended" }.sortedBy { it.optString("event_date") + it.optString("start_time") }
     val specRows = specs.map(::supportingJson)
     val purchaseTotal = specRows.filter { it.optString("key") == "purchase_price" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
-    val tracked = specRows.count { it.optString("key") == "next_service_due" && it.optString("value").isNotBlank() }
+    val careRows = maintenanceRows(specRows, items.map(::supportingJson), brands.map(::supportingJson), locations.map(::supportingJson))
+    val tracked = careRows.size
     val openBuddy = actions.map(::supportingJson).count { it.optString("status") !in setOf("handled", "cleared") }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Spacer(Modifier.height(18.dp))
-            Text("STUDIO OVERVIEW", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
-            Text(account.optString("studio_name").ifBlank { account.optString("organization", "StudioRack") }, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-            Text(studioAddress(account), color = TextSoft)
-            Text("Recorded value: $${"%,.2f".format(purchaseTotal)}", color = Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(state?.lastSyncAt?.let { "Synced ${DateFormat.getDateTimeInstance().format(Date(it))}" } ?: "Not synchronized", color = TextSoft, fontSize = 12.sp)
-                StudioButton(onClick = model::sync, enabled = !uiState.busy) { Text(if (uiState.busy) "Syncing" else "Sync now", color = Ink, fontWeight = FontWeight.Black) }
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                border = BorderStroke(1.dp, Color(0xFF343B4D)),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF2B1B09), Color(0xFF132532), Color(0xFF121621))))) {
+                    Column(Modifier.padding(18.dp)) {
+                        Text("STUDIO OVERVIEW", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val logoUrl = account.optString("studio_logo_url")
+                            if (logoUrl.isNotBlank()) {
+                                CachedNetworkImage(
+                                    imageUrl = logoUrl,
+                                    contentDescription = "${account.optString("studio_name", "Studio")} logo",
+                                    modifier = Modifier.size(width = 92.dp, height = 72.dp).clip(RoundedCornerShape(7.dp)).background(Color(0x6607090F)),
+                                    contentScale = ContentScale.Fit,
+                                    scale = account.optDouble("studio_logo_scale", 100.0).toFloat().div(100f).coerceIn(.25f, 2f),
+                                    positionX = account.optInt("studio_logo_position_x", 50),
+                                    positionY = account.optInt("studio_logo_position_y", 50),
+                                )
+                                Spacer(Modifier.width(13.dp))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(account.optString("studio_name").ifBlank { account.optString("organization", "StudioRack") }, color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.Bold)
+                                Text(studioAddress(account), color = TextSoft)
+                            }
+                        }
+                        Text("Estimated Studio Value", color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 14.dp))
+                        Text("$${"%,.2f".format(purchaseTotal)}", color = Cyan, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(state?.lastSyncAt?.let { "Synced ${DateFormat.getDateTimeInstance().format(Date(it))}" } ?: "Not synchronized", color = TextSoft, fontSize = 11.sp)
+                            StudioButton(onClick = model::sync, enabled = !uiState.busy) { Text(if (uiState.busy) "Syncing" else "Sync now", color = Ink, fontWeight = FontWeight.Black) }
+                        }
+                    }
+                }
             }
         }
         item {
@@ -264,14 +301,14 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
                 MetricCard("Care", tracked.toString(), Modifier.weight(1f))
             }
         }
-        item { SectionHeading("COMING UP NEXT", "Upcoming Sessions") }
+        item { SectionHeading("SCHEDULE", "Coming up next.", eyebrowColor = Color.White) }
         if (upcoming.isEmpty()) item { EmptyCard("No upcoming sessions are stored on this device.") }
         items(upcoming.take(5), key = { it.getString("id") }) { event ->
             val readiness = eventPacketReadiness(event, entries, attachments, cachedAttachments)
             EventCard(event, readiness, open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) })
         }
         item { SectionHeading("CARE READINESS", "What needs hands on it?") }
-        item { CareSummary(specRows) }
+        item { CareSummary(careRows) }
         item { SectionHeading("STUDIO BUDDY", "Recent activity") }
         if (actions.isEmpty()) item { EmptyCard("No Studio Buddy actions are stored on this device.") }
         items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action)) }
@@ -302,6 +339,7 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
                 title = row.optString("display_name", "Unnamed item"),
                 subtitle = listOf(categoryNames[row.optString("category_id")], typeNames[row.optString("type_id")]).filterNotNull().filter(String::isNotBlank).joinToString(" / "),
                 chips = listOf(row.optString("usage_status"), "Qty ${row.optInt("quantity", 1)}"),
+                imageUrl = row.optString("image_url"),
             ) {
                 DetailLine("Location", locationNames[row.optString("default_location_id")].orEmpty())
                 DetailLine("Notes", row.optString("notes"))
@@ -327,7 +365,7 @@ private fun KitsScreen(model: StudioRackViewModel) {
         items(filtered, key = { it.entityId }) { record ->
             val row = supportingJson(record)
             val kitMembers = members.filter { supportingJson(it).optString("kit_id") == record.entityId }.map(::supportingJson)
-            ExpandableRecordCard(row.optString("name", "Unnamed kit"), locationNames[row.optString("location_id")].orEmpty(), listOf("${kitMembers.size} item types")) {
+            ExpandableRecordCard(row.optString("name", "Unnamed kit"), locationNames[row.optString("location_id")].orEmpty(), listOf("${kitMembers.size} item types"), imageUrl = row.optString("image_url")) {
                 DetailLine("Notes", row.optString("notes"))
                 kitMembers.forEach { member -> DetailLine(itemNames[member.optString("item_id")].orEmpty(), "Quantity ${member.optInt("quantity", 1)}") }
             }
@@ -581,9 +619,9 @@ private fun RecordListScreen(
 }
 
 @Composable
-private fun SectionHeading(eyebrow: String, title: String) {
+private fun SectionHeading(eyebrow: String, title: String, eyebrowColor: Color = Amber) {
     Column(Modifier.padding(top = 4.dp, bottom = 2.dp)) {
-        Text(eyebrow, color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+        Text(eyebrow, color = eyebrowColor, fontSize = 11.sp, fontWeight = FontWeight.Black)
         Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -621,6 +659,7 @@ private fun ExpandableRecordCard(
     chips: List<String>,
     actionLabel: String? = null,
     action: (() -> Unit)? = null,
+    imageUrl: String = "",
     details: @Composable ColumnScope.() -> Unit,
 ) {
     var expanded by remember(title, subtitle) { mutableStateOf(false) }
@@ -632,6 +671,15 @@ private fun ExpandableRecordCard(
     ) {
         Column(Modifier.padding(15.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (imageUrl.isNotBlank()) {
+                    CachedNetworkImage(
+                        imageUrl = imageUrl,
+                        contentDescription = title,
+                        modifier = Modifier.size(58.dp).clip(RoundedCornerShape(6.dp)).background(Ink),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Spacer(Modifier.width(11.dp))
+                }
                 Column(Modifier.weight(1f)) {
                     Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     if (subtitle.isNotBlank()) Text(subtitle, color = TextSoft, fontSize = 13.sp)
@@ -684,13 +732,144 @@ private fun BuddyActionCard(row: JSONObject) {
 }
 
 @Composable
-private fun CareSummary(specs: List<JSONObject>) {
-    val due = specs.filter { it.optString("key") == "next_service_due" && it.optString("value").isNotBlank() }
-    InfoCard {
-        Text(due.size.toString(), color = Amber, fontSize = 28.sp, fontWeight = FontWeight.Black)
-        Text("items with scheduled care", color = TextSoft)
-        due.sortedBy { it.optString("value") }.take(5).forEach { DetailLine(it.optString("value"), it.optString("item_id")) }
+private fun CareSummary(rows: List<MaintenanceRow>) {
+    val attention = rows.filter { it.status in setOf("overdue", "due", "soon") }
+    val counts = listOf(
+        "Past due" to rows.count { it.status == "overdue" },
+        "Due today" to rows.count { it.status == "due" },
+        "Upcoming" to rows.count { it.status == "soon" },
+    )
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            counts.forEach { (label, count) ->
+                Column(Modifier.weight(1f)) {
+                    Text(label.uppercase(), color = TextSoft, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                    Text(count.toString(), color = if (label == "Past due") Color(0xFFE55757) else Amber, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                }
+            }
+        }
+        if (attention.isEmpty()) {
+            Text("Nothing is past due, due today, or coming up inside the current care window.", color = TextSoft)
+        } else {
+            attention.take(8).forEach { row ->
+                ExpandableRecordCard(
+                    title = listOf(row.brand, row.name).filter(String::isNotBlank).joinToString(" "),
+                    subtitle = "${row.statusLabel} - ${row.careItem} - ${row.dueDate}",
+                    chips = listOf(row.statusLabel, row.careItem),
+                    imageUrl = row.imageUrl,
+                ) {
+                    DetailLine("Due", row.dueDate)
+                    DetailLine("Status", row.statusLabel)
+                    DetailLine("Care item", row.careItem)
+                    DetailLine("Location", row.location)
+                    DetailLine("Care status", row.careStatus)
+                    DetailLine("Notes", row.notes)
+                }
+            }
+        }
     }
+}
+
+internal data class MaintenanceRow(
+    val itemId: String,
+    val name: String,
+    val brand: String,
+    val imageUrl: String,
+    val dueDate: String,
+    val status: String,
+    val statusLabel: String,
+    val careItem: String,
+    val location: String,
+    val careStatus: String,
+    val notes: String,
+)
+
+internal fun maintenanceRows(
+    specs: List<JSONObject>,
+    items: List<JSONObject>,
+    brands: List<JSONObject>,
+    locations: List<JSONObject>,
+    today: LocalDate = LocalDate.now(),
+    windowDays: Long = 30,
+): List<MaintenanceRow> {
+    val specsByItem = specs.groupBy { it.optString("item_id") }.mapValues { (_, rows) ->
+        rows.associate { it.optString("key") to it.optString("value") }
+    }
+    val brandNames = brands.associate { it.optString("id") to it.optString("name") }
+    val locationNames = locations.associate { it.optString("id") to it.optString("name") }
+    return items.mapNotNull { item ->
+        val itemId = item.optString("id")
+        val values = specsByItem[itemId].orEmpty()
+        val explicitDue = parseLocalDate(values["next_service_due"])
+        val intervalDue = parseLocalDate(values["last_service_date"])?.let { last ->
+            values["service_interval_days"]?.toLongOrNull()?.takeIf { it >= 0 }?.let(last::plusDays)
+        }
+        val due = explicitDue ?: intervalDue ?: return@mapNotNull null
+        val days = ChronoUnit.DAYS.between(today, due)
+        val (status, label) = when {
+            days < 0 -> "overdue" to "Past due"
+            days == 0L -> "due" to "Due today"
+            days <= windowDays -> "soon" to "Upcoming"
+            else -> "scheduled" to "Scheduled"
+        }
+        val summary = listOf(
+            values["maintenance_schedule"], values["service_notes"], values["last_service_notes"],
+        ).filterNotNull().firstOrNull(String::isNotBlank).orEmpty()
+        MaintenanceRow(
+            itemId = itemId,
+            name = item.optString("display_name", "Unnamed item"),
+            brand = brandNames[item.optString("brand_id")].orEmpty(),
+            imageUrl = item.optString("image_url"),
+            dueDate = due.toString(),
+            status = status,
+            statusLabel = label,
+            careItem = values["consumables_tracked"].orEmpty().ifBlank { "Service" },
+            location = locationNames[item.optString("default_location_id")].orEmpty().ifBlank { "No location" },
+            careStatus = values["care_status"].orEmpty().humanize().ifBlank { "Not set" },
+            notes = values["bot_notes"].orEmpty().ifBlank { summary },
+        )
+    }.sortedWith(compareBy({ it.dueDate }, { it.name.lowercase() }))
+}
+
+private fun parseLocalDate(value: String?): LocalDate? = value?.trim()?.takeIf(String::isNotBlank)?.let { clean ->
+    runCatching { LocalDate.parse(clean) }.getOrNull()
+}
+
+@Composable
+private fun CachedNetworkImage(
+    imageUrl: String,
+    contentDescription: String,
+    modifier: Modifier,
+    contentScale: ContentScale,
+    scale: Float = 1f,
+    positionX: Int = 50,
+    positionY: Int = 50,
+) {
+    val context = LocalContext.current
+    val bitmap by produceState<Bitmap?>(initialValue = null, imageUrl) {
+        value = withContext(Dispatchers.IO) { loadCachedImage(context, imageUrl) }
+    }
+    Box(modifier, contentAlignment = Alignment.Center) {
+        val image = bitmap
+        if (image != null) {
+            Image(
+                bitmap = image.asImageBitmap(),
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale),
+                contentScale = contentScale,
+                alignment = BiasAlignment(
+                    horizontalBias = ((positionX.coerceIn(0, 100) - 50) / 50f),
+                    verticalBias = ((positionY.coerceIn(0, 100) - 50) / 50f),
+                ),
+            )
+        } else {
+            Text("SR", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+private fun loadCachedImage(context: Context, imageUrl: String): Bitmap? {
+    return cacheImageFile(context, imageUrl)?.let { BitmapFactory.decodeFile(it.absolutePath) }
 }
 
 @Composable
@@ -846,22 +1025,25 @@ private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () ->
         border = BorderStroke(1.dp, Color(0xFF343B4D)),
         shape = RoundedCornerShape(8.dp),
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(event.optString("event_type").uppercase(), color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Text(event.optString("title", "Untitled session"), color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-            Text(listOf(event.optString("event_date"), event.optString("start_time"), event.optString("location")).filter(String::isNotBlank).joinToString("  |  "), color = TextSoft)
-            if (readiness.total > 0) {
-                Text(
-                    if (readiness.ready == readiness.total) "Offline packet ready (${readiness.ready} attachments)" else "Offline packet: ${readiness.ready}/${readiness.total} attachments ready",
-                    color = if (readiness.ready == readiness.total) Color(0xFF63E6A4) else Cyan,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            if (event.optString("set_list_id").isNotBlank()) Text("Open Gig Mode", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-            if (edit != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = edit) { Text("Edit", color = Amber) }
+        Row(Modifier.fillMaxWidth().padding(12.dp)) {
+            Box(Modifier.width(4.dp).height(82.dp).background(Brush.verticalGradient(listOf(Amber, Cyan)), RoundedCornerShape(50)))
+            Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp)) {
+                Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString(" / "), color = TextSoft, fontSize = 13.sp)
+                Text(event.optString("title", "Untitled session"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(listOf(event.optString("event_type").humanize(), event.optString("location")).filter(String::isNotBlank).joinToString(" - "), color = TextSoft)
+                if (readiness.total > 0) {
+                    Text(
+                        if (readiness.ready == readiness.total) "Offline packet ready (${readiness.ready} attachments)" else "Offline packet: ${readiness.ready}/${readiness.total} attachments ready",
+                        color = if (readiness.ready == readiness.total) Color(0xFF63E6A4) else Cyan,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                if (event.optString("set_list_id").isNotBlank()) Text("Open Gig Mode", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                if (edit != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = edit) { Text("Edit", color = Amber) }
+                }
             }
         }
     }
