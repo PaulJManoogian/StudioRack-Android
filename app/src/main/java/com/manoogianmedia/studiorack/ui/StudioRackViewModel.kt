@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.UUID
@@ -68,10 +69,29 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
     val conflicts: StateFlow<List<SyncConflict>> = repository.conflicts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _uiState = MutableStateFlow(StudioRackUiState(repository.signedIn()))
+    private val initiallySignedIn = repository.signedIn()
+    private val _uiState = MutableStateFlow(StudioRackUiState(initiallySignedIn, starting = initiallySignedIn))
     val uiState: StateFlow<StudioRackUiState> = _uiState.asStateFlow()
     private val _reportState = MutableStateFlow(ReportUiState())
     val reportState: StateFlow<ReportUiState> = _reportState.asStateFlow()
+
+    init {
+        if (initiallySignedIn) {
+            viewModelScope.launch {
+                val startedAt = System.currentTimeMillis()
+                val result = runCatching { repository.sync() }
+                delay((800L - (System.currentTimeMillis() - startedAt)).coerceAtLeast(0L))
+                result
+                    .onSuccess { _uiState.value = _uiState.value.copy(starting = false, message = "Synced.") }
+                    .onFailure {
+                        _uiState.value = _uiState.value.copy(
+                            starting = false,
+                            message = "Offline: showing the last synchronized data.",
+                        )
+                    }
+            }
+        }
+    }
 
     fun signIn(email: String, accessCode: String, mfaCode: String) {
         _uiState.value = _uiState.value.copy(busy = true, message = "")
@@ -179,7 +199,12 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
     }
 }
 
-data class StudioRackUiState(val signedIn: Boolean, val busy: Boolean = false, val message: String = "")
+data class StudioRackUiState(
+    val signedIn: Boolean,
+    val busy: Boolean = false,
+    val message: String = "",
+    val starting: Boolean = false,
+)
 
 data class ReportUiState(
     val busy: Boolean = false,

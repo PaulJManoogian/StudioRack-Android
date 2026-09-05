@@ -43,9 +43,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -135,6 +132,7 @@ fun StudioRackApp(model: StudioRackViewModel, hardwareKeys: Flow<Int>, onGigMode
         Surface(Modifier.fillMaxSize(), color = Ink) {
             var selectedEvent by remember { mutableStateOf<String?>(null) }
             when {
+                uiState.starting -> StudioRackSplash()
                 !uiState.signedIn -> LoginScreen(model, uiState)
                 selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys, onGigModeActive) { selectedEvent = null }
                 else -> MainShell(model, uiState) { selectedEvent = it }
@@ -174,24 +172,27 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = Panel) {
-                AppSection.entries.forEach { destination ->
-                    NavigationBarItem(
-                        selected = section == destination,
-                        onClick = { section = destination },
-                        icon = {
-                            Surface(
-                                modifier = Modifier.width(if (section == destination) 24.dp else 8.dp).height(4.dp),
-                                color = if (section == destination) Amber else TextSoft.copy(alpha = 0.38f),
-                                shape = RoundedCornerShape(50),
-                            ) {}
-                        },
-                        label = { Text(destination.label, fontSize = 10.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Ink, selectedTextColor = Amber, indicatorColor = Amber.copy(alpha = 0.18f),
-                            unselectedIconColor = TextSoft, unselectedTextColor = TextSoft,
-                        ),
-                    )
+            BoxWithConstraints(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xF20A0D15))
+                    .navigationBarsPadding()
+                    .padding(horizontal = 10.dp, vertical = 10.dp),
+            ) {
+                val rows = if (maxWidth >= 600.dp) listOf(AppSection.entries.toList()) else AppSection.entries.toList().chunked(3)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rows.forEach { destinations ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            destinations.forEach { destination ->
+                                StudioNavPill(
+                                    destination = destination,
+                                    selected = section == destination,
+                                    onClick = { section = destination },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         },
@@ -205,6 +206,53 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
                 AppSection.LIBRARY -> LibraryScreen(model)
                 AppSection.MORE -> MoreScreen(model, uiState)
             }
+        }
+    }
+}
+
+@Composable
+private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.height(48.dp).clickable(onClick = onClick),
+        color = if (selected) Amber else PanelRaised,
+        contentColor = if (selected) Ink else Color.White,
+        border = BorderStroke(1.dp, if (selected) Amber else Color(0x33FFFFFF)),
+        shape = RoundedCornerShape(50),
+        shadowElevation = if (selected) 5.dp else 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(destination.label, fontSize = 14.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+@Composable
+private fun StudioRackSplash() {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Brush.radialGradient(listOf(Color(0xFF183246), Ink), radius = 1100f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Surface(
+                modifier = Modifier.size(112.dp),
+                color = Panel.copy(alpha = 0.92f),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, Amber.copy(alpha = 0.7f)),
+                shadowElevation = 12.dp,
+            ) {
+                Image(
+                    painterResource(R.drawable.studiorack_logo),
+                    "StudioRack",
+                    Modifier.padding(20.dp).fillMaxSize(),
+                )
+            }
+            Spacer(Modifier.height(22.dp))
+            Text("StudioRack", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+            Text("SYNCING YOUR STUDIO", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.height(22.dp))
+            CircularProgressIndicator(color = Cyan, strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
         }
     }
 }

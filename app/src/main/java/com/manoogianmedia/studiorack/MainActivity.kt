@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.manoogianmedia.studiorack.ui.StudioRackApp
 import com.manoogianmedia.studiorack.ui.StudioRackViewModel
@@ -15,6 +16,7 @@ class MainActivity : ComponentActivity() {
     private var gigModeActive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContent {
             val repository = (application as StudioRackApplication).repository

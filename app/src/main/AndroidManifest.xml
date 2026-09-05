@@ -10,7 +10,7 @@
         android:label="StudioRack"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.StudioRack">
+        android:theme="@style/Theme.StudioRack.Starting">
         <activity
             android:name=".MainActivity"
             android:exported="true"
