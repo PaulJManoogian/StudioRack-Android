@@ -18,6 +18,10 @@ Native offline-first Android client for StudioRack.
 - Per-event offline packet readiness on the sessions dashboard.
 - Native metronome with tempo, downbeat, mute, auto-start, and four sound profiles.
 - Configurable four-pedal Bluetooth keyboard control matching web Gig Mode settings.
+- Offline dashboard with studio totals, schedule, maintenance, and Studio Buddy activity.
+- Searchable equipment and kit browsing with synchronized details and membership.
+- Searchable song and set-list library.
+- Offline reports, Studio Buddy skills/history, reference data, and account details.
 
 ## Build
 

@@ -24,6 +24,7 @@ class StudioRackRepository(
 ) {
     fun signedIn() = tokenStore.isSignedIn()
     fun records(type: String): Flow<List<CachedRecord>> = dao.observeRecords(type)
+    fun supporting(type: String): Flow<List<SupportingRecord>> = dao.observeSupporting(type)
     fun cachedAttachments(): Flow<List<CachedAttachment>> = dao.observeCachedAttachments()
     fun syncState(): Flow<SyncState?> = dao.observeSyncState()
 
@@ -106,7 +107,8 @@ class StudioRackRepository(
             performanceSettingsJson = response.optJSONObject("performance_settings")?.toString() ?: "{}",
             lastSyncAt = System.currentTimeMillis(),
         )
-        val supporting = flattenSupporting(response.getJSONObject("supporting_entities"))
+        val supporting = flattenSupporting(response.getJSONObject("supporting_entities")) +
+            flattenSupporting(response.optJSONObject("reference_data") ?: JSONObject())
         if (response.optBoolean("full_snapshot")) {
             dao.replaceSnapshot(flattenEntities(response.getJSONObject("entities")), supporting, state)
             return

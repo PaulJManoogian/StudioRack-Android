@@ -7,6 +7,7 @@ import com.manoogianmedia.studiorack.data.CachedRecord
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.StudioRackRepository
 import com.manoogianmedia.studiorack.data.SyncState
+import com.manoogianmedia.studiorack.data.SupportingRecord
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,32 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
     val attachments: StateFlow<List<CachedRecord>> = repository.records("song_attachment")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val cachedAttachments: StateFlow<List<CachedAttachment>> = repository.cachedAttachments()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val items: StateFlow<List<SupportingRecord>> = repository.supporting("item")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val kits: StateFlow<List<SupportingRecord>> = repository.supporting("kit")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val itemSpecs: StateFlow<List<SupportingRecord>> = repository.supporting("item_spec")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val itemUnits: StateFlow<List<SupportingRecord>> = repository.supporting("item_unit")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val kitMembers: StateFlow<List<SupportingRecord>> = repository.supporting("kit_member")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val kitMemberUnits: StateFlow<List<SupportingRecord>> = repository.supporting("kit_member_unit")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val buddyActions: StateFlow<List<SupportingRecord>> = repository.supporting("studio_buddy_action")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val buddySkills: StateFlow<List<SupportingRecord>> = repository.supporting("studio_buddy_skill")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val reportRuns: StateFlow<List<SupportingRecord>> = repository.supporting("report_run")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val categories: StateFlow<List<SupportingRecord>> = repository.supporting("category")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val itemTypes: StateFlow<List<SupportingRecord>> = repository.supporting("item_type")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val locations: StateFlow<List<SupportingRecord>> = repository.supporting("location")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val statuses: StateFlow<List<SupportingRecord>> = repository.supporting("status_option")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val syncState: StateFlow<SyncState?> = repository.syncState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

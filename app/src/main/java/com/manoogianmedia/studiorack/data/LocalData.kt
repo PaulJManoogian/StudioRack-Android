@@ -79,6 +79,9 @@ interface StudioRackDao {
     @Query("SELECT * FROM supporting_records WHERE entityType=:type ORDER BY entityId")
     suspend fun supporting(type: String): List<SupportingRecord>
 
+    @Query("SELECT * FROM supporting_records WHERE entityType=:type ORDER BY entityId")
+    fun observeSupporting(type: String): Flow<List<SupportingRecord>>
+
     @Query("SELECT * FROM cached_attachments ORDER BY attachmentId")
     fun observeCachedAttachments(): Flow<List<CachedAttachment>>
 

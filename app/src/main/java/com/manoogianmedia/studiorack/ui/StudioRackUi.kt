@@ -8,9 +8,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,9 +20,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,8 +32,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -53,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.CachedRecord
+import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
@@ -81,7 +90,47 @@ fun StudioRackApp(model: StudioRackViewModel, hardwareKeys: Flow<Int>, onGigMode
             when {
                 !uiState.signedIn -> LoginScreen(model, uiState)
                 selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys, onGigModeActive) { selectedEvent = null }
-                else -> DashboardScreen(model, uiState) { selectedEvent = it }
+                else -> MainShell(model, uiState) { selectedEvent = it }
+            }
+        }
+    }
+}
+
+private enum class AppSection(val label: String, val mark: String) {
+    DASHBOARD("Dashboard", "HOME"),
+    EQUIPMENT("Equipment", "GEAR"),
+    KITS("Kits", "KITS"),
+    SESSIONS("Sessions", "LIVE"),
+    LIBRARY("Library", "MUSIC"),
+    MORE("More", "MORE"),
+}
+
+@Composable
+private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, openGig: (String) -> Unit) {
+    var section by remember { mutableStateOf(AppSection.DASHBOARD) }
+    Scaffold(
+        containerColor = Ink,
+        bottomBar = {
+            NavigationBar(containerColor = Panel) {
+                AppSection.entries.forEach { destination ->
+                    NavigationBarItem(
+                        selected = section == destination,
+                        onClick = { section = destination },
+                        icon = { Text(destination.mark, fontSize = 9.sp, fontWeight = FontWeight.Black) },
+                        label = { Text(destination.label, fontSize = 10.sp) },
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when (section) {
+                AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
+                AppSection.EQUIPMENT -> EquipmentScreen(model)
+                AppSection.KITS -> KitsScreen(model)
+                AppSection.SESSIONS -> SessionsScreen(model, openGig)
+                AppSection.LIBRARY -> LibraryScreen(model)
+                AppSection.MORE -> MoreScreen(model, uiState)
             }
         }
     }
@@ -111,31 +160,409 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
 @Composable
 private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiState, openGig: (String) -> Unit) {
     val events by model.events.collectAsState()
+    val items by model.items.collectAsState()
+    val kits by model.kits.collectAsState()
+    val specs by model.itemSpecs.collectAsState()
+    val actions by model.buddyActions.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
     val state by model.syncState.collectAsState()
     val account = runCatching { JSONObject(state?.accountJson ?: "{}") }.getOrDefault(JSONObject())
     val upcoming = events.map(::recordJson).filter { it.optString("event_status") != "ended" }.sortedBy { it.optString("event_date") + it.optString("start_time") }
+    val specRows = specs.map(::supportingJson)
+    val purchaseTotal = specRows.filter { it.optString("key") == "purchase_price" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
+    val tracked = specRows.count { it.optString("key") == "next_service_due" && it.optString("value").isNotBlank() }
+    val openBuddy = actions.map(::supportingJson).count { it.optString("status") !in setOf("handled", "cleared") }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Spacer(Modifier.height(18.dp))
-            Text(account.optString("studio_name", "StudioRack"), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-            Text(account.optString("location_name", "Offline performance workspace"), color = TextSoft)
+            Text("STUDIO OVERVIEW", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            Text(account.optString("studio_name").ifBlank { account.optString("organization", "StudioRack") }, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            Text(studioAddress(account), color = TextSoft)
+            Text("Recorded value: $${"%,.2f".format(purchaseTotal)}", color = Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(state?.lastSyncAt?.let { "Synced ${DateFormat.getDateTimeInstance().format(Date(it))}" } ?: "Not synchronized", color = TextSoft, fontSize = 12.sp)
                 Button(onClick = model::sync, enabled = !uiState.busy) { Text(if (uiState.busy) "Syncing" else "Sync now") }
             }
         }
-        item { Text("Upcoming Sessions", color = Amber, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricCard("Items", items.size.toString(), Modifier.weight(1f))
+                MetricCard("Kits", kits.size.toString(), Modifier.weight(1f))
+                MetricCard("Events", upcoming.size.toString(), Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricCard("Buddy", openBuddy.toString(), Modifier.weight(1f))
+                MetricCard("Care", tracked.toString(), Modifier.weight(1f))
+            }
+        }
+        item { SectionHeading("COMING UP NEXT", "Upcoming Sessions") }
         if (upcoming.isEmpty()) item { EmptyCard("No upcoming sessions are stored on this device.") }
-        items(upcoming, key = { it.getString("id") }) { event ->
+        items(upcoming.take(5), key = { it.getString("id") }) { event ->
             val readiness = eventPacketReadiness(event, entries, attachments, cachedAttachments)
             EventCard(event, readiness) { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) }
         }
+        item { SectionHeading("CARE READINESS", "What needs hands on it?") }
+        item { CareSummary(specRows) }
+        item { SectionHeading("STUDIO BUDDY", "Recent activity") }
+        if (actions.isEmpty()) item { EmptyCard("No Studio Buddy actions are stored on this device.") }
+        items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action)) }
         item { Spacer(Modifier.height(30.dp)) }
     }
 }
+
+@Composable
+private fun EquipmentScreen(model: StudioRackViewModel) {
+    val items by model.items.collectAsState()
+    val specs by model.itemSpecs.collectAsState()
+    val units by model.itemUnits.collectAsState()
+    val categories by model.categories.collectAsState()
+    val types by model.itemTypes.collectAsState()
+    val locations by model.locations.collectAsState()
+    var query by remember { mutableStateOf("") }
+    val categoryNames = categories.associate { it.entityId to supportingJson(it).optString("name") }
+    val typeNames = types.associate { it.entityId to supportingJson(it).optString("name") }
+    val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
+    val filtered = items.filter { supportingJson(it).let { row -> query.isBlank() || row.toString().contains(query, true) } }
+    RecordListScreen("EQUIPMENT", "Items", query, { query = it }, "Find an item") {
+        if (filtered.isEmpty()) item { EmptyCard("No equipment matches this search.") }
+        items(filtered, key = { it.entityId }) { record ->
+            val row = supportingJson(record)
+            val itemSpecs = specs.filter { supportingJson(it).optString("item_id") == record.entityId }.map(::supportingJson)
+            val itemUnits = units.filter { supportingJson(it).optString("item_id") == record.entityId }.map(::supportingJson)
+            ExpandableRecordCard(
+                title = row.optString("display_name", "Unnamed item"),
+                subtitle = listOf(categoryNames[row.optString("category_id")], typeNames[row.optString("type_id")]).filterNotNull().filter(String::isNotBlank).joinToString(" / "),
+                chips = listOf(row.optString("usage_status"), "Qty ${row.optInt("quantity", 1)}"),
+            ) {
+                DetailLine("Location", locationNames[row.optString("default_location_id")].orEmpty())
+                DetailLine("Notes", row.optString("notes"))
+                itemUnits.forEach { unit -> DetailLine(unit.optString("unit_label", "Unit"), listOf(unit.optString("serial_number"), unit.optString("status")).filter(String::isNotBlank).joinToString(" / ")) }
+                itemSpecs.sortedBy { it.optString("key") }.forEach { spec -> DetailLine(spec.optString("key").humanize(), spec.optString("value")) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KitsScreen(model: StudioRackViewModel) {
+    val kits by model.kits.collectAsState()
+    val items by model.items.collectAsState()
+    val members by model.kitMembers.collectAsState()
+    val locations by model.locations.collectAsState()
+    var query by remember { mutableStateOf("") }
+    val itemNames = items.associate { it.entityId to supportingJson(it).optString("display_name", "Item") }
+    val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
+    val filtered = kits.filter { query.isBlank() || supportingJson(it).toString().contains(query, true) }
+    RecordListScreen("EQUIPMENT", "Kits", query, { query = it }, "Find a kit") {
+        if (filtered.isEmpty()) item { EmptyCard("No kits match this search.") }
+        items(filtered, key = { it.entityId }) { record ->
+            val row = supportingJson(record)
+            val kitMembers = members.filter { supportingJson(it).optString("kit_id") == record.entityId }.map(::supportingJson)
+            ExpandableRecordCard(row.optString("name", "Unnamed kit"), locationNames[row.optString("location_id")].orEmpty(), listOf("${kitMembers.size} item types")) {
+                DetailLine("Notes", row.optString("notes"))
+                kitMembers.forEach { member -> DetailLine(itemNames[member.optString("item_id")].orEmpty(), "Quantity ${member.optInt("quantity", 1)}") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit) {
+    val events by model.events.collectAsState()
+    val entries by model.entries.collectAsState()
+    val attachments by model.attachments.collectAsState()
+    val cachedAttachments by model.cachedAttachments.collectAsState()
+    var query by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("All") }
+    val rows = events.map(::recordJson).filter {
+        (type == "All" || it.optString("event_type").humanize() == type) && (query.isBlank() || it.toString().contains(query, true))
+    }.sortedBy { it.optString("event_date") + it.optString("start_time") }
+    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { SectionHeading("SESSIONS", "Schedule") }
+        item { OutlinedTextField(query, { query = it }, label = { Text("Find scheduled work") }, modifier = Modifier.fillMaxWidth()) }
+        item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
+        if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
+        items(rows, key = { it.getString("id") }) { event ->
+            EventCard(event, eventPacketReadiness(event, entries, attachments, cachedAttachments)) {
+                if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id"))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryScreen(model: StudioRackViewModel) {
+    val songs by model.songs.collectAsState()
+    val setLists by model.setLists.collectAsState()
+    val sections by model.sections.collectAsState()
+    val entries by model.entries.collectAsState()
+    val attachments by model.attachments.collectAsState()
+    var tab by remember { mutableStateOf("Songs") }
+    var query by remember { mutableStateOf("") }
+    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { SectionHeading("LIBRARY", "Songs and Set Lists") }
+        item { ChoiceStrip(listOf("Songs", "Set Lists"), tab) { tab = it; query = "" } }
+        item { OutlinedTextField(query, { query = it }, label = { Text(if (tab == "Songs") "Find a song" else "Find a set list") }, modifier = Modifier.fillMaxWidth()) }
+        if (tab == "Songs") {
+            val filtered = songs.filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
+            items(filtered, key = { it.entityId }) { record ->
+                val song = recordJson(record)
+                val songAttachments = attachments.filter { recordJson(it).optString("song_id") == record.entityId }
+                ExpandableRecordCard(
+                    song.optString("title", "Untitled song"), song.optString("artist"),
+                    listOf(song.optString("style"), song.optString("tempo"), song.optString("time_signature"), if (song.optInt("is_favorite") == 1) "Favorite" else "").filter(String::isNotBlank),
+                ) {
+                    DetailLine("Starts", song.optString("starts_by"))
+                    DetailLine("Patch", listOf(song.optString("patch_name"), song.optString("patch_number")).filter(String::isNotBlank).joinToString(" / "))
+                    DetailLine("Notes", song.optString("notes"))
+                    if (song.optString("media_ref").isNotBlank()) DetailLine("Listen", song.optString("media_ref"))
+                    songAttachments.forEach { DetailLine("Attachment", attachmentLabel(recordJson(it))) }
+                }
+            }
+        } else {
+            val songNames = songs.associate { it.entityId to recordJson(it).optString("title", "Song") }
+            val filtered = setLists.filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
+            items(filtered, key = { it.entityId }) { record ->
+                val row = recordJson(record)
+                val setSections = sections.filter { recordJson(it).optString("set_list_id") == record.entityId }
+                val setEntries = entries.filter { recordJson(it).optString("set_list_id") == record.entityId }
+                ExpandableRecordCard(row.optString("name", "Unnamed set list"), row.optString("description"), listOf("${setSections.size} sets", "${setEntries.size} songs")) {
+                    setSections.sortedBy { recordJson(it).optInt("position") }.forEach { section ->
+                        val sectionJson = recordJson(section)
+                        Text(sectionJson.optString("name", "Set"), color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                        setEntries.filter { recordJson(it).optString("section_id") == section.entityId }.sortedBy { recordJson(it).optInt("position") }.forEach { entry ->
+                            val entryJson = recordJson(entry)
+                            DetailLine((entryJson.optInt("position") + 1).toString(), songNames[entryJson.optString("song_id")].orEmpty().ifBlank { entryJson.optString("manual_title") })
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
+    var tab by remember { mutableStateOf("Reports") }
+    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { SectionHeading("STUDIORACK", "More") }
+        item { ChoiceStrip(listOf("Reports", "Studio Buddy", "Reference", "Settings"), tab) { tab = it } }
+        when (tab) {
+            "Reports" -> reportsContent(model)
+            "Studio Buddy" -> buddyContent(model)
+            "Reference" -> referenceContent(model)
+            else -> settingsContent(model, uiState)
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.reportsContent(model: StudioRackViewModel) {
+    item {
+        val items by model.items.collectAsState()
+        val kits by model.kits.collectAsState()
+        val events by model.events.collectAsState()
+        val specs by model.itemSpecs.collectAsState()
+        val specRows = specs.map(::supportingJson)
+        val purchase = specRows.filter { it.optString("key") == "purchase_price" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
+        val replacement = specRows.filter { it.optString("key") == "replacement_value" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Offline Overview", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricCard("Items", items.size.toString(), Modifier.weight(1f)); MetricCard("Kits", kits.size.toString(), Modifier.weight(1f)); MetricCard("Events", events.size.toString(), Modifier.weight(1f))
+            }
+            ReportCard("Asset value", "Purchase $${"%,.2f".format(purchase)}", "Replacement $${"%,.2f".format(replacement)}")
+            val care = specRows.count { it.optString("key") == "next_service_due" && it.optString("value").isNotBlank() }
+            ReportCard("Maintenance", "$care tracked items", "Computed from the synchronized equipment records")
+        }
+    }
+    item {
+        val runs by model.reportRuns.collectAsState()
+        Text("Recent Reports", color = Amber, fontWeight = FontWeight.Bold)
+        if (runs.isEmpty()) Text("No saved reports are stored offline.", color = TextSoft)
+        runs.take(10).forEach { ReportCard(supportingJson(it).optString("title", "Report"), supportingJson(it).optString("question"), "${supportingJson(it).optInt("row_count")} rows") }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.buddyContent(model: StudioRackViewModel) {
+    item { Text("Available Skills", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+    item {
+        val skills by model.buddySkills.collectAsState()
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (skills.isEmpty()) Text("No skills are stored offline.", color = TextSoft)
+            skills.forEach { skill ->
+                val row = supportingJson(skill)
+                ExpandableRecordCard(row.optString("name", "Skill"), row.optString("description"), listOf(row.optString("trigger_type").humanize(), if (row.optInt("account_enabled") == 1) "Enabled" else "Disabled")) {
+                    DetailLine("Prompt", row.optString("prompt")); DetailLine("Teaching notes", row.optString("custom_instructions")); DetailLine("Last run", row.optString("account_last_run_utc"))
+                }
+            }
+        }
+    }
+    item { Text("Action History", color = Amber, fontWeight = FontWeight.Bold) }
+    item {
+        val actions by model.buddyActions.collectAsState()
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { actions.take(30).forEach { BuddyActionCard(supportingJson(it)) } }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(model: StudioRackViewModel) {
+    item {
+        val categories by model.categories.collectAsState(); val types by model.itemTypes.collectAsState(); val locations by model.locations.collectAsState(); val statuses by model.statuses.collectAsState()
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Reference Data", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            ReferenceGroup("Categories", categories); ReferenceGroup("Equipment Types", types); ReferenceGroup("Locations", locations); ReferenceGroup("Statuses", statuses)
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model: StudioRackViewModel, uiState: StudioRackUiState) {
+    item {
+        val state by model.syncState.collectAsState(); val account = runCatching { JSONObject(state?.accountJson ?: "{}") }.getOrDefault(JSONObject())
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Account and Device", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
+            Button(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize StudioRack") }
+            Text("Changes made on the web are copied here automatically when the device reconnects.", color = TextSoft, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun RecordListScreen(
+    eyebrow: String,
+    title: String,
+    query: String,
+    onQuery: (String) -> Unit,
+    placeholder: String,
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
+    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { SectionHeading(eyebrow, title) }
+        item { OutlinedTextField(query, onQuery, label = { Text(placeholder) }, modifier = Modifier.fillMaxWidth()) }
+        content()
+        item { Spacer(Modifier.height(20.dp)) }
+    }
+}
+
+@Composable
+private fun SectionHeading(eyebrow: String, title: String) {
+    Column(Modifier.padding(top = 4.dp, bottom = 2.dp)) {
+        Text(eyebrow, color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+        Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier, colors = CardDefaults.cardColors(containerColor = PanelRaised), shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Text(label.uppercase(), color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black)
+            Text(value, color = Amber, fontSize = 25.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+@Composable
+private fun ChoiceStrip(options: List<String>, selected: String, choose: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        options.forEach { option ->
+            Button(
+                onClick = { choose(option) },
+                colors = ButtonDefaults.buttonColors(containerColor = if (option == selected) Amber else PanelRaised, contentColor = if (option == selected) Ink else Color.White),
+            ) { Text(option) }
+        }
+    }
+}
+
+@Composable
+private fun ExpandableRecordCard(title: String, subtitle: String, chips: List<String>, details: @Composable ColumnScope.() -> Unit) {
+    var expanded by remember(title, subtitle) { mutableStateOf(false) }
+    Card(
+        Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        colors = CardDefaults.cardColors(containerColor = PanelRaised),
+        border = BorderStroke(1.dp, Color(0xFF343B4D)),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(Modifier.padding(15.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    if (subtitle.isNotBlank()) Text(subtitle, color = TextSoft, fontSize = 13.sp)
+                }
+                Text(if (expanded) "-" else "+", color = Amber, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                chips.filter(String::isNotBlank).forEach { chip ->
+                    Surface(color = Color(0xFF332A1D), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFF674B16))) {
+                        Text(chip, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+                    }
+                }
+            }
+            if (expanded) Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp), content = details)
+        }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    if (value.isBlank()) return
+    Column(Modifier.fillMaxWidth()) {
+        Text(label, color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+        Text(value, color = Color.White, fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun InfoCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = PanelRaised), shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+
+@Composable
+private fun ReportCard(title: String, primary: String, secondary: String) {
+    InfoCard {
+        Text(title, color = Amber, fontWeight = FontWeight.Bold)
+        if (primary.isNotBlank()) Text(primary, color = Color.White, fontSize = 18.sp)
+        if (secondary.isNotBlank()) Text(secondary, color = TextSoft, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun BuddyActionCard(row: JSONObject) {
+    ExpandableRecordCard(row.optString("subject", "Studio Buddy action"), row.optString("updated_utc"), listOf(row.optString("priority").humanize(), row.optString("status").humanize())) {
+        DetailLine("Recipient", row.optString("recipient")); DetailLine("Due", row.optString("source_due_date")); DetailLine("Draft", row.optString("body")); DetailLine("Last reply", row.optString("last_reply_body"))
+    }
+}
+
+@Composable
+private fun CareSummary(specs: List<JSONObject>) {
+    val due = specs.filter { it.optString("key") == "next_service_due" && it.optString("value").isNotBlank() }
+    InfoCard {
+        Text(due.size.toString(), color = Amber, fontSize = 28.sp, fontWeight = FontWeight.Black)
+        Text("items with scheduled care", color = TextSoft)
+        due.sortedBy { it.optString("value") }.take(5).forEach { DetailLine(it.optString("value"), it.optString("item_id")) }
+    }
+}
+
+@Composable
+private fun ReferenceGroup(title: String, rows: List<SupportingRecord>) {
+    ExpandableRecordCard(title, "${rows.size} available", emptyList()) {
+        rows.forEach { DetailLine(supportingJson(it).optString("name", it.entityId), supportingJson(it).optString("asset_code")) }
+    }
+}
+
+private fun supportingJson(record: SupportingRecord): JSONObject = runCatching { JSONObject(record.json) }.getOrDefault(JSONObject())
+
+private fun String.humanize(): String = replace('_', ' ').trim().split(' ').joinToString(" ") { word ->
+    word.lowercase().replaceFirstChar { it.uppercase() }
+}
+
+private fun studioAddress(account: JSONObject): String = listOf(
+    account.optString("location_name"), account.optString("address_line1"), account.optString("address_line2"),
+    listOf(account.optString("city"), account.optString("region"), account.optString("postal_code")).filter(String::isNotBlank).joinToString(" "),
+).filter(String::isNotBlank).joinToString(" | ").ifBlank { "Offline StudioRack workspace" }
 
 @Composable
 private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit) {
