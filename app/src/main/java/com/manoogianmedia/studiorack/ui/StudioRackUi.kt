@@ -3,7 +3,12 @@ package com.manoogianmedia.studiorack.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -63,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.Font
@@ -363,6 +369,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
 
 @Composable
 private fun LibraryScreen(model: StudioRackViewModel) {
+    val context = LocalContext.current
     val songs by model.songs.collectAsState()
     val setLists by model.setLists.collectAsState()
     val sections by model.sections.collectAsState()
@@ -392,11 +399,15 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 ExpandableRecordCard(
                     song.optString("title", "Untitled song"), song.optString("artist"),
                     listOf(song.optString("style"), song.optString("tempo"), song.optString("time_signature"), if (song.optInt("is_favorite") == 1) "Favorite" else "").filter(String::isNotBlank),
+                    actionLabel = if (normalizedMediaLink(song.optString("media_ref")) != null) "Listen" else null,
+                    action = normalizedMediaLink(song.optString("media_ref"))?.let { link -> { openMediaLink(context, link) } },
                 ) {
                     DetailLine("Starts", song.optString("starts_by"))
                     DetailLine("Patch", listOf(song.optString("patch_name"), song.optString("patch_number")).filter(String::isNotBlank).joinToString(" / "))
                     DetailLine("Notes", song.optString("notes"))
-                    if (song.optString("media_ref").isNotBlank()) DetailLine("Listen", song.optString("media_ref"))
+                    normalizedMediaLink(song.optString("media_ref"))?.let { link ->
+                        Row(Modifier.fillMaxWidth()) { GigPill("Listen", onClick = { openMediaLink(context, link) }) }
+                    }
                     songAttachments.forEach { DetailLine("Attachment", attachmentLabel(recordJson(it))) }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { editingSong = EditorTarget(record.entityId, song) }) { Text("Edit", color = Amber) }
@@ -997,7 +1008,9 @@ private fun GigModeScreen(
 
 @Composable
 private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, openAttachment: () -> Unit) {
+    val context = LocalContext.current
     val availableOffline = cached?.status == "ready" && cached.localPath != null
+    val mediaLink = normalizedMediaLink(song?.optString("media_ref").orEmpty())
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xE8202635)),
         shape = RoundedCornerShape(6.dp),
@@ -1018,9 +1031,13 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
             Text(song?.optString("artist").orEmpty(), color = TextSoft, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
             val patch = listOf(song?.optString("patch_name"), song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
             if (patch.isNotBlank()) Text("Patch: $patch", color = TextSoft, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
-            if (attachment != null) {
+            if (attachment != null || mediaLink != null) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-                    GigPill(if (availableOffline) attachmentLabel(attachment) else "${attachmentLabel(attachment)} unavailable")
+                    if (attachment != null) {
+                        GigPill(if (availableOffline) attachmentLabel(attachment) else "${attachmentLabel(attachment)} unavailable", onClick = openAttachment)
+                    }
+                    if (attachment != null && mediaLink != null) Spacer(Modifier.width(7.dp))
+                    mediaLink?.let { link -> GigPill("Listen", onClick = { openMediaLink(context, link) }) }
                 }
             }
         }
@@ -1050,6 +1067,8 @@ private fun PerformanceSongScreen(
     previous: () -> Unit,
     next: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val mediaLink = normalizedMediaLink(item.song?.optString("media_ref").orEmpty())
     val path = item.cache?.localPath.orEmpty()
     val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
     val pageCount = remember(path, isPdf) { if (isPdf) pdfPageCount(path) else 1 }
@@ -1075,7 +1094,10 @@ private fun PerformanceSongScreen(
                     GigCircleButton(">", next, position < total - 1)
                 }
             }
-            GigCircleButton(if (metronomeState.running) "||" else "♪", metronome::toggle)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                mediaLink?.let { link -> GigPill("Listen", onClick = { openMediaLink(context, link) }) }
+                GigCircleButton(if (metronomeState.running) "||" else "♪", metronome::toggle)
+            }
         }
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"), color = Color.White, fontFamily = FontFamily.Serif, fontSize = 34.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -1166,6 +1188,28 @@ private fun GigDetail(label: String, value: String) {
 
 private fun gigSongTitle(item: GigSong) = item.song?.optString("title")?.takeIf(String::isNotBlank) ?: item.entry.optString("manual_title", "Untitled")
 private fun gigSongCue(item: GigSong) = listOf(item.song?.optString("starts_by"), item.song?.optString("tempo"), item.song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
+
+internal fun normalizedMediaLink(value: String): String? {
+    val link = value.trim()
+    if (link.isBlank()) return null
+    val scheme = runCatching { java.net.URI(link).scheme?.lowercase() }.getOrNull()
+    return link.takeIf { scheme in setOf("http", "https", "spotify") }
+}
+
+private fun openMediaLink(context: Context, link: String) {
+    val intent = mediaIntent(link) ?: return
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "No application is available to open this media link.", Toast.LENGTH_LONG).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, "StudioRack could not open this media link.", Toast.LENGTH_LONG).show()
+    }
+}
+
+internal fun mediaIntent(link: String): Intent? = normalizedMediaLink(link)?.let { safeLink ->
+    Intent(Intent.ACTION_VIEW, Uri.parse(safeLink))
+}
 
 @Composable
 private fun SongDetailFallback(item: GigSong) {

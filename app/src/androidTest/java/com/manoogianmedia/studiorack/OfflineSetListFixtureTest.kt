@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withTimeout
 import com.manoogianmedia.studiorack.performance.NativeMetronome
+import com.manoogianmedia.studiorack.ui.mediaIntent
+import android.content.Intent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,6 +22,17 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class OfflineSetListFixtureTest {
+    @Test
+    fun createsExternalViewIntentsForSongMedia() {
+        val youtube = mediaIntent("https://www.youtube.com/watch?v=example")
+        val spotify = mediaIntent("https://open.spotify.com/track/example")
+
+        assertEquals(Intent.ACTION_VIEW, youtube?.action)
+        assertEquals("https://www.youtube.com/watch?v=example", youtube?.dataString)
+        assertEquals(Intent.ACTION_VIEW, spotify?.action)
+        assertEquals("https://open.spotify.com/track/example", spotify?.dataString)
+    }
+
     @Test
     fun seedsAnEditableOfflinePerformanceFixture() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
