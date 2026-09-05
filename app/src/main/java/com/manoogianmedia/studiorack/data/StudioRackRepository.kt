@@ -11,6 +11,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -26,6 +28,8 @@ class StudioRackRepository(
     private val tokenStore: TokenStore,
     private val client: SyncClient,
 ) {
+    private val _syncHealth = MutableStateFlow(RepositorySyncHealth())
+
     fun signedIn() = tokenStore.isSignedIn()
     fun records(type: String): Flow<List<CachedRecord>> = dao.observeRecords(type)
     fun supporting(type: String): Flow<List<SupportingRecord>> = dao.observeSupporting(type)
@@ -33,6 +37,7 @@ class StudioRackRepository(
     fun syncState(): Flow<SyncState?> = dao.observeSyncState()
     fun pendingCount(): Flow<Int> = dao.observePendingCount()
     fun conflicts(): Flow<List<SyncConflict>> = dao.observeConflicts()
+    fun syncHealth(): StateFlow<RepositorySyncHealth> = _syncHealth
 
     suspend fun reportOverview(): JSONObject = client.reportOverview()
 
@@ -220,16 +225,23 @@ class StudioRackRepository(
     }
 
     suspend fun sync() {
-        pushPendingAttachments()
-        pushPending()
-        var cursor = dao.syncState()?.cursor ?: 0
-        do {
-            val response = client.pull(cursor)
-            applyPull(response)
-            cursor = response.getLong("cursor")
-        } while (response.optBoolean("has_more", false))
-        refreshAttachmentCache()
-        refreshImageCache()
+        _syncHealth.value = _syncHealth.value.copy(running = true, error = null)
+        try {
+            pushPendingAttachments()
+            pushPending()
+            var cursor = dao.syncState()?.cursor ?: 0
+            do {
+                val response = client.pull(cursor)
+                applyPull(response)
+                cursor = response.getLong("cursor")
+            } while (response.optBoolean("has_more", false))
+            refreshAttachmentCache()
+            refreshImageCache()
+            _syncHealth.value = RepositorySyncHealth(running = false, lastSuccessAt = System.currentTimeMillis())
+        } catch (error: Exception) {
+            _syncHealth.value = _syncHealth.value.copy(running = false, error = error.message ?: "Synchronization failed.")
+            throw error
+        }
     }
 
     fun syncNow() {
@@ -486,6 +498,12 @@ data class SongAttachmentInput(
     val displayName: String,
     val attachmentType: String,
     val mimeType: String,
+)
+
+data class RepositorySyncHealth(
+    val running: Boolean = false,
+    val error: String? = null,
+    val lastSuccessAt: Long? = null,
 )
 
 private fun sha256(file: File): String {

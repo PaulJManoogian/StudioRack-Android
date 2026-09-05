@@ -31,4 +31,18 @@ class DashboardCareTest {
         assertEquals("Main Studio", row.location)
         assertEquals("Check the batter head.", row.notes)
     }
+
+    @Test
+    fun fieldMaintenanceNotesAppearWithoutAServiceSchedule() {
+        val item = JSONObject("""{"id":"itm_000003","display_name":"16 Med-Thin Crash","brand_id":"brand_zildjian"}""")
+        val brand = JSONObject("""{"id":"brand_zildjian","name":"Zildjian"}""")
+        val fieldNote = JSONObject("""{"id":"note_clean","item_id":"itm_000003","status":"pending","note":"Remind me this needs to be cleaned."}""")
+
+        val row = maintenanceRows(emptyList(), listOf(item), listOf(brand), emptyList(), fieldNotes = listOf(fieldNote)).single()
+
+        assertEquals("attention", row.status)
+        assertEquals("Needs attention", row.statusLabel)
+        assertEquals("Field note", row.careItem)
+        assertEquals("Remind me this needs to be cleaned.", row.notes)
+    }
 }

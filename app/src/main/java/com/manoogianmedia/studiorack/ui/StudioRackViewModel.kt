@@ -10,6 +10,7 @@ import com.manoogianmedia.studiorack.data.SongAttachmentInput
 import com.manoogianmedia.studiorack.data.SyncState
 import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SyncConflict
+import com.manoogianmedia.studiorack.data.RepositorySyncHealth
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -71,6 +72,7 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val conflicts: StateFlow<List<SyncConflict>> = repository.conflicts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val syncHealth: StateFlow<RepositorySyncHealth> = repository.syncHealth()
 
     private val initiallySignedIn = repository.signedIn()
     private val _uiState = MutableStateFlow(StudioRackUiState(initiallySignedIn, starting = initiallySignedIn))
@@ -85,11 +87,12 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
                 val result = runCatching { repository.sync() }
                 delay((800L - (System.currentTimeMillis() - startedAt)).coerceAtLeast(0L))
                 result
-                    .onSuccess { _uiState.value = _uiState.value.copy(starting = false, message = "Synced.") }
+                    .onSuccess { _uiState.value = _uiState.value.copy(starting = false, message = "Synced.", syncError = false) }
                     .onFailure {
                         _uiState.value = _uiState.value.copy(
                             starting = false,
                             message = "Offline: showing the last synchronized data.",
+                            syncError = true,
                         )
                     }
             }
@@ -100,17 +103,17 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         _uiState.value = _uiState.value.copy(busy = true, message = "")
         viewModelScope.launch {
             runCatching { repository.signIn(email, accessCode, mfaCode) }
-                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "StudioRack is ready offline.") }
+                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "StudioRack is ready offline.", syncError = false) }
                 .onFailure { _uiState.value = StudioRackUiState(signedIn = false, message = it.message ?: "Sign-in failed.") }
         }
     }
 
     fun sync() {
-        _uiState.value = _uiState.value.copy(busy = true)
+        _uiState.value = _uiState.value.copy(busy = true, syncError = false)
         viewModelScope.launch {
             runCatching { repository.sync() }
-                .onSuccess { _uiState.value = _uiState.value.copy(busy = false, message = "Synced.") }
-                .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = "Offline: showing the last synchronized data.") }
+                .onSuccess { _uiState.value = _uiState.value.copy(busy = false, message = "Synced.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = it.message ?: "Synchronization failed.", syncError = true) }
         }
     }
 
@@ -227,6 +230,7 @@ data class StudioRackUiState(
     val busy: Boolean = false,
     val message: String = "",
     val starting: Boolean = false,
+    val syncError: Boolean = false,
 )
 
 data class ReportUiState(

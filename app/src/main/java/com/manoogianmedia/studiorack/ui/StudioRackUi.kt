@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Network
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
@@ -164,6 +165,9 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
     var section by remember { mutableStateOf(AppSection.DASHBOARD) }
     val pending by model.pendingCount.collectAsState()
     val conflicts by model.conflicts.collectAsState()
+    val syncHealth by model.syncHealth.collectAsState()
+    val online = rememberNetworkConnected()
+    val connection = connectionBanner(online, uiState.busy || syncHealth.running, uiState.syncError || syncHealth.error != null, pending)
     Scaffold(
         containerColor = Ink,
         topBar = {
@@ -172,7 +176,7 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
                     Image(painterResource(R.drawable.studiorack_logo), "StudioRack", Modifier.size(38.dp))
                     Column(Modifier.weight(1f).padding(start = 8.dp)) {
                         Text("StudioRack", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                        Text(if (pending == 0) "OFFLINE READY" else "$pending CHANGE${if (pending == 1) "" else "S"} QUEUED", color = if (pending == 0) Cyan else Amber, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        Text(connection.label, color = when (connection.kind) { ConnectionKind.ONLINE -> Color(0xFF63E6A4); ConnectionKind.OFFLINE -> Cyan; ConnectionKind.WARNING -> Amber; ConnectionKind.ERROR -> Color(0xFFFF6B6B) }, fontSize = 9.sp, fontWeight = FontWeight.Black)
                     }
                     if (conflicts.isNotEmpty()) Surface(color = Color(0xFF8B2F3A), shape = RoundedCornerShape(8.dp)) {
                         Text("${conflicts.size} CONFLICT${if (conflicts.size == 1) "" else "S"}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
@@ -299,6 +303,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val locations by model.locations.collectAsState()
     val specs by model.itemSpecs.collectAsState()
     val actions by model.buddyActions.collectAsState()
+    val maintenanceNotes by model.maintenanceNotes.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
@@ -307,7 +312,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val upcoming = events.map(::recordJson).filter { it.optString("event_status") != "ended" }.sortedBy { it.optString("event_date") + it.optString("start_time") }
     val specRows = specs.map(::supportingJson)
     val purchaseTotal = specRows.filter { it.optString("key") == "purchase_price" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
-    val careRows = maintenanceRows(specRows, items.map(::supportingJson), brands.map(::supportingJson), locations.map(::supportingJson))
+    val careRows = maintenanceRows(specRows, items.map(::supportingJson), brands.map(::supportingJson), locations.map(::supportingJson), fieldNotes = maintenanceNotes.map(::recordJson))
     val tracked = careRows.size
     val openBuddy = actions.map(::supportingJson).count { it.optString("status") !in setOf("handled", "cleared") }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -643,7 +648,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.reportsContent(model:
 
 @Composable
 private fun ReportsPanel(model: StudioRackViewModel) {
-    val context = LocalContext.current
     val items by model.items.collectAsState()
     val kits by model.kits.collectAsState()
     val events by model.events.collectAsState()
@@ -655,11 +659,12 @@ private fun ReportsPanel(model: StudioRackViewModel) {
     val locations by model.locations.collectAsState()
     val statuses by model.statuses.collectAsState()
     val runs by model.reportRuns.collectAsState()
+    val maintenanceNotes by model.maintenanceNotes.collectAsState()
     val reportState by model.reportState.collectAsState()
-    val online = deviceHasInternet(context)
+    val online = rememberNetworkConnected()
     val itemRows = items.map(::supportingJson)
     val specRows = specs.map(::supportingJson)
-    val careRows = maintenanceRows(specRows, itemRows, brands.map(::supportingJson), locations.map(::supportingJson), windowDays = 36500)
+    val careRows = maintenanceRows(specRows, itemRows, brands.map(::supportingJson), locations.map(::supportingJson), windowDays = 36500, fieldNotes = maintenanceNotes.map(::recordJson))
     var tab by remember { mutableStateOf("Overview") }
     var question by remember { mutableStateOf("") }
 
@@ -1071,8 +1076,9 @@ private fun BuddyActionCard(row: JSONObject) {
 
 @Composable
 private fun CareSummary(rows: List<MaintenanceRow>) {
-    val attention = rows.filter { it.status in setOf("overdue", "due", "soon") }
+    val attention = rows.filter { it.status in setOf("attention", "overdue", "due", "soon") }
     val counts = listOf(
+        "Attention" to rows.count { it.status == "attention" },
         "Past due" to rows.count { it.status == "overdue" },
         "Due today" to rows.count { it.status == "due" },
         "Upcoming" to rows.count { it.status == "soon" },
@@ -1129,12 +1135,16 @@ internal fun maintenanceRows(
     locations: List<JSONObject>,
     today: LocalDate = LocalDate.now(),
     windowDays: Long = 30,
+    fieldNotes: List<JSONObject> = emptyList(),
 ): List<MaintenanceRow> {
     val specsByItem = specs.groupBy { it.optString("item_id") }.mapValues { (_, rows) ->
         rows.associate { it.optString("key") to it.optString("value") }
     }
     val brandNames = brands.associate { it.optString("id") to it.optString("name") }
     val locationNames = locations.associate { it.optString("id") to it.optString("name") }
+    val fieldNotesByItem = fieldNotes
+        .filter { it.optString("status", "pending") in setOf("pending", "notified") }
+        .groupBy { it.optString("item_id") }
     return items.mapNotNull { item ->
         val itemId = item.optString("id")
         val values = specsByItem[itemId].orEmpty()
@@ -1142,9 +1152,11 @@ internal fun maintenanceRows(
         val intervalDue = parseLocalDate(values["last_service_date"])?.let { last ->
             values["service_interval_days"]?.toLongOrNull()?.takeIf { it >= 0 }?.let(last::plusDays)
         }
-        val due = explicitDue ?: intervalDue ?: return@mapNotNull null
+        val itemFieldNotes = fieldNotesByItem[itemId].orEmpty()
+        val due = explicitDue ?: intervalDue ?: if (itemFieldNotes.isNotEmpty()) today else return@mapNotNull null
         val days = ChronoUnit.DAYS.between(today, due)
         val (status, label) = when {
+            itemFieldNotes.isNotEmpty() -> "attention" to "Needs attention"
             days < 0 -> "overdue" to "Past due"
             days == 0L -> "due" to "Due today"
             days <= windowDays -> "soon" to "Upcoming"
@@ -1161,10 +1173,10 @@ internal fun maintenanceRows(
             dueDate = due.toString(),
             status = status,
             statusLabel = label,
-            careItem = values["consumables_tracked"].orEmpty().ifBlank { "Service" },
+            careItem = if (itemFieldNotes.isNotEmpty()) "Field note" else values["consumables_tracked"].orEmpty().ifBlank { "Service" },
             location = locationNames[item.optString("default_location_id")].orEmpty().ifBlank { "No location" },
-            careStatus = values["care_status"].orEmpty().humanize().ifBlank { "Not set" },
-            notes = values["bot_notes"].orEmpty().ifBlank { summary },
+            careStatus = if (itemFieldNotes.isNotEmpty()) "Attention" else values["care_status"].orEmpty().humanize().ifBlank { "Not set" },
+            notes = (itemFieldNotes.joinToString("\n") { it.optString("note") }).ifBlank { values["bot_notes"].orEmpty().ifBlank { summary } },
         )
     }.sortedWith(compareBy({ it.dueDate }, { it.name.lowercase() }))
 }
@@ -1224,6 +1236,39 @@ private fun deviceHasInternet(context: Context): Boolean {
     val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
     return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
         capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
+
+private enum class ConnectionKind { ONLINE, OFFLINE, WARNING, ERROR }
+private data class ConnectionBanner(val label: String, val kind: ConnectionKind)
+
+private fun connectionBanner(online: Boolean, syncing: Boolean, syncError: Boolean, pending: Int): ConnectionBanner = when {
+    syncing && online -> ConnectionBanner("ONLINE - SYNCING", ConnectionKind.ONLINE)
+    syncing -> ConnectionBanner("OFFLINE - SYNC PAUSED", ConnectionKind.WARNING)
+    online && syncError -> ConnectionBanner("ONLINE - SYNC ERROR", ConnectionKind.ERROR)
+    online && pending > 0 -> ConnectionBanner("ONLINE - $pending CHANGE${if (pending == 1) "" else "S"} QUEUED", ConnectionKind.WARNING)
+    online -> ConnectionBanner("ONLINE - SYNCED", ConnectionKind.ONLINE)
+    pending > 0 -> ConnectionBanner("OFFLINE - $pending CHANGE${if (pending == 1) "" else "S"} QUEUED", ConnectionKind.WARNING)
+    else -> ConnectionBanner("OFFLINE - SYNCED", ConnectionKind.OFFLINE)
+}
+
+@Composable
+private fun rememberNetworkConnected(): Boolean {
+    val context = LocalContext.current
+    val manager = remember(context) { context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
+    var connected by remember { mutableStateOf(deviceHasInternet(context)) }
+    DisposableEffect(manager) {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { connected = deviceHasInternet(context) }
+            override fun onLost(network: Network) { connected = deviceHasInternet(context) }
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                connected = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            }
+        }
+        manager.registerDefaultNetworkCallback(callback)
+        onDispose { runCatching { manager.unregisterNetworkCallback(callback) } }
+    }
+    return connected
 }
 
 private fun JSONArray?.jsonObjects(): List<JSONObject> = buildList {
