@@ -108,7 +108,7 @@ class StudioRackRepository(
             lastSyncAt = System.currentTimeMillis(),
         )
         val supporting = flattenSupporting(response.getJSONObject("supporting_entities")) +
-            flattenSupporting(response.optJSONObject("reference_data") ?: JSONObject())
+            flattenReferenceData(response.optJSONObject("reference_data") ?: JSONObject())
         if (response.optBoolean("full_snapshot")) {
             dao.replaceSnapshot(flattenEntities(response.getJSONObject("entities")), supporting, state)
             return
@@ -211,6 +211,16 @@ class StudioRackRepository(
             for (index in 0 until rows.length()) {
                 val row = rows.getJSONObject(index)
                 add(SupportingRecord(type, row.getString("id"), row.getJSONObject("data").toString()))
+            }
+        }
+    }
+
+    private fun flattenReferenceData(groups: JSONObject): List<SupportingRecord> = buildList {
+        groups.keys().forEach { type ->
+            val rows = groups.getJSONArray(type)
+            for (index in 0 until rows.length()) {
+                val row = rows.getJSONObject(index)
+                add(SupportingRecord(type, row.get("id").toString(), row.toString()))
             }
         }
     }
