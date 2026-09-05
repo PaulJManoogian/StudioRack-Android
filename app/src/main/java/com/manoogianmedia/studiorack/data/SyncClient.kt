@@ -35,6 +35,11 @@ class SyncClient(
 
     suspend fun revoke() = request("/auth/revoke", "POST", JSONObject())
 
+    suspend fun reportOverview(): JSONObject = request("/reports/overview")
+
+    suspend fun runAiReport(question: String): JSONObject =
+        request("/reports/ai", "POST", JSONObject().put("question", question))
+
     suspend fun downloadAttachment(path: String, destination: File): AttachmentDownload = withContext(Dispatchers.IO) {
         val url = URL(resolveDownloadUrl(baseUrl, path))
         val connection = url.openConnection() as HttpURLConnection

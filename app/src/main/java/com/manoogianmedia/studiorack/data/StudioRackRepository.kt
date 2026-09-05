@@ -33,6 +33,10 @@ class StudioRackRepository(
     fun pendingCount(): Flow<Int> = dao.observePendingCount()
     fun conflicts(): Flow<List<SyncConflict>> = dao.observeConflicts()
 
+    suspend fun reportOverview(): JSONObject = client.reportOverview()
+
+    suspend fun runAiReport(question: String): JSONObject = client.runAiReport(question)
+
     suspend fun saveSetList(
         setListId: String,
         setList: JSONObject,

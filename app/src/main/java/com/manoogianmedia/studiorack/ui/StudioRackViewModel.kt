@@ -70,6 +70,8 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
 
     private val _uiState = MutableStateFlow(StudioRackUiState(repository.signedIn()))
     val uiState: StateFlow<StudioRackUiState> = _uiState.asStateFlow()
+    private val _reportState = MutableStateFlow(ReportUiState())
+    val reportState: StateFlow<ReportUiState> = _reportState.asStateFlow()
 
     fun signIn(email: String, accessCode: String, mfaCode: String) {
         _uiState.value = _uiState.value.copy(busy = true, message = "")
@@ -139,6 +141,27 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         viewModelScope.launch { repository.resolveConflict(conflict, keepLocal) }
     }
 
+    fun refreshReportOverview() {
+        _reportState.value = _reportState.value.copy(busy = true, message = "")
+        viewModelScope.launch {
+            runCatching { repository.reportOverview() }
+                .onSuccess { _reportState.value = _reportState.value.copy(busy = false, onlineOverview = it, message = "Server report refreshed.") }
+                .onFailure { _reportState.value = _reportState.value.copy(busy = false, message = it.message ?: "Server reporting is unavailable while offline.") }
+        }
+    }
+
+    fun runAiReport(question: String) {
+        _reportState.value = _reportState.value.copy(busy = true, message = "")
+        viewModelScope.launch {
+            runCatching { repository.runAiReport(question.trim()) }
+                .onSuccess { result ->
+                    _reportState.value = _reportState.value.copy(busy = false, aiResult = result, message = "Report complete.")
+                    runCatching { repository.sync() }
+                }
+                .onFailure { _reportState.value = _reportState.value.copy(busy = false, message = it.message ?: "AI reporting is unavailable while offline.") }
+        }
+    }
+
     private fun saveRecord(type: String, id: String, data: JSONObject, done: () -> Unit) {
         viewModelScope.launch {
             runCatching { repository.save(type, id, data) }
@@ -157,6 +180,13 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
 }
 
 data class StudioRackUiState(val signedIn: Boolean, val busy: Boolean = false, val message: String = "")
+
+data class ReportUiState(
+    val busy: Boolean = false,
+    val message: String = "",
+    val onlineOverview: JSONObject? = null,
+    val aiResult: JSONObject? = null,
+)
 
 data class SetListDraft(
     val id: String,

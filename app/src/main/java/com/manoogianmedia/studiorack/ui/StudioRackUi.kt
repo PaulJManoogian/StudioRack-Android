@@ -6,6 +6,8 @@ import android.graphics.pdf.PdfRenderer
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.widget.Toast
@@ -94,6 +96,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.text.DateFormat
 import java.time.LocalDate
@@ -532,29 +535,256 @@ private fun androidx.compose.foundation.lazy.LazyListScope.syncContent(model: St
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.reportsContent(model: StudioRackViewModel) {
-    item {
-        val items by model.items.collectAsState()
-        val kits by model.kits.collectAsState()
-        val events by model.events.collectAsState()
-        val specs by model.itemSpecs.collectAsState()
-        val specRows = specs.map(::supportingJson)
-        val purchase = specRows.filter { it.optString("key") == "purchase_price" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
-        val replacement = specRows.filter { it.optString("key") == "replacement_value" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Offline Overview", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetricCard("Items", items.size.toString(), Modifier.weight(1f)); MetricCard("Kits", kits.size.toString(), Modifier.weight(1f)); MetricCard("Events", events.size.toString(), Modifier.weight(1f))
-            }
-            ReportCard("Asset value", "Purchase $${"%,.2f".format(purchase)}", "Replacement $${"%,.2f".format(replacement)}")
-            val care = specRows.count { it.optString("key") == "next_service_due" && it.optString("value").isNotBlank() }
-            ReportCard("Maintenance", "$care tracked items", "Computed from the synchronized equipment records")
+    item { ReportsPanel(model) }
+}
+
+@Composable
+private fun ReportsPanel(model: StudioRackViewModel) {
+    val context = LocalContext.current
+    val items by model.items.collectAsState()
+    val kits by model.kits.collectAsState()
+    val events by model.events.collectAsState()
+    val specs by model.itemSpecs.collectAsState()
+    val units by model.itemUnits.collectAsState()
+    val brands by model.brands.collectAsState()
+    val categories by model.categories.collectAsState()
+    val types by model.itemTypes.collectAsState()
+    val locations by model.locations.collectAsState()
+    val statuses by model.statuses.collectAsState()
+    val runs by model.reportRuns.collectAsState()
+    val reportState by model.reportState.collectAsState()
+    val online = deviceHasInternet(context)
+    val itemRows = items.map(::supportingJson)
+    val specRows = specs.map(::supportingJson)
+    val careRows = maintenanceRows(specRows, itemRows, brands.map(::supportingJson), locations.map(::supportingJson), windowDays = 36500)
+    var tab by remember { mutableStateOf("Overview") }
+    var question by remember { mutableStateOf("") }
+
+    LaunchedEffect(online) {
+        if (online && reportState.onlineOverview == null && !reportState.busy) model.refreshReportOverview()
+    }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Reports", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Surface(
+            color = if (online) Cyan.copy(alpha = 0.10f) else Amber.copy(alpha = 0.12f),
+            border = BorderStroke(1.dp, if (online) Cyan.copy(alpha = 0.35f) else Amber.copy(alpha = 0.45f)),
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Text(
+                if (online) "ONLINE - Server and AI reports are available." else "OFFLINE MODE - Synchronized reports remain available; server and AI report runs require a connection.",
+                color = if (online) Cyan else Amber,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.padding(11.dp),
+            )
+        }
+        ChoiceStrip(listOf("Overview", "Equipment", "Maintenance", "Schedule", "AI"), tab) { tab = it }
+        when (tab) {
+            "Overview" -> ReportOverviewTab(itemRows, kits, events.map(::recordJson), units, specRows, categories, statuses, locations, careRows, reportState, online, model)
+            "Equipment" -> EquipmentReportTab(itemRows, specRows, categories, types, statuses, locations)
+            "Maintenance" -> MaintenanceReport(careRows)
+            "Schedule" -> ScheduleReportTab(events.map(::recordJson))
+            else -> AiReportTab(question, { question = it }, online, reportState, model, runs)
         }
     }
-    item {
-        val runs by model.reportRuns.collectAsState()
-        Text("Recent Reports", color = Amber, fontWeight = FontWeight.Bold)
-        if (runs.isEmpty()) Text("No saved reports are stored offline.", color = TextSoft)
-        runs.take(10).forEach { ReportCard(supportingJson(it).optString("title", "Report"), supportingJson(it).optString("question"), "${supportingJson(it).optInt("row_count")} rows") }
+}
+
+@Composable
+private fun ReportOverviewTab(
+    items: List<JSONObject>,
+    kits: List<SupportingRecord>,
+    events: List<JSONObject>,
+    units: List<SupportingRecord>,
+    specs: List<JSONObject>,
+    categories: List<SupportingRecord>,
+    statuses: List<SupportingRecord>,
+    locations: List<SupportingRecord>,
+    careRows: List<MaintenanceRow>,
+    reportState: ReportUiState,
+    online: Boolean,
+    model: StudioRackViewModel,
+) {
+    val valuesByItem = specs.groupBy { it.optString("item_id") }.mapValues { entry -> entry.value.associate { it.optString("key") to it.optString("value") } }
+    val purchase = valuesByItem.values.sumOf { it["purchase_price"]?.toDoubleOrNull() ?: 0.0 }
+    val replacement = valuesByItem.values.sumOf { it["replacement_value"]?.toDoubleOrNull() ?: 0.0 }
+    val estimated = valuesByItem.values.sumOf(::estimatedItemValue)
+    val serverTotals = reportState.onlineOverview?.optJSONObject("totals")
+    val serverValues = reportState.onlineOverview?.optJSONObject("values")
+    val itemCount = serverTotals?.optInt("items", items.size) ?: items.size
+    val unitCount = serverTotals?.optInt("units", units.size) ?: units.size
+    val kitCount = serverTotals?.optInt("kits", kits.size) ?: kits.size
+    val eventCount = serverTotals?.optInt("events", events.size) ?: events.size
+    val careCount = serverTotals?.optInt("maintenance_tracked", careRows.size) ?: careRows.size
+    val purchaseValue = serverValues?.optDouble("purchase", purchase) ?: purchase
+    val replacementValue = serverValues?.optDouble("replacement", replacement) ?: replacement
+    val estimatedValue = serverValues?.optDouble("estimated", estimated) ?: estimated
+    val categoryNames = categories.associate { it.entityId to supportingJson(it).optString("name") }
+    val statusNames = statuses.associate { it.entityId to supportingJson(it).optString("name") }
+    val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
+    val categoryCounts = items.groupingBy { categoryNames[it.optString("category_id")].orEmpty().ifBlank { "Unassigned" } }.eachCount()
+    val statusCounts = items.groupingBy { statusNames[it.optString("usage_status")].orEmpty().ifBlank { it.optString("usage_status", "Unspecified").humanize() } }.eachCount()
+    val locationCounts = items.groupingBy { locationNames[it.optString("default_location_id")].orEmpty().ifBlank { "No location" } }.eachCount()
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Full Overview", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            MetricCard("Items", itemCount.toString(), Modifier.weight(1f))
+            MetricCard("Units", unitCount.toString(), Modifier.weight(1f))
+            MetricCard("Kits", kitCount.toString(), Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            MetricCard("Events", eventCount.toString(), Modifier.weight(1f))
+            MetricCard("Care", careCount.toString(), Modifier.weight(1f))
+        }
+        ReportCard("Asset values", "Estimated $${"%,.2f".format(estimatedValue)}", "Purchase $${"%,.2f".format(purchaseValue)}  |  Replacement $${"%,.2f".format(replacementValue)}")
+        DistributionCard("Equipment by category", categoryCounts)
+        DistributionCard("Equipment by status", statusCounts)
+        DistributionCard("Equipment by location", locationCounts)
+        if (online) StudioButton(onClick = model::refreshReportOverview, enabled = !reportState.busy, modifier = Modifier.fillMaxWidth()) {
+            Text(if (reportState.busy) "Refreshing Server Report" else "Refresh From Server", color = Ink, fontWeight = FontWeight.Black)
+        }
+        reportState.onlineOverview?.optString("generated_utc")?.takeIf(String::isNotBlank)?.let {
+            Text("Server verified $it", color = TextSoft, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun DistributionCard(title: String, values: Map<String, Int>) {
+    InfoCard {
+        Text(title, color = Amber, fontWeight = FontWeight.Bold)
+        val maximum = values.values.maxOrNull()?.coerceAtLeast(1) ?: 1
+        values.entries.sortedByDescending(Map.Entry<String, Int>::value).forEach { (label, count) ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(label, color = Color.White, fontSize = 12.sp)
+                Text(count.toString(), color = TextSoft, fontWeight = FontWeight.Bold)
+            }
+            Box(Modifier.fillMaxWidth().height(5.dp).background(Color(0xFF303747), RoundedCornerShape(50))) {
+                Box(Modifier.fillMaxWidth(count.toFloat() / maximum).height(5.dp).background(Brush.horizontalGradient(listOf(Amber, Cyan)), RoundedCornerShape(50)))
+            }
+        }
+    }
+}
+
+@Composable
+private fun EquipmentReportTab(
+    items: List<JSONObject>, specs: List<JSONObject>, categories: List<SupportingRecord>, types: List<SupportingRecord>,
+    statuses: List<SupportingRecord>, locations: List<SupportingRecord>,
+) {
+    var query by remember { mutableStateOf("") }
+    val specMap = specs.groupBy { it.optString("item_id") }.mapValues { it.value.associate { row -> row.optString("key") to row.optString("value") } }
+    val categoryNames = categories.associate { it.entityId to supportingJson(it).optString("name") }
+    val typeNames = types.associate { it.entityId to supportingJson(it).optString("name") }
+    val statusNames = statuses.associate { it.entityId to supportingJson(it).optString("name") }
+    val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Equipment Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        OutlinedTextField(query, { query = it }, label = { Text("Filter equipment report") }, modifier = Modifier.fillMaxWidth())
+        val filtered = items.filter { query.isBlank() || it.toString().contains(query, true) }
+        Text("${filtered.size} matching items", color = TextSoft, fontSize = 12.sp)
+        filtered.sortedBy { it.optString("display_name").lowercase() }.forEach { item ->
+            val values = specMap[item.optString("id")].orEmpty()
+            ExpandableRecordCard(
+                item.optString("display_name", "Unnamed item"),
+                listOf(categoryNames[item.optString("category_id")], typeNames[item.optString("type_id")]).filterNotNull().filter(String::isNotBlank).joinToString(" / "),
+                listOf(statusNames[item.optString("usage_status")].orEmpty(), values["asset_number"].orEmpty()),
+                imageUrl = item.optString("image_url"),
+            ) {
+                DetailLine("Location", locationNames[item.optString("default_location_id")].orEmpty())
+                DetailLine("Purchase date", values["purchase_date"].orEmpty())
+                DetailLine("Purchase value", moneyValue(values["purchase_price"]))
+                DetailLine("Replacement value", moneyValue(values["replacement_value"]))
+                DetailLine("Maintenance due", values["next_service_due"].orEmpty())
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaintenanceReport(rows: List<MaintenanceRow>) {
+    var status by remember { mutableStateOf("All") }
+    val filtered = rows.filter { status == "All" || it.statusLabel == status }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Maintenance Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        ChoiceStrip(listOf("All", "Past due", "Due today", "Upcoming", "Scheduled"), status) { status = it }
+        Text("${filtered.size} matching maintenance records", color = TextSoft, fontSize = 12.sp)
+        if (filtered.isEmpty()) Text("No equipment matches this care status.", color = TextSoft)
+        filtered.forEach { row ->
+            ExpandableRecordCard(
+                listOf(row.brand, row.name).filter(String::isNotBlank).joinToString(" "),
+                "${row.statusLabel} - ${row.dueDate}", listOf(row.careItem, row.careStatus), imageUrl = row.imageUrl,
+            ) {
+                DetailLine("Due", row.dueDate)
+                DetailLine("Status", row.statusLabel)
+                DetailLine("Care item", row.careItem)
+                DetailLine("Location", row.location)
+                DetailLine("Notes", row.notes)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScheduleReportTab(events: List<JSONObject>) {
+    var query by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("All") }
+    val filtered = events.filter { event ->
+        (type == "All" || event.optString("event_type").humanize() == type) &&
+            (query.isBlank() || event.toString().contains(query, true))
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Schedule Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        OutlinedTextField(query, { query = it }, label = { Text("Filter schedule report") }, modifier = Modifier.fillMaxWidth())
+        ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it }
+        Text("${filtered.size} matching schedule records", color = TextSoft, fontSize = 12.sp)
+        if (filtered.isEmpty()) Text("No scheduled records match these filters.", color = TextSoft)
+        filtered.sortedBy { it.optString("event_date") + it.optString("start_time") }.forEach { event ->
+            ExpandableRecordCard(event.optString("title", "Untitled event"), listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString(" / "), listOf(event.optString("event_type").humanize(), event.optString("event_status").humanize())) {
+                DetailLine("Location", event.optString("location"))
+                DetailLine("Notes", event.optString("notes"))
+                DetailLine("Reminder", if (event.optInt("reminder_enabled") == 1) "${event.optInt("reminder_lead_value")} ${event.optString("reminder_lead_unit")} before" else "Disabled")
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiReportTab(
+    question: String,
+    changeQuestion: (String) -> Unit,
+    online: Boolean,
+    state: ReportUiState,
+    model: StudioRackViewModel,
+    runs: List<SupportingRecord>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Ask Studio Buddy", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Describe the equipment report you need in ordinary language.", color = TextSoft)
+        OutlinedTextField(question, changeQuestion, label = { Text("Report question") }, enabled = online && !state.busy, modifier = Modifier.fillMaxWidth())
+        StudioButton(onClick = { model.runAiReport(question) }, enabled = online && question.isNotBlank() && !state.busy, modifier = Modifier.fillMaxWidth()) {
+            Text(if (state.busy) "Running Report" else "Run AI Report", color = Ink, fontWeight = FontWeight.Black)
+        }
+        if (state.message.isNotBlank()) Text(state.message, color = if (state.aiResult != null) Cyan else TextSoft)
+        state.aiResult?.let { result ->
+            Text(result.optString("title", "Report Results"), color = Amber, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("${result.optInt("row_count")} matching items", color = TextSoft)
+            result.optJSONArray("rows").jsonObjects().forEach { row ->
+                ExpandableRecordCard(row.optString("name", "Item"), listOf(row.optString("brand"), row.optString("category"), row.optString("type")).filter(String::isNotBlank).joinToString(" / "), listOf(row.optString("status"), row.optString("maintenance_label"))) {
+                    DetailLine("Asset number", row.optString("asset_number"))
+                    DetailLine("Location", row.optString("location"))
+                    DetailLine("Age", row.opt("age_years")?.toString().orEmpty())
+                    DetailLine("Replacement value", moneyValue(row.opt("replacement_value")?.toString()))
+                    DetailLine("Maintenance due", row.optString("maintenance_due"))
+                }
+            }
+        }
+        Text("Previous AI Reports", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        if (runs.isEmpty()) Text("No saved AI reports are synchronized.", color = TextSoft)
+        runs.take(12).forEach { run ->
+            val row = supportingJson(run)
+            ReportCard(row.optString("title", "Report"), row.optString("question"), "${row.optInt("row_count")} rows - ${row.optString("created_utc")}")
+        }
     }
 }
 
@@ -880,6 +1110,28 @@ private fun ReferenceGroup(title: String, rows: List<SupportingRecord>) {
 }
 
 private fun supportingJson(record: SupportingRecord): JSONObject = runCatching { JSONObject(record.json) }.getOrDefault(JSONObject())
+
+private fun deviceHasInternet(context: Context): Boolean {
+    val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+    val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
+
+private fun JSONArray?.jsonObjects(): List<JSONObject> = buildList {
+    val source = this@jsonObjects ?: return@buildList
+    for (index in 0 until source.length()) source.optJSONObject(index)?.let(::add)
+}
+
+private fun estimatedItemValue(specs: Map<String, String>): Double {
+    if (specs["curated_artifact"].equals("yes", true)) return 0.0
+    val purchase = specs["purchase_price"]?.toDoubleOrNull() ?: return 0.0
+    val purchased = parseLocalDate(specs["purchase_date"])
+    val years = purchased?.let { ChronoUnit.DAYS.between(it, LocalDate.now()).coerceAtLeast(0) / 365.25 } ?: 0.0
+    return purchase * (1.0 - years / 5.0).coerceIn(0.0, 1.0)
+}
+
+private fun moneyValue(value: String?): String = value?.toDoubleOrNull()?.let { "$${"%,.2f".format(it)}" }.orEmpty()
 
 private fun String.humanize(): String = replace('_', ' ').trim().split(' ').joinToString(" ") { word ->
     word.lowercase().replaceFirstChar { it.uppercase() }
