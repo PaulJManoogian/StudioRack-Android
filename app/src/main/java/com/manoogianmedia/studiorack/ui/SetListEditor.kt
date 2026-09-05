@@ -12,11 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -68,7 +68,7 @@ internal fun SetListEditor(
     val songRows = songs.associate { it.entityId to JSONObject(it.json) }
     val attachmentsBySong = attachments.groupBy { JSONObject(it.json).optString("song_id") }
 
-    Surface(Modifier.fillMaxSize(), color = EditorInk) {
+    Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = EditorInk) {
         LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -157,7 +157,7 @@ internal fun SetListEditor(
                             }
                             HorizontalDivider(color = Color(0xFF30384A))
                         }
-                        Button(onClick = { pickingSection = section.id }, colors = ButtonDefaults.buttonColors(containerColor = EditorAmber, contentColor = EditorInk)) { Text("Choose Songs", fontWeight = FontWeight.Black) }
+                        StudioButton(onClick = { pickingSection = section.id }) { Text("Choose Songs", color = EditorInk, fontWeight = FontWeight.Black) }
                         OutlinedButton(onClick = {
                             draft = draft.updateSection(section.id) { it.copy(entries = it.entries + SetEntryDraft(newId("sle"))) }
                         }, border = BorderStroke(1.dp, EditorCyan)) { Text("Add Manual Entry", color = EditorCyan) }
@@ -171,10 +171,10 @@ internal fun SetListEditor(
                 ) { Text("Add Set", color = EditorAmber, fontWeight = FontWeight.Bold) }
             }
             item {
-                Button(
+                StudioButton(
                     onClick = { model.saveSetList(draft, close) }, enabled = draft.name.isNotBlank() && draft.sections.all { section -> section.entries.all { it.songId != null || it.manualTitle.isNotBlank() } },
-                    colors = ButtonDefaults.buttonColors(containerColor = EditorAmber, contentColor = EditorInk), modifier = Modifier.fillMaxWidth(),
-                ) { Text("Save Set List", fontWeight = FontWeight.Black) }
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Save Set List", color = EditorInk, fontWeight = FontWeight.Black) }
                 if (original != null) {
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = { model.deleteSetList(draft.id, close) }, border = BorderStroke(1.dp, Color(0xFFFF7A82)), modifier = Modifier.fillMaxWidth()) { Text("Delete Set List", color = Color(0xFFFF7A82)) }
@@ -201,7 +201,7 @@ private fun SongPicker(section: SetSectionDraft, songs: List<CachedRecord>, clos
     var query by remember { mutableStateOf("") }
     val chosen = section.entries.mapNotNull(SetEntryDraft::songId)
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize().padding(12.dp), color = EditorInk, shape = RoundedCornerShape(8.dp)) {
+        Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp), color = EditorInk, shape = RoundedCornerShape(8.dp)) {
             LazyColumn(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -209,7 +209,7 @@ private fun SongPicker(section: SetSectionDraft, songs: List<CachedRecord>, clos
                             Text("CHOOSE SONGS", color = EditorAmber, fontWeight = FontWeight.Black)
                             Text(section.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         }
-                        Button(onClick = close, colors = ButtonDefaults.buttonColors(containerColor = EditorAmber, contentColor = EditorInk)) { Text("Done") }
+                        StudioButton(onClick = close) { Text("Done", color = EditorInk, fontWeight = FontWeight.Black) }
                     }
                 }
                 item { OutlinedTextField(query, { query = it }, label = { Text("Find a song") }, modifier = Modifier.fillMaxWidth()) }
@@ -221,7 +221,7 @@ private fun SongPicker(section: SetSectionDraft, songs: List<CachedRecord>, clos
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(chosen.indexOf(record.entityId).takeIf { it >= 0 }?.plus(1)?.toString().orEmpty(), color = EditorAmber, fontWeight = FontWeight.Black, modifier = Modifier.size(28.dp))
-                        Checkbox(selected, { toggle(record.entityId, it) })
+                        Checkbox(selected, null)
                         Column(Modifier.weight(1f)) {
                             Text(song.optString("title", "Untitled"), color = Color.White, fontWeight = FontWeight.Bold)
                             Text(listOf(song.optString("artist"), song.optString("style"), song.optString("tempo")).filter(String::isNotBlank).joinToString("  |  "), color = EditorSoft, fontSize = 12.sp)

@@ -27,7 +27,7 @@ class TokenStore(context: Context) {
             .putString("token", encrypt(token))
             .putString("device_id", deviceId)
             .putString("account_id", accountId)
-            .apply()
+            .commit()
     }
 
     fun clear() = prefs.edit().clear().apply()

@@ -2,7 +2,6 @@ package com.manoogianmedia.studiorack.performance
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioTrack
 import android.view.KeyEvent
 import kotlinx.coroutines.CoroutineScope
@@ -19,7 +18,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import kotlin.math.PI
-import kotlin.math.max
 import kotlin.math.sin
 
 data class PerformanceSettings(
@@ -100,16 +98,16 @@ class NativeMetronome {
     private var beatsPerMeasure = 4
     private var mode = "tempo"
     private var sound = "tone"
+    private var player = StaticClickPlayer(sound)
 
     fun configure(tempoText: String?, timeSignature: String?, mode: String, sound: String) {
-        val wasRunning = mutableState.value.running
         tempo = tempoText?.filter(Char::isDigit)?.toIntOrNull()?.coerceIn(30, 260) ?: 120
         beatsPerMeasure = timeSignature?.substringBefore('/')?.trim()?.toIntOrNull()?.coerceIn(1, 12) ?: 4
         this.mode = mode
-        this.sound = sound
-        if (wasRunning) {
-            stop()
-            start()
+        if (this.sound != sound) {
+            this.sound = sound
+            player.close()
+            player = StaticClickPlayer(sound)
         }
     }
 
@@ -127,52 +125,29 @@ class NativeMetronome {
         if (mutableState.value.running) return
         mutableState.value = mutableState.value.copy(running = true, pulse = false, beat = 0)
         job = scope.launch {
-            val sampleRate = 44_100
-            val minimum = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-            var track: AudioTrack? = null
             try {
-                track = AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(sampleRate)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                            .build()
-                    )
-                    .setBufferSizeInBytes(max(minimum, sampleRate / 4 * 2))
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build()
-                track.play()
                 var beatIndex = 0
+                var nextBeat = System.nanoTime()
                 while (isActive && mutableState.value.running) {
-                    val interval = 60_000L / tempo
-                    val startedAt = System.nanoTime()
+                    val remaining = nextBeat - System.nanoTime()
+                    if (remaining > 1_500_000L) delay((remaining - 500_000L) / 1_000_000L)
+                    while (isActive && System.nanoTime() < nextBeat) Thread.yield()
+                    if (!isActive || !mutableState.value.running) break
                     val isDownbeat = mode == "downbeat" && beatIndex == 0
                     mutableState.value = mutableState.value.copy(pulse = true, downbeat = isDownbeat, beat = beatIndex + 1)
-                    if (!mutableState.value.muted) {
-                        val samples = clickSamples(sampleRate, sound, isDownbeat)
-                        track.write(samples, 0, samples.size)
+                    if (!mutableState.value.muted) player.play(isDownbeat)
+                    scope.launch {
+                        delay(70)
+                        if (mutableState.value.running) mutableState.value = mutableState.value.copy(pulse = false)
                     }
-                    delay(95L.coerceAtMost(interval))
-                    mutableState.value = mutableState.value.copy(pulse = false)
-                    val elapsed = (System.nanoTime() - startedAt) / 1_000_000L
-                    delay((interval - elapsed).coerceAtLeast(1L))
                     beatIndex = (beatIndex + 1) % beatsPerMeasure
+                    val interval = 60_000_000_000L / tempo
+                    nextBeat += interval
+                    if (System.nanoTime() - nextBeat > interval) nextBeat = System.nanoTime() + interval
                 }
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
                 mutableState.value = mutableState.value.copy(running = false, pulse = false)
-            } finally {
-                track?.let { audio ->
-                    runCatching { audio.stop() }
-                    audio.release()
-                }
             }
         }
     }
@@ -181,12 +156,59 @@ class NativeMetronome {
         mutableState.value = mutableState.value.copy(running = false, pulse = false, downbeat = false, beat = 0)
         job?.cancel()
         job = null
+        player.stop()
     }
 
     fun close() {
         stop()
+        player.close()
         scope.cancel()
     }
+}
+
+private class StaticClickPlayer(sound: String) {
+    private val normal = staticTrack(clickSamples(SAMPLE_RATE, sound, false))
+    private val accent = staticTrack(clickSamples(SAMPLE_RATE, sound, true))
+
+    fun play(downbeat: Boolean) {
+        val track = if (downbeat) accent else normal
+        runCatching {
+            if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause()
+            track.setPlaybackHeadPosition(0)
+            track.play()
+        }
+    }
+
+    fun stop() {
+        listOf(normal, accent).forEach { track -> runCatching { track.pause(); track.setPlaybackHeadPosition(0) } }
+    }
+
+    fun close() {
+        stop()
+        normal.release()
+        accent.release()
+    }
+
+    private fun staticTrack(samples: ShortArray): AudioTrack = AudioTrack.Builder()
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        )
+        .setAudioFormat(
+            AudioFormat.Builder()
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setSampleRate(SAMPLE_RATE)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build()
+        )
+        .setBufferSizeInBytes(samples.size * 2)
+        .setTransferMode(AudioTrack.MODE_STATIC)
+        .build()
+        .also { it.write(samples, 0, samples.size) }
+
+    companion object { private const val SAMPLE_RATE = 44_100 }
 }
 
 private fun clickSamples(sampleRate: Int, sound: String, downbeat: Boolean): ShortArray {

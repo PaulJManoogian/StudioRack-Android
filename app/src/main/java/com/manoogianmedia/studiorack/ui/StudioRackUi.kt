@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
@@ -22,14 +23,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,12 +38,14 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -105,7 +108,15 @@ private val StudioTypography = Typography().run {
 @Composable
 fun StudioRackApp(model: StudioRackViewModel, hardwareKeys: Flow<Int>, onGigModeActive: (Boolean) -> Unit) {
     val uiState by model.uiState.collectAsState()
-    MaterialTheme(colorScheme = darkColorScheme(background = Ink, surface = Panel, primary = Amber, secondary = Cyan), typography = StudioTypography) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            background = Ink, surface = Panel, surfaceVariant = PanelRaised, primary = Amber, onPrimary = Color(0xFF170E03),
+            secondary = Cyan, onSecondary = Color(0xFF06111A), onBackground = Color(0xFFF7F7FB), onSurface = Color(0xFFF7F7FB),
+            onSurfaceVariant = TextSoft, outline = Color(0x33FFFFFF), error = Color(0xFFE55757),
+        ),
+        typography = StudioTypography,
+        shapes = Shapes(small = RoundedCornerShape(6.dp), medium = RoundedCornerShape(8.dp), large = RoundedCornerShape(12.dp), extraLarge = RoundedCornerShape(50)),
+    ) {
         Surface(Modifier.fillMaxSize(), color = Ink) {
             var selectedEvent by remember { mutableStateOf<String?>(null) }
             when {
@@ -118,8 +129,8 @@ fun StudioRackApp(model: StudioRackViewModel, hardwareKeys: Flow<Int>, onGigMode
 }
 
 private enum class AppSection(val label: String, val mark: String) {
-    DASHBOARD("Dashboard", "HOME"),
-    EQUIPMENT("Equipment", "GEAR"),
+    DASHBOARD("Home", "HOME"),
+    EQUIPMENT("Gear", "GEAR"),
     KITS("Kits", "KITS"),
     SESSIONS("Sessions", "LIVE"),
     LIBRARY("Library", "MUSIC"),
@@ -134,7 +145,7 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
     Scaffold(
         containerColor = Ink,
         topBar = {
-            Surface(color = Color(0xF20A0D15), shadowElevation = 8.dp) {
+            Surface(modifier = Modifier.statusBarsPadding(), color = Color(0xF20A0D15), shadowElevation = 8.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                     Image(painterResource(R.drawable.studiorack_logo), "StudioRack", Modifier.size(38.dp))
                     Column(Modifier.weight(1f).padding(start = 8.dp)) {
@@ -161,6 +172,10 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
                             ) {}
                         },
                         label = { Text(destination.label, fontSize = 10.sp) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Ink, selectedTextColor = Amber, indicatorColor = Amber.copy(alpha = 0.18f),
+                            unselectedIconColor = TextSoft, unselectedTextColor = TextSoft,
+                        ),
                     )
                 }
             }
@@ -195,8 +210,8 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
         OutlinedTextField(code, { code = it }, label = { Text("StudioRack access code") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
         OutlinedTextField(mfa, { mfa = it.filter(Char::isDigit).take(6) }, label = { Text("Authenticator code") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(18.dp))
-        Button(onClick = { model.signIn(email, code, mfa) }, enabled = !uiState.busy && email.isNotBlank() && code.isNotBlank() && mfa.length == 6) {
-            Text("Connect this device")
+        StudioButton(onClick = { model.signIn(email, code, mfa) }, enabled = !uiState.busy && email.isNotBlank() && code.isNotBlank() && mfa.length == 6) {
+            Text("Connect this device", color = Ink, fontWeight = FontWeight.Black)
         }
         if (uiState.busy) CircularProgressIndicator(Modifier.padding(top = 16.dp))
         if (uiState.message.isNotBlank()) Text(uiState.message, color = TextSoft, modifier = Modifier.padding(top = 16.dp))
@@ -229,7 +244,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
             Text("Recorded value: $${"%,.2f".format(purchaseTotal)}", color = Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(state?.lastSyncAt?.let { "Synced ${DateFormat.getDateTimeInstance().format(Date(it))}" } ?: "Not synchronized", color = TextSoft, fontSize = 12.sp)
-                Button(onClick = model::sync, enabled = !uiState.busy) { Text(if (uiState.busy) "Syncing" else "Sync now") }
+                StudioButton(onClick = model::sync, enabled = !uiState.busy) { Text(if (uiState.busy) "Syncing" else "Sync now", color = Ink, fontWeight = FontWeight.Black) }
             }
         }
         item {
@@ -329,7 +344,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("SESSIONS", "Schedule") }
-        item { Button(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event") } }
+        item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
         item { OutlinedTextField(query, { query = it }, label = { Text("Find scheduled work") }, modifier = Modifier.fillMaxWidth()) }
         item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
         if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
@@ -363,10 +378,10 @@ private fun LibraryScreen(model: StudioRackViewModel) {
         item { SectionHeading("LIBRARY", "Songs and Set Lists") }
         item { ChoiceStrip(listOf("Songs", "Set Lists"), tab) { tab = it; query = "" } }
         item {
-            Button(
+            StudioButton(
                 onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (tab == "Songs") "Add Song" else "Create Set List") }
+            ) { Text(if (tab == "Songs") "Add Song" else "Create Set List", color = Ink, fontWeight = FontWeight.Black) }
         }
         item { OutlinedTextField(query, { query = it }, label = { Text(if (tab == "Songs") "Find a song" else "Find a set list") }, modifier = Modifier.fillMaxWidth()) }
         if (tab == "Songs") {
@@ -450,7 +465,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.syncContent(model: St
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MetricCard("Queued", pending.toString(), Modifier.weight(1f)); MetricCard("Conflicts", conflicts.size.toString(), Modifier.weight(1f))
             }
-            Button(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text("Sync Now") }
+            StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text("Sync Now", color = Ink, fontWeight = FontWeight.Black) }
             if (conflicts.isEmpty()) Text("No synchronization conflicts.", color = TextSoft)
             conflicts.forEach { conflict ->
                 InfoCard {
@@ -458,8 +473,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.syncContent(model: St
                     Text(conflict.entityId, color = TextSoft, fontSize = 11.sp)
                     Text("This record changed both here and on the server.", color = Color.White)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { model.resolveConflict(conflict, false) }, colors = ButtonDefaults.buttonColors(containerColor = Panel)) { Text("Use Server") }
-                        Button(onClick = { model.resolveConflict(conflict, true) }) { Text("Keep Device") }
+                        StudioButton(onClick = { model.resolveConflict(conflict, false) }, kind = StudioButtonKind.Secondary) { Text("Use Server", color = Color.White) }
+                        StudioButton(onClick = { model.resolveConflict(conflict, true) }) { Text("Keep Device", color = Ink, fontWeight = FontWeight.Black) }
                     }
                 }
             }
@@ -531,7 +546,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Account and Device", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
-            Button(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize StudioRack") }
+            StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize StudioRack", color = Ink, fontWeight = FontWeight.Black) }
             Text("Changes made on the web are copied here automatically when the device reconnects.", color = TextSoft, fontSize = 12.sp)
         }
     }
@@ -564,8 +579,12 @@ private fun SectionHeading(eyebrow: String, title: String) {
 
 @Composable
 private fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier, colors = CardDefaults.cardColors(containerColor = PanelRaised), shape = RoundedCornerShape(8.dp)) {
-        Column(Modifier.padding(12.dp)) {
+    Box(
+        modifier
+            .background(Brush.linearGradient(listOf(Color(0xFF242A38), Color(0xFF1B2C36))), RoundedCornerShape(8.dp))
+            .border(BorderStroke(1.dp, Color(0x263CD9FF)), RoundedCornerShape(8.dp)),
+    ) {
+        Column(Modifier.padding(14.dp)) {
             Text(label.uppercase(), color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black)
             Text(value, color = Amber, fontSize = 25.sp, fontWeight = FontWeight.Black)
         }
@@ -576,10 +595,10 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
 private fun ChoiceStrip(options: List<String>, selected: String, choose: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         options.forEach { option ->
-            Button(
+            StudioButton(
                 onClick = { choose(option) },
-                colors = ButtonDefaults.buttonColors(containerColor = if (option == selected) Amber else PanelRaised, contentColor = if (option == selected) Ink else Color.White),
-            ) { Text(option) }
+                kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+            ) { Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold) }
         }
     }
 }
@@ -596,7 +615,7 @@ private fun ExpandableRecordCard(
     var expanded by remember(title, subtitle) { mutableStateOf(false) }
     Card(
         Modifier.fillMaxWidth().clickable { expanded = !expanded },
-        colors = CardDefaults.cardColors(containerColor = PanelRaised),
+        colors = CardDefaults.cardColors(containerColor = Color(0xE6202635)),
         border = BorderStroke(1.dp, Color(0xFF343B4D)),
         shape = RoundedCornerShape(8.dp),
     ) {
@@ -802,8 +821,8 @@ private fun StudioField(label: String, value: String, singleLine: Boolean = true
 @Composable
 private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Unit)?) {
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Button(onClick = save, enabled = canSave, modifier = Modifier.weight(1f)) { Text("Save Offline") }
-        if (delete != null) Button(onClick = delete, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B2F3A))) { Text("Delete") }
+        StudioButton(onClick = save, enabled = canSave, modifier = Modifier.weight(1f)) { Text("Save Offline", color = Ink, fontWeight = FontWeight.Black) }
+        if (delete != null) StudioButton(onClick = delete, kind = StudioButtonKind.Danger) { Text("Delete", color = Color.White, fontWeight = FontWeight.Bold) }
     }
     Text("This change is stored on this device immediately and synchronized when a connection is available.", color = TextSoft, fontSize = 11.sp)
 }
@@ -929,7 +948,7 @@ private fun GigModeScreen(
         return
     }
     LazyColumn(
-        Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).padding(horizontal = 14.dp),
+        Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).statusBarsPadding().navigationBarsPadding().padding(horizontal = 14.dp),
         state = listState,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -946,6 +965,13 @@ private fun GigModeScreen(
                         Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString("  "), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                GigPill("List", active = true)
+                Spacer(Modifier.width(7.dp))
+                GigPill("Chart", onClick = { if (performanceSongs.isNotEmpty()) detailOpen = true })
             }
         }
         sectionRows.forEach { section ->
@@ -1034,7 +1060,7 @@ private fun PerformanceSongScreen(
         }
         value = AttachmentRender(bitmap = bitmap, complete = true)
     }
-    Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).padding(12.dp)) {
+    Column(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).statusBarsPadding().navigationBarsPadding().padding(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             GigCircleButton("<", close)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
@@ -1073,7 +1099,7 @@ private fun PerformanceSongScreen(
             GigDetail("Patch", patch)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            GigPill(if (metronomeState.muted) "Unmute" else "Mute", metronome::toggleMuted)
+            GigPill(if (metronomeState.muted) "Unmute" else "Mute", onClick = metronome::toggleMuted)
         }
         val entryNote = item.entry.optString("entry_notes")
         val songNote = item.song?.optString("notes").orEmpty()
@@ -1090,9 +1116,9 @@ private fun PerformanceSongScreen(
         }
         if (pageCount > 1) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Button(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0) { Text("Previous page") }
+                StudioButton(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0, kind = StudioButtonKind.Secondary) { Text("Previous page", color = Color.White) }
                 Spacer(Modifier.size(6.dp))
-                Button(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1) { Text("Next page") }
+                StudioButton(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1) { Text("Next page", color = Ink, fontWeight = FontWeight.Black) }
             }
         }
         Box(Modifier.fillMaxSize().padding(top = 10.dp), contentAlignment = Alignment.Center) {
@@ -1122,9 +1148,10 @@ private fun GigValueChip(value: String) {
 }
 
 @Composable
-private fun GigPill(label: String, onClick: (() -> Unit)? = null) {
+private fun GigPill(label: String, active: Boolean = false, onClick: (() -> Unit)? = null) {
     Surface(
-        color = Amber.copy(alpha = 0.14f), contentColor = Amber, shape = RoundedCornerShape(50), border = BorderStroke(1.dp, Amber.copy(alpha = 0.52f)),
+        color = if (active) Amber else Amber.copy(alpha = 0.14f), contentColor = if (active) Ink else Amber,
+        shape = RoundedCornerShape(50), border = BorderStroke(1.dp, Amber.copy(alpha = if (active) 1f else 0.52f)),
         modifier = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick),
     ) { Text(label.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) }
 }
