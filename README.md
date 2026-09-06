@@ -45,7 +45,7 @@ https://www.manoogianmedia.com/studiorack/api/v1
 
 ## Alpha install
 
-Version 0.9.5 adds portable data exchange, song lengths, set-list duration estimates, and compact live timing in Gig Mode. Import/export runs online against the account-scoped StudioRack service; exported files can be saved to any document provider installed on Android. Song lengths and timer visibility settings synchronize for offline Gig Mode use.
+Version 0.9.6 adds contextual exports for visible songs, favorite and filtered set lists, individual set lists, and filtered scheduled items. Import remains centralized under Reports, while exports preserve the order of the current view and can be saved to any document provider installed on Android. This release also includes song lengths, set-list duration estimates, and compact live timing in Gig Mode.
 
 Download the current Android alpha directly from the StudioRack server:
 

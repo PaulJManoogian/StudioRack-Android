@@ -567,9 +567,12 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
+    val reportState by model.reportState.collectAsState()
+    val online = rememberNetworkConnected()
     var query by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("All") }
     var editingEvent by remember { mutableStateOf<EditorTarget?>(null) }
+    var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
     val rows = events.map(::recordJson).filter {
         (type == "All" || it.optString("event_type").humanize() == type) && (query.isBlank() || it.toString().contains(query, true))
     }.sortedBy { it.optString("event_date") + it.optString("start_time") }
@@ -579,6 +582,14 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
         item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
         item { DictationTextField(query, { query = it }, "Find scheduled work") }
         item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
+        item {
+            StudioButton(
+                onClick = { exportTarget = ExportTarget("events", "Visible scheduled items", rows.map { it.optString("id") }) },
+                enabled = online && rows.isNotEmpty() && !reportState.busy,
+                modifier = Modifier.fillMaxWidth(),
+                kind = StudioButtonKind.Secondary,
+            ) { Text("Export visible scheduled items (${rows.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+        }
         if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
         items(rows, key = { it.getString("id") }) { event ->
             EventCard(
@@ -590,10 +601,12 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
         }
     }
     editingEvent?.let { target -> EventEditor(target, model, close = { editingEvent = null }) }
+    exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
     }
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun LibraryScreen(model: StudioRackViewModel) {
     val context = LocalContext.current
     val songs by model.songs.collectAsState()
@@ -601,16 +614,31 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     val sections by model.sections.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
+    val reportState by model.reportState.collectAsState()
+    val online = rememberNetworkConnected()
     var tab by remember { mutableStateOf("Songs") }
     var query by remember { mutableStateOf("") }
+    var favoriteScope by remember { mutableStateOf("All") }
+    var sort by remember { mutableStateOf("A-Z") }
     var editingSong by remember { mutableStateOf<EditorTarget?>(null) }
     var editingSetList by remember { mutableStateOf<CachedRecord?>(null) }
     var creatingSetList by remember { mutableStateOf(false) }
     var renamingSetList by remember { mutableStateOf<CachedRecord?>(null) }
+    var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
+    val filteredSongs = songs
+        .filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
+        .filter { favoriteScope == "All" || recordJson(it).optInt("is_favorite") == 1 }
+        .sortedBy { recordJson(it).optString("title").lowercase() }
+        .let { if (sort == "Z-A") it.reversed() else it }
+    val filteredSetLists = setLists
+        .filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
+        .filter { favoriteScope == "All" || recordJson(it).optInt("is_favorite") == 1 }
+        .sortedBy { recordJson(it).optString("name").lowercase() }
+        .let { if (sort == "Z-A") it.reversed() else it }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("LIBRARY", "Songs and Set Lists") }
-        item { ChoiceStrip(listOf("Songs", "Set Lists"), tab) { tab = it; query = "" } }
+        item { ChoiceStrip(listOf("Songs", "Set Lists"), tab) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
         item {
             StudioButton(
                 onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
@@ -618,9 +646,22 @@ private fun LibraryScreen(model: StudioRackViewModel) {
             ) { Text(if (tab == "Songs") "Add Song" else "Create Set List", color = Ink, fontWeight = FontWeight.Black) }
         }
         item { DictationTextField(query, { query = it }, if (tab == "Songs") "Find a song" else "Find a set list") }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                ChoiceStrip(listOf("All", "Favorites"), favoriteScope) { favoriteScope = it }
+                ChoiceStrip(listOf("A-Z", "Z-A"), sort) { sort = it }
+            }
+        }
         if (tab == "Songs") {
-            val filtered = songs.filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
-            items(filtered, key = { it.entityId }) { record ->
+            item {
+                StudioButton(
+                    onClick = { exportTarget = ExportTarget("songs", "Visible songs", filteredSongs.map { it.entityId }) },
+                    enabled = online && filteredSongs.isNotEmpty() && !reportState.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text("Export visible songs (${filteredSongs.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+            }
+            items(filteredSongs, key = { it.entityId }) { record ->
                 val song = recordJson(record)
                 val songAttachments = attachments.filter { recordJson(it).optString("song_id") == record.entityId }
                 ExpandableRecordCard(
@@ -636,15 +677,22 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                         Row(Modifier.fillMaxWidth()) { GigPill("Listen", onClick = { openMediaLink(context, link) }) }
                     }
                     songAttachments.forEach { DetailLine("Attachment", attachmentLabel(recordJson(it))) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { editingSong = EditorTarget(record.entityId, song) }) { Text("Edit", color = Amber) }
                     }
                 }
             }
         } else {
             val songNames = songs.associate { it.entityId to recordJson(it).optString("title", "Song") }
-            val filtered = setLists.filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
-            items(filtered, key = { it.entityId }) { record ->
+            item {
+                StudioButton(
+                    onClick = { exportTarget = ExportTarget("setlists", "Visible set lists", filteredSetLists.map { it.entityId }) },
+                    enabled = online && filteredSetLists.isNotEmpty() && !reportState.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text("Export visible set lists (${filteredSetLists.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+            }
+            items(filteredSetLists, key = { it.entityId }) { record ->
                 val row = recordJson(record)
                 val setSections = sections.filter { recordJson(it).optString("set_list_id") == record.entityId }
                 val setEntries = entries.filter { recordJson(it).optString("set_list_id") == record.entityId }
@@ -665,6 +713,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { editingSetList = record }) { Text("Edit Set List", color = Amber) }
+                        TextButton(onClick = { exportTarget = ExportTarget("setlists", row.optString("name", "Set List"), listOf(record.entityId)) }) { Text("Export", color = Amber) }
                         TextButton(onClick = { renamingSetList = record }) { Text("Rename", color = Amber) }
                     }
                 }
@@ -687,6 +736,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
             SetListEditor(editingSetList, sections, entries, songs, attachments, model) { creatingSetList = false; editingSetList = null }
         }
     }
+    exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
     }
 }
 
@@ -778,34 +828,23 @@ private fun ReportsPanel(model: StudioRackViewModel) {
                 modifier = Modifier.padding(11.dp),
             )
         }
-        ChoiceStrip(listOf("Overview", "Equipment", "Maintenance", "Schedule", "AI", "Exchange"), tab) { tab = it }
+        ChoiceStrip(listOf("Overview", "Equipment", "Maintenance", "Schedule", "AI", "Import"), tab) { tab = it }
         when (tab) {
             "Overview" -> ReportOverviewTab(itemRows, kits, events.map(::recordJson), units, specRows, categories, statuses, locations, careRows, reportState, online, model)
             "Equipment" -> EquipmentReportTab(itemRows, specRows, categories, types, statuses, locations)
             "Maintenance" -> MaintenanceReport(careRows, model)
             "Schedule" -> ScheduleReportTab(events.map(::recordJson))
             "AI" -> AiReportTab(question, { question = it }, online, reportState, model, runs)
-            else -> DataExchangeTab(online, reportState, model)
+            else -> ImportDataTab(online, reportState, model)
         }
     }
 }
 
 @Composable
-private fun DataExchangeTab(online: Boolean, state: ReportUiState, model: StudioRackViewModel) {
+private fun ImportDataTab(online: Boolean, state: ReportUiState, model: StudioRackViewModel) {
     val context = LocalContext.current
     var kind by remember { mutableStateOf("Songs") }
-    var format by remember { mutableStateOf("CSV") }
-    var pendingExport by remember { mutableStateOf<DataExport?>(null) }
     val kindValue = mapOf("Songs" to "songs", "Set Lists" to "setlists", "Items" to "items", "Kits" to "kits")
-    val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
-        val export = pendingExport
-        if (uri != null && export != null) {
-            runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(export.bytes) } }
-                .onSuccess { Toast.makeText(context, "${export.filename} saved.", Toast.LENGTH_SHORT).show() }
-                .onFailure { Toast.makeText(context, "The export could not be saved.", Toast.LENGTH_LONG).show() }
-        }
-        pendingExport = null
-    }
     val chooseImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             val displayName = contentDisplayName(context, uri)
@@ -826,31 +865,75 @@ private fun DataExchangeTab(online: Boolean, state: ReportUiState, model: Studio
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Import / Export", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Move songs, complete set lists, items, and kits through spreadsheet or structured data files.", color = TextSoft)
+        Text("Import Data", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Bring songs, complete set lists, items, and kits in from spreadsheet or structured data files. Exports live beside each filtered list.", color = TextSoft)
         ChoiceStrip(kindValue.keys.toList(), kind) { kind = it }
-        ChoiceStrip(listOf("CSV", "XLS", "JSON", "XML"), format) { format = it }
-        StudioButton(
-            onClick = {
-                model.exportData(kindValue.getValue(kind), format.lowercase()) { export ->
-                    if (export != null) {
-                        pendingExport = export
-                        saveExport.launch(export.filename)
-                    }
-                }
-            },
-            enabled = online && !state.busy,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (state.busy) "Working" else "Export $kind as $format", color = Ink, fontWeight = FontWeight.Black) }
         StudioButton(
             onClick = { chooseImport.launch(arrayOf("text/csv", "application/json", "application/xml", "text/xml", "application/vnd.ms-excel", "*/*")) },
             enabled = online && !state.busy,
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
         ) { Text("Import $kind", color = Color.White, fontWeight = FontWeight.Bold) }
-        if (!online) Text("Connect to StudioRack to import or export. Your synchronized working data remains available offline.", color = Amber, fontSize = 12.sp)
+        if (!online) Text("Connect to StudioRack to import. Your synchronized working data remains available offline.", color = Amber, fontSize = 12.sp)
         if (state.message.isNotBlank()) Text(state.message, color = if (state.message.startsWith("Import complete")) Cyan else TextSoft, fontSize = 12.sp)
-        Text("CSV and XLS include readable columns plus a complete record for reliable round trips. Attachment references are preserved; the files themselves remain in StudioRack storage.", color = TextSoft, fontSize = 11.sp)
+        Text("CSV, XLS, JSON, and XML files can be merged into your synchronized StudioRack account.", color = TextSoft, fontSize = 11.sp)
+    }
+}
+
+private data class ExportTarget(val kind: String, val label: String, val ids: List<String>)
+
+@Composable
+private fun ContextExportDialog(
+    target: ExportTarget,
+    online: Boolean,
+    state: ReportUiState,
+    model: StudioRackViewModel,
+    close: () -> Unit,
+) {
+    val context = LocalContext.current
+    var format by remember(target) { mutableStateOf("CSV") }
+    var pendingExport by remember(target) { mutableStateOf<DataExport?>(null) }
+    val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val export = pendingExport
+        if (uri != null && export != null) {
+            runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(export.bytes) } }
+                .onSuccess {
+                    Toast.makeText(context, "${export.filename} saved.", Toast.LENGTH_SHORT).show()
+                    close()
+                }
+                .onFailure { Toast.makeText(context, "The export could not be saved.", Toast.LENGTH_LONG).show() }
+        }
+        pendingExport = null
+    }
+    Dialog(onDismissRequest = close) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = PanelRaised,
+            border = BorderStroke(1.dp, Amber.copy(alpha = .45f)),
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("EXPORT", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                Text(target.label, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("${target.ids.size} selected ${if (target.ids.size == 1) "record" else "records"}", color = TextSoft)
+                ChoiceStrip(listOf("CSV", "XLS", "JSON", "XML"), format) { format = it }
+                StudioButton(
+                    onClick = {
+                        model.exportData(target.kind, format.lowercase(), target.ids) { export ->
+                            if (export != null) {
+                                pendingExport = export
+                                saveExport.launch(export.filename)
+                            }
+                        }
+                    },
+                    enabled = online && target.ids.isNotEmpty() && !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (state.busy) "Preparing" else "Export as $format", color = Ink, fontWeight = FontWeight.Black) }
+                if (!online) Text("Connect to StudioRack to create this export.", color = Amber, fontSize = 12.sp)
+                if (target.kind == "setlists") Text("Set and song details are included. Chart and other attachment files are not included.", color = TextSoft, fontSize = 11.sp)
+                TextButton(onClick = close, modifier = Modifier.align(Alignment.End)) { Text("Cancel", color = Cyan) }
+            }
+        }
     }
 }
 

@@ -43,7 +43,7 @@ class StudioRackRepository(
 
     suspend fun runAiReport(question: String): JSONObject = client.runAiReport(question)
 
-    suspend fun exportData(kind: String, format: String): DataExport = client.exportData(kind, format)
+    suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport = client.exportData(kind, format, ids)
 
     suspend fun importData(kind: String, file: File, displayName: String, mimeType: String): JSONObject {
         val result = client.importData(kind, file, displayName, mimeType)

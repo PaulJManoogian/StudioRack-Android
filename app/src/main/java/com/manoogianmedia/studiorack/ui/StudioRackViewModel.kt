@@ -224,10 +224,10 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         }
     }
 
-    fun exportData(kind: String, format: String, done: (DataExport?) -> Unit) {
+    fun exportData(kind: String, format: String, ids: List<String> = emptyList(), done: (DataExport?) -> Unit) {
         _reportState.value = _reportState.value.copy(busy = true, message = "Preparing export...")
         viewModelScope.launch {
-            runCatching { repository.exportData(kind, format) }
+            runCatching { repository.exportData(kind, format, ids) }
                 .onSuccess {
                     _reportState.value = _reportState.value.copy(busy = false, message = "Export ready.")
                     done(it)

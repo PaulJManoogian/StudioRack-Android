@@ -42,8 +42,8 @@ class SyncClient(
     suspend fun runAiReport(question: String): JSONObject =
         request("/reports/ai", "POST", JSONObject().put("question", question))
 
-    suspend fun exportData(kind: String, format: String): DataExport = withContext(Dispatchers.IO) {
-        val connection = URL("$baseUrl/exchange/$kind.$format").openConnection() as HttpURLConnection
+    suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport = withContext(Dispatchers.IO) {
+        val connection = URL(exchangeUrl(baseUrl, kind, format, ids)).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
             connection.connectTimeout = 15_000
@@ -221,6 +221,12 @@ data class AttachmentDownload(
 )
 
 data class DataExport(val filename: String, val mimeType: String, val bytes: ByteArray)
+
+internal fun exchangeUrl(baseUrl: String, kind: String, format: String, ids: List<String>): String {
+    val cleanIds = ids.map(String::trim).filter(String::isNotBlank)
+    val selection = if (cleanIds.isEmpty()) "" else "?ids=${URLEncoder.encode(cleanIds.joinToString(","), Charsets.UTF_8.name())}"
+    return "$baseUrl/exchange/$kind.$format$selection"
+}
 
 class SyncException(val status: Int, override val message: String) : Exception(message)
 
