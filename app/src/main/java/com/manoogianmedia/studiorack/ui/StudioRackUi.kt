@@ -404,7 +404,7 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
                 Text("Add Maintenance Note", color = Ink, fontWeight = FontWeight.Black)
             }
         }
-        item { OutlinedTextField(query, { query = it }, label = { Text("Find an item") }, modifier = Modifier.fillMaxWidth()) }
+        item { DictationTextField(query, { query = it }, "Find an item") }
         if (filtered.isEmpty()) item { EmptyCard("No equipment matches this search.") }
         items(filtered, key = { it.entityId }) { record ->
             val row = supportingJson(record)
@@ -500,7 +500,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("SESSIONS", "Schedule") }
         item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
-        item { OutlinedTextField(query, { query = it }, label = { Text("Find scheduled work") }, modifier = Modifier.fillMaxWidth()) }
+        item { DictationTextField(query, { query = it }, "Find scheduled work") }
         item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
         if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
         items(rows, key = { it.getString("id") }) { event ->
@@ -539,7 +539,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (tab == "Songs") "Add Song" else "Create Set List", color = Ink, fontWeight = FontWeight.Black) }
         }
-        item { OutlinedTextField(query, { query = it }, label = { Text(if (tab == "Songs") "Find a song" else "Find a set list") }, modifier = Modifier.fillMaxWidth()) }
+        item { DictationTextField(query, { query = it }, if (tab == "Songs") "Find a song" else "Find a set list") }
         if (tab == "Songs") {
             val filtered = songs.filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
             items(filtered, key = { it.entityId }) { record ->
@@ -788,7 +788,7 @@ private fun EquipmentReportTab(
     val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Equipment Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        OutlinedTextField(query, { query = it }, label = { Text("Filter equipment report") }, modifier = Modifier.fillMaxWidth())
+        DictationTextField(query, { query = it }, "Filter equipment report")
         val filtered = items.filter { query.isBlank() || it.toString().contains(query, true) }
         Text("${filtered.size} matching items", color = TextSoft, fontSize = 12.sp)
         filtered.sortedBy { it.optString("display_name").lowercase() }.forEach { item ->
@@ -843,7 +843,7 @@ private fun ScheduleReportTab(events: List<JSONObject>) {
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Schedule Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        OutlinedTextField(query, { query = it }, label = { Text("Filter schedule report") }, modifier = Modifier.fillMaxWidth())
+        DictationTextField(query, { query = it }, "Filter schedule report")
         ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it }
         Text("${filtered.size} matching schedule records", color = TextSoft, fontSize = 12.sp)
         if (filtered.isEmpty()) Text("No scheduled records match these filters.", color = TextSoft)
@@ -869,7 +869,7 @@ private fun AiReportTab(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Ask Studio Buddy", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Text("Describe the equipment report you need in ordinary language.", color = TextSoft)
-        OutlinedTextField(question, changeQuestion, label = { Text("Report question") }, enabled = online && !state.busy, modifier = Modifier.fillMaxWidth())
+        DictationTextField(question, changeQuestion, "Report question", enabled = online && !state.busy)
         StudioButton(onClick = { model.runAiReport(question) }, enabled = online && question.isNotBlank() && !state.busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (state.busy) "Running Report" else "Run AI Report", color = Ink, fontWeight = FontWeight.Black)
         }
@@ -950,7 +950,7 @@ private fun RecordListScreen(
 ) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { SectionHeading(eyebrow, title) }
-        item { OutlinedTextField(query, onQuery, label = { Text(placeholder) }, modifier = Modifier.fillMaxWidth()) }
+        item { DictationTextField(query, onQuery, placeholder) }
         content()
         item { Spacer(Modifier.height(20.dp)) }
     }
@@ -1339,15 +1339,15 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     StudioField("Style", style) { style = it }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) { StudioField("Tempo", tempo) { tempo = it.filter(Char::isDigit).take(3) } }
-                        Box(Modifier.weight(1f)) { StudioField("Time signature", signature) { signature = it.take(12) } }
+                        Box(Modifier.weight(1f)) { StudioField("Tempo", tempo, dictation = false) { tempo = it.filter(Char::isDigit).take(3) } }
+                        Box(Modifier.weight(1f)) { StudioField("Time signature", signature, dictation = false) { signature = it.take(12) } }
                     }
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(Modifier.weight(1f)) { StudioField("Style", style) { style = it } }
-                    Box(Modifier.weight(1f)) { StudioField("Tempo", tempo) { tempo = it.filter(Char::isDigit).take(3) } }
-                    Box(Modifier.weight(1f)) { StudioField("Time signature", signature) { signature = it.take(12) } }
+                    Box(Modifier.weight(1f)) { StudioField("Tempo", tempo, dictation = false) { tempo = it.filter(Char::isDigit).take(3) } }
+                    Box(Modifier.weight(1f)) { StudioField("Time signature", signature, dictation = false) { signature = it.take(12) } }
                 }
             }
         }
@@ -1356,7 +1356,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             Box(Modifier.weight(1f)) { StudioField("Patch name", patchName) { patchName = it } }
             Box(Modifier.weight(1f)) { StudioField("Patch number", patchNumber) { patchNumber = it } }
         }
-        StudioField("Listen / media URL", media) { media = it }
+        StudioField("Listen / media URL", media, dictation = false) { media = it }
         StudioField("Notes", notes, singleLine = false) { notes = it }
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(favorite, { favorite = it }); Text("Favorite", color = Color.White) }
         Text("Attachments", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
@@ -1470,8 +1470,8 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
         Text("Type", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("performance", "rehearsal", "studio_session", "other"), type) { type = it }
         Text("Status", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("scheduled", "ended"), status) { status = it }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) { StudioField("Date (YYYY-MM-DD)", date) { date = it.take(10) } }
-            Box(Modifier.weight(1f)) { StudioField("Time", time) { time = it.take(8) } }
+            Box(Modifier.weight(1f)) { StudioField("Date (YYYY-MM-DD)", date, dictation = false) { date = it.take(10) } }
+            Box(Modifier.weight(1f)) { StudioField("Time", time, dictation = false) { time = it.take(8) } }
         }
         StudioField("Location", location) { location = it }
         Text("Set list", color = TextSoft, fontWeight = FontWeight.Bold)
@@ -1481,7 +1481,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
         StudioField("Notes", notes, singleLine = false) { notes = it }
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(reminder, { reminder = it }); Text("Studio Buddy reminder", color = Color.White) }
         if (reminder) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) { StudioField("How close", lead) { lead = it.filter(Char::isDigit).take(3) } }
+            Box(Modifier.weight(1f)) { StudioField("How close", lead, dictation = false) { lead = it.filter(Char::isDigit).take(3) } }
             Box(Modifier.weight(1f)) { Text("Unit", color = TextSoft); ChoiceStrip(listOf("hours", "days", "weeks"), unit) { unit = it } }
         }
         EditorActions(
@@ -1518,8 +1518,18 @@ private fun EditorDialog(title: String, close: () -> Unit, content: @Composable 
 }
 
 @Composable
-private fun StudioField(label: String, value: String, singleLine: Boolean = true, update: (String) -> Unit) {
-    OutlinedTextField(value, update, label = { Text(label) }, singleLine = singleLine, minLines = if (singleLine) 1 else 3, modifier = Modifier.fillMaxWidth())
+private fun StudioField(
+    label: String,
+    value: String,
+    singleLine: Boolean = true,
+    dictation: Boolean = true,
+    update: (String) -> Unit,
+) {
+    if (dictation) {
+        DictationTextField(value, update, label, singleLine = singleLine)
+    } else {
+        OutlinedTextField(value, update, label = { Text(label) }, singleLine = singleLine, minLines = if (singleLine) 1 else 3, modifier = Modifier.fillMaxWidth())
+    }
 }
 
 @Composable

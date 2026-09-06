@@ -22,7 +22,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -79,9 +78,9 @@ internal fun SetListEditor(
                     }
                 }
             }
-            item { OutlinedTextField(draft.name, { draft = draft.copy(name = it) }, label = { Text("Set list name") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(draft.description, { draft = draft.copy(description = it) }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth()) }
-            item { OutlinedTextField(draft.notes, { draft = draft.copy(notes = it) }, label = { Text("Set list notes") }, minLines = 2, modifier = Modifier.fillMaxWidth()) }
+            item { DictationTextField(draft.name, { draft = draft.copy(name = it) }, "Set list name") }
+            item { DictationTextField(draft.description, { draft = draft.copy(description = it) }, "Description") }
+            item { DictationTextField(draft.notes, { draft = draft.copy(notes = it) }, "Set list notes", singleLine = false, minLines = 2) }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("PRINTED SONG ATTACHMENTS", color = EditorSoft, fontSize = 11.sp, fontWeight = FontWeight.Black)
@@ -114,8 +113,8 @@ internal fun SetListEditor(
                             Text("SET ${sectionIndex + 1}", color = EditorAmber, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
                             TextButton(onClick = { draft = draft.copy(sections = draft.sections.filterNot { it.id == section.id }) }) { Text("Remove", color = Color(0xFFFF7A82)) }
                         }
-                        OutlinedTextField(section.name, { value -> draft = draft.updateSection(section.id) { it.copy(name = value) } }, label = { Text("Set name") }, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(section.notes, { value -> draft = draft.updateSection(section.id) { it.copy(notes = value) } }, label = { Text("Set notes") }, modifier = Modifier.fillMaxWidth())
+                        DictationTextField(section.name, { value -> draft = draft.updateSection(section.id) { it.copy(name = value) } }, "Set name")
+                        DictationTextField(section.notes, { value -> draft = draft.updateSection(section.id) { it.copy(notes = value) } }, "Set notes", singleLine = false, minLines = 2)
                         section.entries.forEachIndexed { index, entry ->
                             val song = entry.songId?.let(songRows::get)
                             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -123,10 +122,10 @@ internal fun SetListEditor(
                                     Text("${index + 1}", color = EditorCyan, fontWeight = FontWeight.Black, modifier = Modifier.padding(end = 10.dp))
                                     Column(Modifier.weight(1f)) {
                                         if (song == null) {
-                                            OutlinedTextField(
+                                            DictationTextField(
                                                 entry.manualTitle,
                                                 { value -> draft = draft.updateEntry(section.id, entry.id) { it.copy(manualTitle = value) } },
-                                                label = { Text("Manual song, break, or note") }, modifier = Modifier.fillMaxWidth(),
+                                                "Manual song, break, or note",
                                             )
                                         } else {
                                             Text(song.optString("title", "Untitled"), color = Color.White, fontWeight = FontWeight.Bold)
@@ -137,7 +136,7 @@ internal fun SetListEditor(
                                     TextButton(onClick = { draft = draft.moveEntry(section.id, index, 1) }, enabled = index < section.entries.lastIndex) { Text("v") }
                                     TextButton(onClick = { draft = draft.updateSection(section.id) { it.copy(entries = it.entries.filterNot { row -> row.id == entry.id }) } }) { Text("X", color = Color(0xFFFF7A82)) }
                                 }
-                                OutlinedTextField(entry.notes, { value -> draft = draft.updateEntry(section.id, entry.id) { it.copy(notes = value) } }, label = { Text("Notation for this set") }, modifier = Modifier.fillMaxWidth())
+                                DictationTextField(entry.notes, { value -> draft = draft.updateEntry(section.id, entry.id) { it.copy(notes = value) } }, "Notation for this set", singleLine = false, minLines = 2)
                                 val songAttachments = entry.songId?.let { attachmentsBySong[it] }.orEmpty()
                                 if (songAttachments.isNotEmpty()) {
                                     Text("PERFORMANCE ATTACHMENT", color = EditorSoft, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 6.dp))
@@ -212,7 +211,7 @@ private fun SongPicker(section: SetSectionDraft, songs: List<CachedRecord>, clos
                         StudioButton(onClick = close) { Text("Done", color = EditorInk, fontWeight = FontWeight.Black) }
                     }
                 }
-                item { OutlinedTextField(query, { query = it }, label = { Text("Find a song") }, modifier = Modifier.fillMaxWidth()) }
+                item { DictationTextField(query, { query = it }, "Find a song") }
                 items(songs.filter { query.isBlank() || it.json.contains(query, true) }, key = { it.entityId }) { record ->
                     val song = JSONObject(record.json)
                     val selected = record.entityId in chosen
