@@ -33,6 +33,9 @@ data class PerformanceSettings(
     val nextKey: String = "ArrowRight",
     val metronomeKey: String = "ArrowUp",
     val muteKey: String = "ArrowDown",
+    val showClock: Boolean = true,
+    val showElapsed: Boolean = true,
+    val showSetRemaining: Boolean = true,
 ) {
     companion object {
         fun fromJson(value: String): PerformanceSettings {
@@ -50,6 +53,9 @@ data class PerformanceSettings(
                 nextKey = json.optString("gig_pedal_next_key", "ArrowRight"),
                 metronomeKey = json.optString("gig_pedal_metronome_key", "ArrowUp"),
                 muteKey = json.optString("gig_pedal_mute_key", "ArrowDown"),
+                showClock = json.optInt("gig_show_clock", 1) == 1,
+                showElapsed = json.optInt("gig_show_elapsed", 1) == 1,
+                showSetRemaining = json.optInt("gig_show_set_remaining", 1) == 1,
             )
         }
     }

@@ -26,6 +26,8 @@ Native offline-first Android client for StudioRack.
 - Offline set-list creation and editing, including named sets, ordered songs, manual entries, per-entry notes, performance attachment choices, and deletion.
 - Durable queued mutations with explicit server/device conflict resolution.
 - StudioRack palette and typography throughout, with a phone/tablet Gig Mode presentation aligned to the web experience.
+- Song-length metadata, set-list duration estimates, and compact configurable Gig Mode clock, elapsed, and set-remaining displays.
+- Authenticated CSV, XLS, JSON, and XML exchange for songs, complete set lists, items, and kits through Android's document picker.
 
 ## Build
 
@@ -43,7 +45,7 @@ https://www.manoogianmedia.com/studiorack/api/v1
 
 ## Alpha install
 
-Version 0.9.4 adds quick set-list renaming and per-item maintenance history. From a care item on the Dashboard or Maintenance report, or an item's expanded equipment details, open **Maintenance / History**, then **Complete Service**. Record the work, completion date, optional technician and next date, and the reminders resolved. History and completion work offline and synchronize later. A completion preserves unrelated reminders and a newer service schedule changed on another device.
+Version 0.9.5 adds portable data exchange, song lengths, set-list duration estimates, and compact live timing in Gig Mode. Import/export runs online against the account-scoped StudioRack service; exported files can be saved to any document provider installed on Android. Song lengths and timer visibility settings synchronize for offline Gig Mode use.
 
 Download the current Android alpha directly from the StudioRack server:
 

@@ -66,6 +66,9 @@ internal fun SetListEditor(
     var pickingSection by remember { mutableStateOf<String?>(null) }
     val songRows = songs.associate { it.entityId to JSONObject(it.json) }
     val attachmentsBySong = attachments.groupBy { JSONObject(it.json).optString("song_id") }
+    val estimatedSeconds = draft.sections.sumOf { section ->
+        section.entries.sumOf { entry -> entry.songId?.let { songRows[it]?.optInt("duration_seconds") } ?: 0 }
+    }
 
     Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = EditorInk) {
         LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -81,6 +84,11 @@ internal fun SetListEditor(
             item { DictationTextField(draft.name, { draft = draft.copy(name = it) }, "Set list name") }
             item { DictationTextField(draft.description, { draft = draft.copy(description = it) }, "Description") }
             item { DictationTextField(draft.notes, { draft = draft.copy(notes = it) }, "Set list notes", singleLine = false, minLines = 2) }
+            if (estimatedSeconds > 0) item {
+                Surface(color = EditorAmber.copy(alpha = 0.12f), shape = RoundedCornerShape(50), border = BorderStroke(1.dp, EditorAmber.copy(alpha = 0.35f))) {
+                    Text("Estimated music time  ${formatDuration(estimatedSeconds)}", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                }
+            }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("PRINTED SONG ATTACHMENTS", color = EditorSoft, fontSize = 11.sp, fontWeight = FontWeight.Black)

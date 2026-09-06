@@ -9,6 +9,7 @@ import java.io.DataOutputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.security.MessageDigest
 
 class SyncClient(
@@ -40,6 +41,59 @@ class SyncClient(
 
     suspend fun runAiReport(question: String): JSONObject =
         request("/reports/ai", "POST", JSONObject().put("question", question))
+
+    suspend fun exportData(kind: String, format: String): DataExport = withContext(Dispatchers.IO) {
+        val connection = URL("$baseUrl/exchange/$kind.$format").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 60_000
+            val token = tokenStore.token() ?: throw SyncException(401, "This device is signed out.")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val detail = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                throw SyncException(status, runCatching { JSONObject(detail).optString("detail") }.getOrNull().orEmpty().ifBlank { "Data export failed." })
+            }
+            val disposition = connection.getHeaderField("Content-Disposition").orEmpty()
+            val filename = Regex("filename=\"?([^\";]+)").find(disposition)?.groupValues?.get(1) ?: "studiorack-$kind.$format"
+            DataExport(filename, connection.contentType ?: "application/octet-stream", connection.inputStream.use { it.readBytes() })
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    suspend fun importData(kind: String, file: File, displayName: String, mimeType: String): JSONObject = withContext(Dispatchers.IO) {
+        val boundary = "StudioRack-Exchange-${System.currentTimeMillis()}"
+        val encodedKind = URLEncoder.encode(kind, Charsets.UTF_8.name())
+        val connection = URL("$baseUrl/exchange/import?kind=$encodedKind").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 60_000
+            connection.doOutput = true
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            val token = tokenStore.token() ?: throw SyncException(401, "This device is signed out.")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "-").ifBlank { file.name }
+            DataOutputStream(connection.outputStream).use { output ->
+                output.writeBytes("--$boundary\r\n")
+                output.writeBytes("Content-Disposition: form-data; name=\"upload\"; filename=\"$safeName\"\r\n")
+                output.writeBytes("Content-Type: ${mimeType.ifBlank { "application/octet-stream" }}\r\n\r\n")
+                file.inputStream().use { it.copyTo(output) }
+                output.writeBytes("\r\n--$boundary--\r\n")
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val payload = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = if (payload.isBlank()) JSONObject() else JSONObject(payload)
+            if (status !in 200..299) throw SyncException(status, json.optString("detail", "Data import failed."))
+            json
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     suspend fun uploadAttachment(file: File, displayName: String, mimeType: String): JSONObject = withContext(Dispatchers.IO) {
         val boundary = "StudioRack-${System.currentTimeMillis()}"
@@ -165,6 +219,8 @@ data class AttachmentDownload(
     val sha256: String? = null,
     val byteCount: Long? = null,
 )
+
+data class DataExport(val filename: String, val mimeType: String, val bytes: ByteArray)
 
 class SyncException(val status: Int, override val message: String) : Exception(message)
 

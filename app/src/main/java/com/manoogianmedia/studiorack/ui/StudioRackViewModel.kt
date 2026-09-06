@@ -11,6 +11,7 @@ import com.manoogianmedia.studiorack.data.SyncState
 import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SyncConflict
 import com.manoogianmedia.studiorack.data.RepositorySyncHealth
+import com.manoogianmedia.studiorack.data.DataExport
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 
 class StudioRackViewModel(private val repository: StudioRackRepository) : ViewModel() {
@@ -219,6 +221,38 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
                     runCatching { repository.sync() }
                 }
                 .onFailure { _reportState.value = _reportState.value.copy(busy = false, message = it.message ?: "AI reporting is unavailable while offline.") }
+        }
+    }
+
+    fun exportData(kind: String, format: String, done: (DataExport?) -> Unit) {
+        _reportState.value = _reportState.value.copy(busy = true, message = "Preparing export...")
+        viewModelScope.launch {
+            runCatching { repository.exportData(kind, format) }
+                .onSuccess {
+                    _reportState.value = _reportState.value.copy(busy = false, message = "Export ready.")
+                    done(it)
+                }
+                .onFailure {
+                    _reportState.value = _reportState.value.copy(busy = false, message = it.message ?: "Data export failed.")
+                    done(null)
+                }
+        }
+    }
+
+    fun importData(kind: String, file: File, displayName: String, mimeType: String, done: () -> Unit) {
+        _reportState.value = _reportState.value.copy(busy = true, message = "Importing data...")
+        viewModelScope.launch {
+            val outcome = runCatching { repository.importData(kind, file, displayName, mimeType) }
+            outcome
+                .onSuccess { result ->
+                    _reportState.value = _reportState.value.copy(
+                        busy = false,
+                        message = "Import complete: ${result.optInt("created")} created, ${result.optInt("updated")} updated, ${result.optInt("skipped")} skipped.",
+                    )
+                    done()
+                }
+                .onFailure { _reportState.value = _reportState.value.copy(busy = false, message = it.message ?: "Data import failed.") }
+            done()
         }
     }
 

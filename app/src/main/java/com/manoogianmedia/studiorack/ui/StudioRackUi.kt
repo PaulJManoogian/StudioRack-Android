@@ -91,6 +91,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.CachedRecord
+import com.manoogianmedia.studiorack.data.DataExport
 import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SongAttachmentInput
 import com.manoogianmedia.studiorack.data.cacheImageFile
@@ -100,6 +101,7 @@ import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
 import com.manoogianmedia.studiorack.R
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -107,6 +109,8 @@ import org.json.JSONArray
 import java.io.File
 import java.text.DateFormat
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Date
 
@@ -621,7 +625,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 val songAttachments = attachments.filter { recordJson(it).optString("song_id") == record.entityId }
                 ExpandableRecordCard(
                     song.optString("title", "Untitled song"), song.optString("artist"),
-                    listOf(song.optString("style"), song.optString("tempo"), song.optString("time_signature"), if (song.optInt("is_favorite") == 1) "Favorite" else "").filter(String::isNotBlank),
+                    listOf(song.optString("style"), song.optString("tempo"), song.optString("time_signature"), formatDuration(song.optInt("duration_seconds")), if (song.optInt("is_favorite") == 1) "Favorite" else "").filter(String::isNotBlank),
                     actionLabel = if (normalizedMediaLink(song.optString("media_ref")) != null) "Listen" else null,
                     action = normalizedMediaLink(song.optString("media_ref"))?.let { link -> { openMediaLink(context, link) } },
                 ) {
@@ -644,8 +648,11 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 val row = recordJson(record)
                 val setSections = sections.filter { recordJson(it).optString("set_list_id") == record.entityId }
                 val setEntries = entries.filter { recordJson(it).optString("set_list_id") == record.entityId }
+                val durationBySong = songs.associate { it.entityId to recordJson(it).optInt("duration_seconds") }
+                val estimatedSeconds = setEntries.sumOf { durationBySong[recordJson(it).optString("song_id")] ?: 0 }
                 ExpandableRecordCard(
-                    row.optString("name", "Unnamed set list"), row.optString("description"), listOf("${setSections.size} sets", "${setEntries.size} songs"),
+                    row.optString("name", "Unnamed set list"), row.optString("description"),
+                    listOf("${setSections.size} sets", "${setEntries.size} songs", formatDuration(estimatedSeconds)).filter(String::isNotBlank),
                     actionLabel = "Edit", action = { editingSetList = record },
                 ) {
                     setSections.sortedBy { recordJson(it).optInt("position") }.forEach { section ->
@@ -771,14 +778,79 @@ private fun ReportsPanel(model: StudioRackViewModel) {
                 modifier = Modifier.padding(11.dp),
             )
         }
-        ChoiceStrip(listOf("Overview", "Equipment", "Maintenance", "Schedule", "AI"), tab) { tab = it }
+        ChoiceStrip(listOf("Overview", "Equipment", "Maintenance", "Schedule", "AI", "Exchange"), tab) { tab = it }
         when (tab) {
             "Overview" -> ReportOverviewTab(itemRows, kits, events.map(::recordJson), units, specRows, categories, statuses, locations, careRows, reportState, online, model)
             "Equipment" -> EquipmentReportTab(itemRows, specRows, categories, types, statuses, locations)
             "Maintenance" -> MaintenanceReport(careRows, model)
             "Schedule" -> ScheduleReportTab(events.map(::recordJson))
-            else -> AiReportTab(question, { question = it }, online, reportState, model, runs)
+            "AI" -> AiReportTab(question, { question = it }, online, reportState, model, runs)
+            else -> DataExchangeTab(online, reportState, model)
         }
+    }
+}
+
+@Composable
+private fun DataExchangeTab(online: Boolean, state: ReportUiState, model: StudioRackViewModel) {
+    val context = LocalContext.current
+    var kind by remember { mutableStateOf("Songs") }
+    var format by remember { mutableStateOf("CSV") }
+    var pendingExport by remember { mutableStateOf<DataExport?>(null) }
+    val kindValue = mapOf("Songs" to "songs", "Set Lists" to "setlists", "Items" to "items", "Kits" to "kits")
+    val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val export = pendingExport
+        if (uri != null && export != null) {
+            runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(export.bytes) } }
+                .onSuccess { Toast.makeText(context, "${export.filename} saved.", Toast.LENGTH_SHORT).show() }
+                .onFailure { Toast.makeText(context, "The export could not be saved.", Toast.LENGTH_LONG).show() }
+        }
+        pendingExport = null
+    }
+    val chooseImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val displayName = contentDisplayName(context, uri)
+            val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "-").ifBlank { "studiorack-import" }
+            val temporary = File(context.cacheDir, "exchange-${System.currentTimeMillis()}-$safeName")
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input -> temporary.outputStream().use(input::copyTo) }
+                    ?: error("The selected file could not be opened.")
+            }.onSuccess {
+                model.importData(kindValue.getValue(kind), temporary, displayName, context.contentResolver.getType(uri).orEmpty()) {
+                    temporary.delete()
+                }
+            }.onFailure {
+                temporary.delete()
+                Toast.makeText(context, it.message ?: "The selected file could not be opened.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Import / Export", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Move songs, complete set lists, items, and kits through spreadsheet or structured data files.", color = TextSoft)
+        ChoiceStrip(kindValue.keys.toList(), kind) { kind = it }
+        ChoiceStrip(listOf("CSV", "XLS", "JSON", "XML"), format) { format = it }
+        StudioButton(
+            onClick = {
+                model.exportData(kindValue.getValue(kind), format.lowercase()) { export ->
+                    if (export != null) {
+                        pendingExport = export
+                        saveExport.launch(export.filename)
+                    }
+                }
+            },
+            enabled = online && !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(if (state.busy) "Working" else "Export $kind as $format", color = Ink, fontWeight = FontWeight.Black) }
+        StudioButton(
+            onClick = { chooseImport.launch(arrayOf("text/csv", "application/json", "application/xml", "text/xml", "application/vnd.ms-excel", "*/*")) },
+            enabled = online && !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+            kind = StudioButtonKind.Secondary,
+        ) { Text("Import $kind", color = Color.White, fontWeight = FontWeight.Bold) }
+        if (!online) Text("Connect to StudioRack to import or export. Your synchronized working data remains available offline.", color = Amber, fontSize = 12.sp)
+        if (state.message.isNotBlank()) Text(state.message, color = if (state.message.startsWith("Import complete")) Cyan else TextSoft, fontSize = 12.sp)
+        Text("CSV and XLS include readable columns plus a complete record for reliable round trips. Attachment references are preserved; the files themselves remain in StudioRack storage.", color = TextSoft, fontSize = 11.sp)
     }
 }
 
@@ -1397,6 +1469,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     var artist by remember { mutableStateOf(original.optString("artist")) }
     var style by remember { mutableStateOf(original.optString("style")) }
     var tempo by remember { mutableStateOf(original.optString("tempo")) }
+    var duration by remember { mutableStateOf(formatDuration(original.optInt("duration_seconds"))) }
     var signature by remember { mutableStateOf(original.optString("time_signature", "4/4")) }
     var starts by remember { mutableStateOf(original.optString("starts_by")) }
     var patchName by remember { mutableStateOf(original.optString("patch_name")) }
@@ -1430,12 +1503,14 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                         Box(Modifier.weight(1f)) { StudioField("Tempo", tempo, dictation = false) { tempo = it.filter(Char::isDigit).take(3) } }
                         Box(Modifier.weight(1f)) { StudioField("Time signature", signature, dictation = false) { signature = it.take(12) } }
                     }
+                    StudioField("Song length", duration, dictation = false) { duration = it.filter { char -> char.isDigit() || char == ':' }.take(8) }
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(Modifier.weight(1f)) { StudioField("Style", style) { style = it } }
                     Box(Modifier.weight(1f)) { StudioField("Tempo", tempo, dictation = false) { tempo = it.filter(Char::isDigit).take(3) } }
                     Box(Modifier.weight(1f)) { StudioField("Time signature", signature, dictation = false) { signature = it.take(12) } }
+                    Box(Modifier.weight(1f)) { StudioField("Song length", duration, dictation = false) { duration = it.filter { char -> char.isDigit() || char == ':' }.take(8) } }
                 }
             }
         }
@@ -1476,7 +1551,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             save = {
                 model.saveSong(target.id, JSONObject()
                     .put("title", title.trim()).put("artist", artist.trim()).put("style", style.trim())
-                    .put("tempo", tempo.trim()).put("time_signature", signature.trim()).put("starts_by", starts.trim())
+                    .put("tempo", tempo.trim()).put("duration_seconds", parseDuration(duration)).put("time_signature", signature.trim()).put("starts_by", starts.trim())
                     .put("patch_name", patchName.trim()).put("patch_number", patchNumber.trim())
                     .put("media_ref", media.trim()).put("notes", notes.trim()).put("is_favorite", if (favorite) 1 else 0), newAttachments, close)
             },
@@ -1700,6 +1775,19 @@ private fun GigModeScreen(
     }
     var currentSong by remember(eventId) { mutableIntStateOf(0) }
     var detailOpen by remember(eventId) { mutableStateOf(false) }
+    val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
+    var clockTick by remember(eventId) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(eventId) {
+        while (true) {
+            clockTick = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+    val activeGigSong = performanceSongs.getOrNull(currentSong)
+    val setRemainingSeconds = performanceSongs.drop(currentSong)
+        .takeWhile { it.sectionName == activeGigSong?.sectionName }
+        .sumOf { it.song?.optInt("duration_seconds") ?: 0 }
+    val elapsedSeconds = ((clockTick - gigStartedAt) / 1_000).coerceAtLeast(0)
 
     DisposableEffect(settings.pedalEnabled) {
         onGigModeActive(settings.pedalEnabled)
@@ -1746,6 +1834,9 @@ private fun GigModeScreen(
             metronomeState = metronomeState,
             previousItem = performanceSongs.getOrNull(currentSong - 1),
             nextItem = performanceSongs.getOrNull(currentSong + 1),
+            settings = settings,
+            elapsedSeconds = elapsedSeconds,
+            setRemainingSeconds = setRemainingSeconds,
             close = { detailOpen = false },
             previous = { currentSong = (currentSong - 1).coerceAtLeast(0) },
             next = { currentSong = (currentSong + 1).coerceAtMost(performanceSongs.lastIndex) },
@@ -1779,12 +1870,16 @@ private fun GigModeScreen(
                 GigPill("Chart", onClick = { if (performanceSongs.isNotEmpty()) detailOpen = true })
             }
         }
+        if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
+            item { GigTimeStrip(settings, elapsedSeconds, setRemainingSeconds, activeGigSong?.sectionName.orEmpty()) }
+        }
         sectionRows.forEach { section ->
             item {
-                Text(
-                    section.optString("name", "Set"), color = Amber, fontFamily = FontFamily.Serif, fontSize = 34.sp,
-                    modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
+                val sectionSeconds = performanceSongs.filter { it.sectionName == section.optString("name", "Set") }.sumOf { it.song?.optInt("duration_seconds") ?: 0 }
+                Column(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(section.optString("name", "Set"), color = Amber, fontFamily = FontFamily.Serif, fontSize = 34.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    if (sectionSeconds > 0) Text("${formatDuration(sectionSeconds)} estimated music time", color = TextSoft, fontSize = 11.sp)
+                }
             }
             items(entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }) { entry ->
                 val song = songMap[entry.optString("song_id")]
@@ -1844,7 +1939,35 @@ private fun GigSongCues(song: JSONObject?) {
         listOf(song?.optString("starts_by"), song?.optString("style")).filterNotNull().filter(String::isNotBlank).forEach {
             Text(it, color = Color.White, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
         }
-        listOf(song?.optString("tempo"), song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).forEach { GigValueChip(it) }
+        listOf(song?.optString("tempo"), song?.optString("time_signature"), formatDuration(song?.optInt("duration_seconds") ?: 0)).filterNotNull().filter(String::isNotBlank).forEach { GigValueChip(it) }
+    }
+}
+
+@Composable
+private fun GigTimeStrip(settings: PerformanceSettings, elapsedSeconds: Long, remainingSeconds: Int, sectionName: String) {
+    Surface(
+        color = Color(0xC9161B26),
+        shape = RoundedCornerShape(7.dp),
+        border = BorderStroke(1.dp, Amber.copy(alpha = 0.22f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (settings.showClock) GigTimerCell("Clock", LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm:ss a")))
+            if (settings.showElapsed) GigTimerCell("Elapsed", formatDuration(elapsedSeconds.toInt(), showZero = true))
+            if (settings.showSetRemaining) GigTimerCell("${sectionName.ifBlank { "Set" }} left", formatDuration(remainingSeconds, showZero = true))
+        }
+    }
+}
+
+@Composable
+private fun GigTimerCell(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 5.dp)) {
+        Text(label.uppercase(), color = TextSoft, fontSize = 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
+        Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -1857,6 +1980,9 @@ private fun PerformanceSongScreen(
     metronomeState: com.manoogianmedia.studiorack.performance.MetronomeState,
     previousItem: GigSong?,
     nextItem: GigSong?,
+    settings: PerformanceSettings,
+    elapsedSeconds: Long,
+    setRemainingSeconds: Int,
     close: () -> Unit,
     previous: () -> Unit,
     next: () -> Unit,
@@ -1901,6 +2027,9 @@ private fun PerformanceSongScreen(
                 GigCircleButton(if (metronomeState.running) "||" else "♪", metronome::toggle)
             }
         }
+        if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
+            GigTimeStrip(settings, elapsedSeconds, setRemainingSeconds, item.sectionName)
+        }
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"), color = Color.White, fontFamily = FontFamily.Serif, fontSize = 34.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Text(item.song?.optString("artist").orEmpty(), color = TextSoft, fontFamily = FontFamily.Serif, fontSize = 21.sp)
@@ -1918,6 +2047,7 @@ private fun PerformanceSongScreen(
             GigDetail("Starts", item.song?.optString("starts_by").orEmpty())
             GigDetail("Tempo", item.song?.optString("tempo").orEmpty())
             GigDetail("Time", item.song?.optString("time_signature").orEmpty())
+            GigDetail("Length", formatDuration(item.song?.optInt("duration_seconds") ?: 0))
             GigDetail("Style", item.song?.optString("style").orEmpty())
             val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
             GigDetail("Patch", patch)
@@ -2000,6 +2130,25 @@ private fun GigDetail(label: String, value: String) {
 
 private fun gigSongTitle(item: GigSong) = item.song?.optString("title")?.takeIf(String::isNotBlank) ?: item.entry.optString("manual_title", "Untitled")
 private fun gigSongCue(item: GigSong) = listOf(item.song?.optString("starts_by"), item.song?.optString("tempo"), item.song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
+
+private fun parseDuration(value: String): Int {
+    val parts = value.trim().split(':').mapNotNull(String::toIntOrNull)
+    return when (parts.size) {
+        1 -> parts[0] * 60
+        2 -> parts[0] * 60 + parts[1].coerceIn(0, 59)
+        3 -> parts[0] * 3600 + parts[1].coerceIn(0, 59) * 60 + parts[2].coerceIn(0, 59)
+        else -> 0
+    }.coerceIn(0, 86_400)
+}
+
+internal fun formatDuration(seconds: Int, showZero: Boolean = false): String {
+    if (seconds <= 0) return if (showZero) "0:00" else ""
+    val hours = seconds / 3600
+    val minutes = (seconds % 3600) / 60
+    val remainder = seconds % 60
+    return if (hours > 0) "$hours:${minutes.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}"
+    else "$minutes:${remainder.toString().padStart(2, '0')}"
+}
 
 internal fun normalizedMediaLink(value: String): String? {
     val link = value.trim()

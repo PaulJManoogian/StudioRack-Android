@@ -43,6 +43,14 @@ class StudioRackRepository(
 
     suspend fun runAiReport(question: String): JSONObject = client.runAiReport(question)
 
+    suspend fun exportData(kind: String, format: String): DataExport = client.exportData(kind, format)
+
+    suspend fun importData(kind: String, file: File, displayName: String, mimeType: String): JSONObject {
+        val result = client.importData(kind, file, displayName, mimeType)
+        sync()
+        return result
+    }
+
     suspend fun saveSong(songId: String, data: JSONObject, newAttachments: List<SongAttachmentInput>) {
         val currentSong = dao.record("song", songId)
         val records = mutableListOf(CachedRecord("song", songId, currentSong?.revision ?: 0, data.toString()))
