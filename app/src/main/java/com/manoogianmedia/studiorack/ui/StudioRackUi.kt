@@ -1535,7 +1535,7 @@ private fun StudioField(
 @Composable
 private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Unit)?) {
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StudioButton(onClick = save, enabled = canSave, modifier = Modifier.weight(1f)) { Text("Save Offline", color = Ink, fontWeight = FontWeight.Black) }
+        StudioButton(onClick = save, enabled = canSave, modifier = Modifier.weight(1f)) { Text("Save", color = Ink, fontWeight = FontWeight.Black) }
         if (delete != null) StudioButton(onClick = delete, kind = StudioButtonKind.Danger) { Text("Delete", color = Color.White, fontWeight = FontWeight.Bold) }
     }
     Text("This change is stored on this device immediately and synchronized when a connection is available.", color = TextSoft, fontSize = 11.sp)
