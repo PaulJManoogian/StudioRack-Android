@@ -43,6 +43,8 @@ https://www.manoogianmedia.com/studiorack/api/v1
 
 ## Alpha install
 
+Version 0.9.4 adds quick set-list renaming and per-item maintenance history. From a care item on the Dashboard or Maintenance report, or an item's expanded equipment details, open **Maintenance / History**, then **Complete Service**. Record the work, completion date, optional technician and next date, and the reminders resolved. History and completion work offline and synchronize later. A completion preserves unrelated reminders and a newer service schedule changed on another device.
+
 Download the current Android alpha directly from the StudioRack server:
 
 https://www.manoogianmedia.com/studiorack/StudioRack-alpha.apk

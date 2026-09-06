@@ -10,6 +10,24 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class DashboardCareTest {
     @Test
+    fun pendingCompletionClearsOnlySelectedReminderAndKeepsNewWork() {
+        val item = JSONObject("""{"id":"cymbal","display_name":"Crash"}""")
+        val first = JSONObject("""{"id":"clean","item_id":"cymbal","status":"pending","note":"Clean"}""")
+        val second = JSONObject("""{"id":"stand","item_id":"cymbal","status":"pending","note":"Check stand"}""")
+        val completion = JSONObject("""{"item_id":"cymbal","completed_on":"2026-09-06","summary":"Cleaned","expected_due":"","next_due":"","resolved_note_ids":"[\"clean\"]"}""")
+        assertEquals(0, maintenanceRows(emptyList(), listOf(item), emptyList(), emptyList(), fieldNotes = listOf(first), completions = listOf(completion)).size)
+        assertEquals("Check stand", maintenanceRows(emptyList(), listOf(item), emptyList(), emptyList(), fieldNotes = listOf(first, second), completions = listOf(completion)).single().notes)
+    }
+
+    @Test
+    fun completionAdvancesIntervalButDoesNotOverwriteNewerSchedule() {
+        val record = JSONObject("""{"completed_on":"2026-09-06","summary":"Serviced","expected_due":"2026-09-01","next_due":""}""")
+        val values = mapOf("next_service_due" to "2026-09-01", "service_interval_days" to "30")
+        assertEquals("2026-10-06", serviceDue(projectedMaintenanceSpecs(values, listOf(record))))
+        assertEquals("2026-12-01", serviceDue(projectedMaintenanceSpecs(values + ("next_service_due" to "2026-12-01"), listOf(record))))
+    }
+
+    @Test
     fun maintenanceRowsUseHumanFacingItemDetailsAndCalculatedDates() {
         val item = JSONObject("""{"id":"itm_000048","display_name":"Piccolo Snare","brand_id":"brand_pearl","default_location_id":"studio","image_url":"/drumdb/static/images/snare.jpg"}""")
         val brand = JSONObject("""{"id":"brand_pearl","name":"Pearl"}""")

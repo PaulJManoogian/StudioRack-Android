@@ -156,9 +156,8 @@ class StudioRackRepository(
     suspend fun save(entityType: String, entityId: String, data: JSONObject) {
         val current = dao.record(entityType, entityId)
         val revision = current?.revision ?: 0
-        dao.putRecords(listOf(CachedRecord(entityType, entityId, revision, data.toString())))
-        dao.removePendingForEntity(entityType, entityId)
-        dao.putPending(
+        dao.applyLocalBundle(
+            listOf(CachedRecord(entityType, entityId, revision, data.toString())), emptyList(), listOf(
             PendingMutation(
                 mutationId = "mutation_${UUID.randomUUID().toString().replace("-", "")}",
                 entityType = entityType,
@@ -166,7 +165,7 @@ class StudioRackRepository(
                 operation = "upsert",
                 baseRevision = revision,
                 json = data.toString(),
-            )
+            ))
         )
         syncNow()
     }

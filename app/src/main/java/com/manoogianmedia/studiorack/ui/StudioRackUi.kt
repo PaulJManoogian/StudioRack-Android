@@ -312,7 +312,8 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val upcoming = events.map(::recordJson).filter { it.optString("event_status") != "ended" }.sortedBy { it.optString("event_date") + it.optString("start_time") }
     val specRows = specs.map(::supportingJson)
     val purchaseTotal = specRows.filter { it.optString("key") == "purchase_price" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
-    val careRows = maintenanceRows(specRows, items.map(::supportingJson), brands.map(::supportingJson), locations.map(::supportingJson), fieldNotes = maintenanceNotes.map(::recordJson))
+    val maintenanceHistory by model.maintenanceHistory.collectAsState()
+    val careRows = maintenanceRows(specRows, items.map(::supportingJson), brands.map(::supportingJson), locations.map(::supportingJson), fieldNotes = maintenanceNotes.map(::recordJson), completions = maintenanceHistory.filter { it.revision == 0 }.map(::recordJson))
     val tracked = careRows.size
     val openBuddy = actions.map(::supportingJson).count { it.optString("status") !in setOf("handled", "cleared") }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -373,7 +374,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
             EventCard(event, readiness, open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) })
         }
         item { SectionHeading("CARE READINESS", "What needs hands on it?") }
-        item { CareSummary(careRows) }
+        item { CareSummary(careRows, model) }
         item { SectionHeading("STUDIO BUDDY", "Recent activity") }
         if (actions.isEmpty()) item { EmptyCard("No Studio Buddy actions are stored on this device.") }
         items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action)) }
@@ -419,6 +420,7 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
             ) {
                 DetailLine("Location", locationNames[row.optString("default_location_id")].orEmpty())
                 DetailLine("Notes", row.optString("notes"))
+                MaintenanceHistoryControl(record.entityId, row.optString("display_name", "Item"), model)
                 fieldNotes.forEach { note -> DetailLine("Field note - ${note.optString("status", "pending").humanize()}", note.optString("note")) }
                 itemUnits.forEach { unit -> DetailLine(unit.optString("unit_label", "Unit"), listOf(unit.optString("serial_number"), unit.optString("status")).filter(String::isNotBlank).joinToString(" / ")) }
                 itemSpecs.sortedBy { it.optString("key") }.forEach { spec -> DetailLine(spec.optString("key").humanize(), spec.optString("value")) }
@@ -427,6 +429,77 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
         item { Spacer(Modifier.height(20.dp)) }
     }
     if (addingMaintenance) MaintenanceNoteEditor(items, model) { addingMaintenance = false }
+    }
+}
+
+@Composable
+private fun MaintenanceHistoryControl(itemId: String, itemName: String, model: StudioRackViewModel) {
+    var open by remember(itemId) { mutableStateOf(false) }
+    StudioButton(onClick = { open = true }) { Text("Maintenance / History", color = Ink, fontWeight = FontWeight.Bold) }
+    if (open) MaintenanceHistoryDialog(itemId, itemName, model) { open = false }
+}
+
+@Composable
+private fun MaintenanceHistoryDialog(itemId: String, itemName: String, model: StudioRackViewModel, close: () -> Unit) {
+    val history by model.maintenanceHistory.collectAsState()
+    val notes by model.maintenanceNotes.collectAsState()
+    val specs by model.itemSpecs.collectAsState()
+    val itemHistory = history.filter { recordJson(it).optString("item_id") == itemId }
+    val pending = itemHistory.filter { it.revision == 0 }.map(::recordJson)
+    val values = projectedMaintenanceSpecs(specs.map(::supportingJson).filter { it.optString("item_id") == itemId }.associate { it.optString("key") to it.optString("value") }, pending)
+    val activeNotes = notes.map(::recordJson).filter { it.optString("item_id") == itemId && it.optString("status") in setOf("pending", "notified", "rescheduled") && it.optString("id") !in resolvedNoteIds(pending) }
+    var tab by remember { mutableStateOf("History") }
+    var summary by remember { mutableStateOf("") }
+    var performedBy by remember { mutableStateOf("") }
+    var completedOn by remember { mutableStateOf(LocalDate.now().toString()) }
+    var nextDue by remember { mutableStateOf("") }
+    var selectedNotes by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var expectedDue by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    EditorDialog(itemName, close) {
+        ChoiceStrip(listOf("History", "Complete Service"), tab) {
+            if (it == "Complete Service" && tab != it) {
+                selectedNotes = activeNotes.map { note -> note.optString("id") }.toSet()
+                expectedDue = serviceDue(values)
+            }
+            tab = it
+        }
+        if (tab == "History") {
+            if (itemHistory.isEmpty()) Text("No completed service records yet.", color = TextSoft)
+            itemHistory.sortedWith(compareByDescending<CachedRecord> { recordJson(it).optString("completed_on") }.thenByDescending { recordJson(it).optString("created_utc") }).forEach { record ->
+                val row = recordJson(record)
+                DetailLine(row.optString("completed_on") + if (record.revision == 0) " - Pending sync" else "", row.optString("summary"))
+                DetailLine("Performed by", row.optString("performed_by"))
+            }
+            activeNotes.forEach { DetailLine("Open reminder", it.optString("note")) }
+            DetailLine("Last service", values["last_service_date"].orEmpty())
+            DetailLine("Last service notes", values["last_service_notes"].orEmpty())
+        } else {
+            StudioField("Completed on (YYYY-MM-DD)", completedOn, dictation = false) { completedOn = it }
+            StudioField("Work completed", summary, singleLine = false) { summary = it }
+            StudioField("Performed by (optional)", performedBy) { performedBy = it }
+            StudioField("Next service date (optional, YYYY-MM-DD)", nextDue, dictation = false) { nextDue = it }
+            Text("Leave the next date blank to use the service interval, or clear a one-time reminder.", color = TextSoft)
+            if (expectedDue.isNotBlank()) DetailLine("Scheduled service being completed", expectedDue)
+            activeNotes.forEach { note ->
+                val id = note.optString("id")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = id in selectedNotes, onCheckedChange = { selectedNotes = if (it) selectedNotes + id else selectedNotes - id })
+                    Text(note.optString("note"), color = Color.White, modifier = Modifier.weight(1f))
+                }
+            }
+            val date = parseLocalDate(completedOn)
+            val next = parseLocalDate(nextDue)
+            val valid = date != null && !date.isAfter(LocalDate.now()) && (nextDue.isBlank() || (next != null && next.isAfter(date)))
+            if (!valid) Text("Use a valid completion date, and a later date for the next service.", color = Amber)
+            EditorActions(canSave = !saving && valid && summary.trim().isNotEmpty() && summary.length <= 4000, save = {
+                saving = true
+                model.completeMaintenance(JSONObject().put("item_id", itemId).put("completed_on", completedOn.trim())
+                    .put("summary", summary.trim()).put("performed_by", performedBy.trim()).put("next_due", nextDue.trim())
+                    .put("expected_due", expectedDue).put("resolved_note_ids", org.json.JSONArray(selectedNotes.toList()).toString())
+                    .put("created_utc", java.time.Instant.now().toString()).put("source", "android")) { success -> saving = false; if (success) close() }
+            }, delete = null)
+        }
     }
 }
 
@@ -529,6 +602,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     var editingSong by remember { mutableStateOf<EditorTarget?>(null) }
     var editingSetList by remember { mutableStateOf<CachedRecord?>(null) }
     var creatingSetList by remember { mutableStateOf(false) }
+    var renamingSetList by remember { mutableStateOf<CachedRecord?>(null) }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("LIBRARY", "Songs and Set Lists") }
@@ -584,6 +658,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { editingSetList = record }) { Text("Edit Set List", color = Amber) }
+                        TextButton(onClick = { renamingSetList = record }) { Text("Rename", color = Amber) }
                     }
                 }
             }
@@ -591,6 +666,14 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     }
     editingSong?.let { target ->
         SongEditor(target, model, close = { editingSong = null })
+    }
+    renamingSetList?.let { record ->
+        var name by remember(record.entityId) { mutableStateOf(recordJson(record).optString("name")) }
+        EditorDialog("Rename Set List", { renamingSetList = null }) {
+            StudioField("Name", name) { name = it }
+            EditorActions(canSave = name.trim().isNotEmpty() && name.trim().length <= 200,
+                save = { model.renameSetList(record, name) { renamingSetList = null } }, delete = null)
+        }
     }
     if (creatingSetList || editingSetList != null) {
         Dialog(onDismissRequest = { creatingSetList = false; editingSetList = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -664,7 +747,8 @@ private fun ReportsPanel(model: StudioRackViewModel) {
     val online = rememberNetworkConnected()
     val itemRows = items.map(::supportingJson)
     val specRows = specs.map(::supportingJson)
-    val careRows = maintenanceRows(specRows, itemRows, brands.map(::supportingJson), locations.map(::supportingJson), windowDays = 36500, fieldNotes = maintenanceNotes.map(::recordJson))
+    val maintenanceHistory by model.maintenanceHistory.collectAsState()
+    val careRows = maintenanceRows(specRows, itemRows, brands.map(::supportingJson), locations.map(::supportingJson), windowDays = 36500, fieldNotes = maintenanceNotes.map(::recordJson), completions = maintenanceHistory.filter { it.revision == 0 }.map(::recordJson))
     var tab by remember { mutableStateOf("Overview") }
     var question by remember { mutableStateOf("") }
 
@@ -691,7 +775,7 @@ private fun ReportsPanel(model: StudioRackViewModel) {
         when (tab) {
             "Overview" -> ReportOverviewTab(itemRows, kits, events.map(::recordJson), units, specRows, categories, statuses, locations, careRows, reportState, online, model)
             "Equipment" -> EquipmentReportTab(itemRows, specRows, categories, types, statuses, locations)
-            "Maintenance" -> MaintenanceReport(careRows)
+            "Maintenance" -> MaintenanceReport(careRows, model)
             "Schedule" -> ScheduleReportTab(events.map(::recordJson))
             else -> AiReportTab(question, { question = it }, online, reportState, model, runs)
         }
@@ -810,12 +894,12 @@ private fun EquipmentReportTab(
 }
 
 @Composable
-private fun MaintenanceReport(rows: List<MaintenanceRow>) {
+private fun MaintenanceReport(rows: List<MaintenanceRow>, model: StudioRackViewModel) {
     var status by remember { mutableStateOf("All") }
     val filtered = rows.filter { status == "All" || it.statusLabel == status }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Maintenance Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        ChoiceStrip(listOf("All", "Past due", "Due today", "Upcoming", "Scheduled"), status) { status = it }
+        ChoiceStrip(listOf("All", "Needs attention", "Past due", "Due today", "Upcoming", "Scheduled"), status) { status = it }
         Text("${filtered.size} matching maintenance records", color = TextSoft, fontSize = 12.sp)
         if (filtered.isEmpty()) Text("No equipment matches this care status.", color = TextSoft)
         filtered.forEach { row ->
@@ -828,6 +912,7 @@ private fun MaintenanceReport(rows: List<MaintenanceRow>) {
                 DetailLine("Care item", row.careItem)
                 DetailLine("Location", row.location)
                 DetailLine("Notes", row.notes)
+                MaintenanceHistoryControl(row.itemId, row.name, model)
             }
         }
     }
@@ -1075,7 +1160,7 @@ private fun BuddyActionCard(row: JSONObject) {
 }
 
 @Composable
-private fun CareSummary(rows: List<MaintenanceRow>) {
+private fun CareSummary(rows: List<MaintenanceRow>, model: StudioRackViewModel) {
     val attention = rows.filter { it.status in setOf("attention", "overdue", "due", "soon") }
     val counts = listOf(
         "Attention" to rows.count { it.status == "attention" },
@@ -1108,6 +1193,7 @@ private fun CareSummary(rows: List<MaintenanceRow>) {
                     DetailLine("Location", row.location)
                     DetailLine("Care status", row.careStatus)
                     DetailLine("Notes", row.notes)
+                    MaintenanceHistoryControl(row.itemId, row.name, model)
                 }
             }
         }
@@ -1136,6 +1222,7 @@ internal fun maintenanceRows(
     today: LocalDate = LocalDate.now(),
     windowDays: Long = 30,
     fieldNotes: List<JSONObject> = emptyList(),
+    completions: List<JSONObject> = emptyList(),
 ): List<MaintenanceRow> {
     val specsByItem = specs.groupBy { it.optString("item_id") }.mapValues { (_, rows) ->
         rows.associate { it.optString("key") to it.optString("value") }
@@ -1143,14 +1230,15 @@ internal fun maintenanceRows(
     val brandNames = brands.associate { it.optString("id") to it.optString("name") }
     val locationNames = locations.associate { it.optString("id") to it.optString("name") }
     val fieldNotesByItem = fieldNotes
+        .filter { it.optString("id") !in resolvedNoteIds(completions) }
         .filter { it.optString("status", "pending") in setOf("pending", "notified") }
         .groupBy { it.optString("item_id") }
     return items.mapNotNull { item ->
         val itemId = item.optString("id")
-        val values = specsByItem[itemId].orEmpty()
+        val values = projectedMaintenanceSpecs(specsByItem[itemId].orEmpty(), completions.filter { it.optString("item_id") == itemId })
         val explicitDue = parseLocalDate(values["next_service_due"])
         val intervalDue = parseLocalDate(values["last_service_date"])?.let { last ->
-            values["service_interval_days"]?.toLongOrNull()?.takeIf { it >= 0 }?.let(last::plusDays)
+            values["service_interval_days"]?.toLongOrNull()?.takeIf { it > 0 }?.let(last::plusDays)
         }
         val itemFieldNotes = fieldNotesByItem[itemId].orEmpty()
         val due = explicitDue ?: intervalDue ?: if (itemFieldNotes.isNotEmpty()) today else return@mapNotNull null
@@ -1952,7 +2040,7 @@ private fun EmptyCard(text: String) {
     Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) { Text(text, color = TextSoft) }
 }
 
-private fun recordJson(record: CachedRecord): JSONObject = runCatching { JSONObject(record.json) }.getOrDefault(JSONObject())
+private fun recordJson(record: CachedRecord): JSONObject = runCatching { JSONObject(record.json) }.getOrDefault(JSONObject()).put("id", record.entityId)
 
 private data class GigSong(
     val sectionName: String,

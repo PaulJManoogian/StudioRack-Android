@@ -36,6 +36,8 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val maintenanceNotes: StateFlow<List<CachedRecord>> = repository.records("maintenance_note")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val maintenanceHistory: StateFlow<List<CachedRecord>> = repository.records("maintenance_record")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val cachedAttachments: StateFlow<List<CachedAttachment>> = repository.cachedAttachments()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val items: StateFlow<List<SupportingRecord>> = repository.supporting("item")
@@ -144,6 +146,18 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
             done,
         )
     }
+
+    fun completeMaintenance(data: JSONObject, done: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.save("maintenance_record", "service_${UUID.randomUUID().toString().replace("-", "")}", data) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Service recorded. Synchronization is queued."); done(true) }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not record service."); done(false) }
+        }
+    }
+
+    fun renameSetList(record: CachedRecord, name: String, done: () -> Unit) = saveRecord(
+        "set_list", record.entityId, JSONObject(record.json).put("name", name.trim()), done,
+    )
 
     fun saveSetList(draft: SetListDraft, done: () -> Unit) {
         viewModelScope.launch {

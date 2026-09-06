@@ -3,6 +3,7 @@ package com.manoogianmedia.studiorack
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.manoogianmedia.studiorack.data.CachedRecord
+import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.CachedAttachment
 import com.manoogianmedia.studiorack.data.StudioRackDatabase
 import com.manoogianmedia.studiorack.data.SyncState
@@ -46,8 +47,11 @@ class OfflineSetListFixtureTest {
         val database = StudioRackDatabase.create(context)
         val dao = database.dao()
         dao.clearRecords()
+        dao.clearSupporting()
+        dao.putSupporting(listOf(SupportingRecord("item", "qa_cymbal", """{"id":"qa_cymbal","display_name":"16-inch Medium Thin Crash","quantity":1}""")))
         dao.putRecords(
             listOf(
+                CachedRecord("maintenance_note", "qa_clean", 1, """{"id":"qa_clean","item_id":"qa_cymbal","status":"pending","note":"Clean the cymbal after the outdoor performance."}"""),
                 CachedRecord("song", "song_fixture_1", 1, """{"id":"song_fixture_1","title":"Natural Apple Delight","artist":"Planet 10","style":"Rock","tempo":"120","time_signature":"4/4","starts_by":"Guitar","notes":"Arrangement by TTMB"}"""),
                 CachedRecord("song", "song_fixture_2", 1, """{"id":"song_fixture_2","title":"Proud Mary","artist":"CCR","style":"Southern Rock","tempo":"120","time_signature":"4/4","starts_by":"All"}"""),
                 CachedRecord("set_list", "setlist_fixture", 1, """{"id":"setlist_fixture","name":"Practice","description":"Offline editor QA","attachment_print_mode":"none","is_favorite":1}"""),
