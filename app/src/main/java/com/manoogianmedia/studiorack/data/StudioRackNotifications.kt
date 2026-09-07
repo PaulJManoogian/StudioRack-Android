@@ -41,6 +41,7 @@ private const val SUMMARY_ID = 7300
 private const val CHANNEL_MAINTENANCE = "studiorack_maintenance"
 private const val CHANNEL_SCHEDULE = "studiorack_schedule"
 private const val CHANNEL_BUDDY = "studiorack_buddy"
+private const val CHANNEL_SHARING = "studiorack_sharing"
 
 private data class NotificationCandidate(
     val sourceId: String,
@@ -72,6 +73,10 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
             },
             NotificationChannel(CHANNEL_BUDDY, agentName, NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "$agentName actions and responses"
+                group = GROUP_ID
+            },
+            NotificationChannel(CHANNEL_SHARING, "Shared With Me", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "New and updated sessions or set lists shared with this account"
                 group = GROUP_ID
             },
         ).forEach(system::createNotificationChannel)
@@ -164,6 +169,19 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
                 val candidate = eventCandidate(event, eventId)
                 if (candidate != null && candidate.sourceId !in actionIds) output += candidate
             }
+        dao.supporting("share_notification").forEach { record ->
+            val row = JSONObject(record.json)
+            if (row.optString("read_utc").isNotBlank()) return@forEach
+            output += NotificationCandidate(
+                sourceId = record.entityId,
+                fingerprint = listOf(row.optString("created_utc"), row.optString("subject"), row.optString("body")).joinToString("|"),
+                channelId = CHANNEL_SHARING,
+                title = row.optString("subject", "New shared item"),
+                body = row.optString("body", "Open Shared With Me to review it."),
+                destination = "dashboard",
+                recordId = row.optString("grant_id"),
+            )
+        }
         return output.distinctBy(NotificationCandidate::sourceId)
     }
 

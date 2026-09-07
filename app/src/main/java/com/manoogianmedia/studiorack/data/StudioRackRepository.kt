@@ -409,7 +409,10 @@ class StudioRackRepository(
     }
 
     private suspend fun refreshAttachmentCache() {
-        val records = dao.records("song_attachment")
+        val records = dao.records("song_attachment") + dao.supporting("shared_song_attachment").map { shared ->
+            val data = JSONObject(shared.json)
+            CachedRecord("shared_song_attachment", shared.entityId, data.optString("updated_utc").hashCode(), shared.json)
+        }
         val existing = dao.cachedAttachments().associateBy { it.attachmentId }
         val activeIds = records.mapTo(mutableSetOf()) { it.entityId }
 

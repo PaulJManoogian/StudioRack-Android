@@ -805,9 +805,10 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
     var tab by remember { mutableStateOf("Reports") }
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading(productName.uppercase(), "More") }
-        item { ChoiceStrip(listOf("Reports", "People", agentName, "Reference", "Sync", "Settings"), tab) { tab = it } }
+        item { ChoiceStrip(listOf("Reports", "Shared", "People", agentName, "Reference", "Sync", "Settings"), tab) { tab = it } }
         when (tab) {
             "Reports" -> reportsContent(model)
+            "Shared" -> sharedWithMeContent(model)
             "People" -> directoryContent(model)
             agentName -> buddyContent(model)
             "Reference" -> referenceContent(model)
@@ -815,6 +816,88 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
             else -> settingsContent(model, uiState)
         }
     }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.sharedWithMeContent(model: StudioRackViewModel) {
+    item { SharedWithMePanel(model) }
+}
+
+@Composable
+private fun SharedWithMePanel(model: StudioRackViewModel) {
+    val accessRows by model.sharedAccess.collectAsState()
+    val events by model.sharedEvents.collectAsState()
+    val venues by model.sharedVenues.collectAsState()
+    val setLists by model.sharedSetLists.collectAsState()
+    val sections by model.sharedSetListSections.collectAsState()
+    val entries by model.sharedSetListEntries.collectAsState()
+    val songs by model.sharedSongs.collectAsState()
+    val attachments by model.sharedAttachments.collectAsState()
+    val cached by model.cachedAttachments.collectAsState()
+    val context = LocalContext.current
+    var selectedGrant by remember { mutableStateOf<String?>(null) }
+    var preview by remember { mutableStateOf<CachedAttachment?>(null) }
+    val cacheById = cached.associateBy(CachedAttachment::attachmentId)
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeading("COLLABORATION", "Shared With Me")
+        Text("Live sessions and set lists shared with your account remain available from the last successful sync.", color = TextSoft)
+        if (accessRows.isEmpty()) EmptyCard("Nothing has been shared with this account.")
+        accessRows.forEach { record ->
+            val access = supportingJson(record)
+            val grantId = access.optString("grant_id", record.entityId)
+            val event = events.map(::supportingJson).firstOrNull { it.optString("grant_id") == grantId }
+            val setList = setLists.map(::supportingJson).firstOrNull { it.optString("grant_id") == grantId }
+            val title = event?.optString("title")?.takeIf(String::isNotBlank)
+                ?: setList?.optString("name")?.takeIf(String::isNotBlank) ?: "Shared item"
+            InfoCard {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text("From ${access.optString("owner_organization").ifBlank { access.optString("owner_name", "Another StudioRack user") }}", color = Cyan)
+                        Text("${access.optString("access_role", "performer").humanize()} access | Expires ${access.optString("expires_utc")}", color = TextSoft, fontSize = 12.sp)
+                    }
+                    StudioButton(onClick = { selectedGrant = if (selectedGrant == grantId) null else grantId }, kind = StudioButtonKind.Secondary) {
+                        Text(if (selectedGrant == grantId) "Close" else "Open", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (selectedGrant == grantId) {
+                    event?.let {
+                        Text(listOf(it.optString("event_date"), it.optString("start_time"), it.optString("event_type").humanize()).filter(String::isNotBlank).joinToString(" | "), color = Amber, fontWeight = FontWeight.Bold)
+                    }
+                    venues.map(::supportingJson).firstOrNull { it.optString("grant_id") == grantId }?.let { venue ->
+                        Text(listOf(venue.optString("name"), venue.optString("address_line1"), venue.optString("city"), venue.optString("region")).filter(String::isNotBlank).joinToString(", "), color = TextSoft)
+                        normalizedMediaLink(venue.optString("maps_url"))?.let { mapUrl -> StudioButton(onClick = { openMediaLink(context, mapUrl) }, kind = StudioButtonKind.Secondary) { Text("Directions", color = Color.White) } }
+                    }
+                    setList?.let { list ->
+                        Text(list.optString("name"), color = Amber, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 8.dp))
+                        sections.map(::supportingJson).filter { it.optString("grant_id") == grantId }.sortedBy { it.optInt("position") }.forEach { section ->
+                            Text(section.optString("name", "Set"), color = Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                            entries.map(::supportingJson).filter { it.optString("grant_id") == grantId && it.optString("section_id") == section.optString("id") }.sortedBy { it.optInt("position") }.forEach { entry ->
+                                val song = songs.map(::supportingJson).firstOrNull { it.optString("grant_id") == grantId && it.optString("id") == entry.optString("song_id") }
+                                Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                                    Text("${entry.optInt("position")}. ${song?.optString("title")?.ifBlank { entry.optString("manual_title", "Untitled") } ?: entry.optString("manual_title", "Untitled")}", color = Color.White, fontWeight = FontWeight.Bold)
+                                    song?.let { value ->
+                                        if (value.optString("artist").isNotBlank()) Text(value.optString("artist"), color = TextSoft)
+                                        Text(listOf(value.optString("starts_by"), value.optString("style"), value.optString("tempo"), value.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 12.sp)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            normalizedMediaLink(value.optString("media_ref"))?.let { media -> StudioButton(onClick = { openMediaLink(context, media) }, kind = StudioButtonKind.Secondary) { Text("Listen", color = Color.White) } }
+                                            attachments.filter { supportingJson(it).optString("grant_id") == grantId && supportingJson(it).optString("song_id") == value.optString("id") }.forEach { attachment ->
+                                                val attachmentData = supportingJson(attachment)
+                                                val cachedAttachment = cacheById[attachment.entityId]
+                                                if (cachedAttachment?.status == "ready") StudioButton(onClick = { preview = cachedAttachment }, kind = StudioButtonKind.Secondary) { Text(attachmentLabel(attachmentData), color = Color.White) }
+                                                else normalizedMediaLink(attachmentData.optString("file_ref"))?.let { attachmentUrl -> StudioButton(onClick = { openMediaLink(context, attachmentUrl) }, kind = StudioButtonKind.Secondary) { Text(attachmentLabel(attachmentData), color = Color.White) } }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    preview?.let { AttachmentPreviewDialog(it) { preview = null } }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.directoryContent(model: StudioRackViewModel) {
