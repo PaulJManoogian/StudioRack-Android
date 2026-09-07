@@ -50,7 +50,7 @@ Version 0.9.7 adds native Android notifications for maintenance, scheduled sessi
 
 Download the current Android alpha directly from the StudioRack server:
 
-https://www.manoogianmedia.com/studiorack/packages/StudioRack-alpha.apk
+https://www.manoogianmedia.com/studiorack/StudioRack-alpha.apk
 
 Android may require the browser or Files app to be allowed to install unknown apps. The initial sign-in and synchronization require an internet connection; synchronized content remains available offline afterward.
 
