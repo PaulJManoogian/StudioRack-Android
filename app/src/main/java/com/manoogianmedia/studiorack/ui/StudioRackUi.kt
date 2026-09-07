@@ -1,5 +1,6 @@
 package com.manoogianmedia.studiorack.ui
 
+import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
@@ -11,6 +12,8 @@ import android.net.NetworkCapabilities
 import android.net.Network
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.os.Build
+import android.content.pm.PackageManager
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -23,6 +26,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -94,6 +98,7 @@ import com.manoogianmedia.studiorack.data.CachedRecord
 import com.manoogianmedia.studiorack.data.DataExport
 import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SongAttachmentInput
+import com.manoogianmedia.studiorack.data.NotificationRoute
 import com.manoogianmedia.studiorack.data.cacheImageFile
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
@@ -132,8 +137,22 @@ private val StudioTypography = Typography().run {
 }
 
 @Composable
-fun StudioRackApp(model: StudioRackViewModel, hardwareKeys: Flow<Int>, onGigModeActive: (Boolean) -> Unit) {
+fun StudioRackApp(
+    model: StudioRackViewModel,
+    hardwareKeys: Flow<Int>,
+    notificationRoutes: Flow<NotificationRoute>,
+    onGigModeActive: (Boolean) -> Unit,
+) {
     val uiState by model.uiState.collectAsState()
+    val context = LocalContext.current
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) model.refreshNotifications()
+    }
+    LaunchedEffect(uiState.signedIn) {
+        if (uiState.signedIn && Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
     MaterialTheme(
         colorScheme = darkColorScheme(
             background = Ink, surface = Panel, surfaceVariant = PanelRaised, primary = Amber, onPrimary = Color(0xFF170E03),
@@ -149,7 +168,7 @@ fun StudioRackApp(model: StudioRackViewModel, hardwareKeys: Flow<Int>, onGigMode
                 uiState.starting -> StudioRackSplash()
                 !uiState.signedIn -> LoginScreen(model, uiState)
                 selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys, onGigModeActive) { selectedEvent = null }
-                else -> MainShell(model, uiState) { selectedEvent = it }
+                else -> MainShell(model, uiState, notificationRoutes) { selectedEvent = it }
             }
         }
     }
@@ -165,11 +184,26 @@ private enum class AppSection(val label: String, val mark: String) {
 }
 
 @Composable
-private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, openGig: (String) -> Unit) {
+private fun MainShell(
+    model: StudioRackViewModel,
+    uiState: StudioRackUiState,
+    notificationRoutes: Flow<NotificationRoute>,
+    openGig: (String) -> Unit,
+) {
     var section by remember { mutableStateOf(AppSection.DASHBOARD) }
     val pending by model.pendingCount.collectAsState()
     val conflicts by model.conflicts.collectAsState()
     val syncHealth by model.syncHealth.collectAsState()
+    val notificationCount by model.notificationCount.collectAsState()
+    LaunchedEffect(notificationRoutes) {
+        notificationRoutes.collect { route ->
+            section = when (route.destination) {
+                "equipment" -> AppSection.EQUIPMENT
+                "sessions" -> AppSection.SESSIONS
+                else -> AppSection.DASHBOARD
+            }
+        }
+    }
     val online = rememberNetworkConnected()
     val connection = connectionBanner(online, uiState.busy || syncHealth.running, uiState.syncError || syncHealth.error != null, pending)
     Scaffold(
@@ -184,6 +218,19 @@ private fun MainShell(model: StudioRackViewModel, uiState: StudioRackUiState, op
                     }
                     if (conflicts.isNotEmpty()) Surface(color = Color(0xFF8B2F3A), shape = RoundedCornerShape(8.dp)) {
                         Text("${conflicts.size} CONFLICT${if (conflicts.size == 1) "" else "S"}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+                    }
+                    if (notificationCount > 0) Surface(
+                        modifier = Modifier.padding(start = 7.dp).clickable { section = AppSection.DASHBOARD },
+                        color = Amber,
+                        contentColor = Ink,
+                        shape = RoundedCornerShape(50),
+                    ) {
+                        Text(
+                            "$notificationCount ALERT${if (notificationCount == 1) "" else "S"}",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                        )
                     }
                 }
             }

@@ -29,6 +29,7 @@ class StudioRackRepository(
     private val client: SyncClient,
 ) {
     private val _syncHealth = MutableStateFlow(RepositorySyncHealth())
+    private val notifications = StudioRackNotifications(context, dao)
 
     fun signedIn() = tokenStore.isSignedIn()
     fun records(type: String): Flow<List<CachedRecord>> = dao.observeRecords(type)
@@ -37,7 +38,13 @@ class StudioRackRepository(
     fun syncState(): Flow<SyncState?> = dao.observeSyncState()
     fun pendingCount(): Flow<Int> = dao.observePendingCount()
     fun conflicts(): Flow<List<SyncConflict>> = dao.observeConflicts()
+    fun notificationCount(): Flow<Int> = dao.observeUnreadNotificationCount()
     fun syncHealth(): StateFlow<RepositorySyncHealth> = _syncHealth
+
+    fun createNotificationChannels() = notifications.createChannels()
+    suspend fun reconcileNotifications() = notifications.reconcile()
+    suspend fun notifyDueEvent(eventId: String) = notifications.notifyDueEvent(eventId)
+    suspend fun markNotificationRead(sourceId: String) = notifications.markRead(sourceId)
 
     suspend fun reportOverview(): JSONObject = client.reportOverview()
 
@@ -175,6 +182,9 @@ class StudioRackRepository(
                 json = data.toString(),
             ))
         )
+        if (entityType == "studio_event" || entityType == "maintenance_note" || entityType == "maintenance_record") {
+            notifications.reconcile()
+        }
         syncNow()
     }
 
@@ -228,6 +238,7 @@ class StudioRackRepository(
 
     suspend fun signOut() {
         runCatching { client.revoke() }
+        notifications.clearAll()
         tokenStore.clear()
     }
 
@@ -244,6 +255,7 @@ class StudioRackRepository(
             } while (response.optBoolean("has_more", false))
             refreshAttachmentCache()
             refreshImageCache()
+            notifications.reconcile()
             _syncHealth.value = RepositorySyncHealth(running = false, lastSuccessAt = System.currentTimeMillis())
         } catch (error: Exception) {
             _syncHealth.value = _syncHealth.value.copy(running = false, error = error.message ?: "Synchronization failed.")

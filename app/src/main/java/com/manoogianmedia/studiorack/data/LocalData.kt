@@ -71,6 +71,17 @@ data class CachedAttachment(
     val cachedAt: Long? = null,
 )
 
+@Entity(tableName = "notification_receipts")
+data class NotificationReceipt(
+    @androidx.room.PrimaryKey val sourceId: String,
+    val fingerprint: String,
+    val notificationId: Int,
+    val destination: String,
+    val recordId: String,
+    val unread: Boolean = true,
+    val notifiedAt: Long = System.currentTimeMillis(),
+)
+
 @Dao
 interface StudioRackDao {
     @Query("SELECT * FROM records WHERE entityType=:type ORDER BY entityId")
@@ -109,6 +120,12 @@ interface StudioRackDao {
     @Query("SELECT * FROM sync_conflicts ORDER BY entityType, entityId")
     fun observeConflicts(): Flow<List<SyncConflict>>
 
+    @Query("SELECT COUNT(*) FROM notification_receipts WHERE unread=1")
+    fun observeUnreadNotificationCount(): Flow<Int>
+
+    @Query("SELECT * FROM notification_receipts")
+    suspend fun notificationReceipts(): List<NotificationReceipt>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putRecords(records: List<CachedRecord>)
 
@@ -126,6 +143,15 @@ interface StudioRackDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putCachedAttachment(attachment: CachedAttachment)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putNotificationReceipt(receipt: NotificationReceipt)
+
+    @Query("UPDATE notification_receipts SET unread=0 WHERE sourceId=:sourceId")
+    suspend fun markNotificationRead(sourceId: String)
+
+    @Query("DELETE FROM notification_receipts")
+    suspend fun clearNotificationReceipts()
 
     @Query("DELETE FROM cached_attachments WHERE attachmentId=:id")
     suspend fun deleteCachedAttachment(id: String)
@@ -182,8 +208,8 @@ interface StudioRackDao {
 }
 
 @Database(
-    entities = [CachedRecord::class, SupportingRecord::class, PendingMutation::class, SyncConflict::class, SyncState::class, CachedAttachment::class],
-    version = 4,
+    entities = [CachedRecord::class, SupportingRecord::class, PendingMutation::class, SyncConflict::class, SyncState::class, CachedAttachment::class, NotificationReceipt::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class StudioRackDatabase : RoomDatabase() {
@@ -225,10 +251,26 @@ abstract class StudioRackDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS notification_receipts (
+                        sourceId TEXT NOT NULL PRIMARY KEY,
+                        fingerprint TEXT NOT NULL,
+                        notificationId INTEGER NOT NULL,
+                        destination TEXT NOT NULL,
+                        recordId TEXT NOT NULL,
+                        unread INTEGER NOT NULL DEFAULT 1,
+                        notifiedAt INTEGER NOT NULL
+                    )""".trimIndent()
+                )
+            }
+        }
+
         fun create(context: Context): StudioRackDatabase = Room.databaseBuilder(
             context,
             StudioRackDatabase::class.java,
             "studiorack-offline.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
     }
 }

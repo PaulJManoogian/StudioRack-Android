@@ -14,7 +14,7 @@ class StudioRackApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        repository.createNotificationChannels()
         if (repository.signedIn()) repository.scheduleAutomaticSync()
     }
 }
-

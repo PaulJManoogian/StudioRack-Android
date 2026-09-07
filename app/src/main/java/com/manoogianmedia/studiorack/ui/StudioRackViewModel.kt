@@ -76,6 +76,8 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val conflicts: StateFlow<List<SyncConflict>> = repository.conflicts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val notificationCount: StateFlow<Int> = repository.notificationCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val syncHealth: StateFlow<RepositorySyncHealth> = repository.syncHealth()
 
     private val initiallySignedIn = repository.signedIn()
@@ -99,6 +101,7 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
                             syncError = true,
                         )
                     }
+                runCatching { repository.reconcileNotifications() }
             }
         }
     }
@@ -119,6 +122,10 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
                 .onSuccess { _uiState.value = _uiState.value.copy(busy = false, message = "Synced.", syncError = false) }
                 .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = it.message ?: "Synchronization failed.", syncError = true) }
         }
+    }
+
+    fun refreshNotifications() {
+        viewModelScope.launch { runCatching { repository.reconcileNotifications() } }
     }
 
     fun saveSong(id: String?, data: JSONObject, attachments: List<SongAttachmentInput>, done: () -> Unit) {

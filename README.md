@@ -28,6 +28,7 @@ Native offline-first Android client for StudioRack.
 - StudioRack palette and typography throughout, with a phone/tablet Gig Mode presentation aligned to the web experience.
 - Song-length metadata, set-list duration estimates, and compact configurable Gig Mode clock, elapsed, and set-remaining displays.
 - Authenticated CSV, XLS, JSON, and XML exchange for songs, complete set lists, items, and kits through Android's document picker.
+- Native Android maintenance, session, and Studio Buddy notifications with local unread tracking, app-icon counts, notification deep links, and scheduled event alarms.
 
 ## Build
 
@@ -45,11 +46,11 @@ https://www.manoogianmedia.com/studiorack/api/v1
 
 ## Alpha install
 
-Version 0.9.6 adds contextual exports for visible songs, favorite and filtered set lists, individual set lists, and filtered scheduled items. Import remains centralized under Reports, while exports preserve the order of the current view and can be saved to any document provider installed on Android. This release also includes song lengths, set-list duration estimates, and compact live timing in Gig Mode.
+Version 0.9.7 adds native Android notifications for maintenance, scheduled sessions, and Studio Buddy activity. Notifications are refreshed by background synchronization, known event reminders are scheduled locally, taps open the relevant StudioRack area, and Android launcher badges reflect the unread count on supported launchers.
 
 Download the current Android alpha directly from the StudioRack server:
 
-https://www.manoogianmedia.com/studiorack/StudioRack-alpha.apk
+https://www.manoogianmedia.com/studiorack/packages/StudioRack-alpha.apk
 
 Android may require the browser or Files app to be allowed to install unknown apps. The initial sign-in and synchronization require an internet connection; synchronized content remains available offline afterward.
 
