@@ -85,6 +85,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -195,6 +196,7 @@ private fun MainShell(
     val conflicts by model.conflicts.collectAsState()
     val syncHealth by model.syncHealth.collectAsState()
     val notificationCount by model.notificationCount.collectAsState()
+    val productName = stringResource(R.string.app_name)
     LaunchedEffect(notificationRoutes) {
         notificationRoutes.collect { route ->
             section = when (route.destination) {
@@ -211,9 +213,9 @@ private fun MainShell(
         topBar = {
             Surface(modifier = Modifier.statusBarsPadding(), color = Color(0xF20A0D15), shadowElevation = 8.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Image(painterResource(R.drawable.studiorack_logo), "StudioRack", Modifier.size(38.dp))
+                    Image(painterResource(R.drawable.studiorack_logo), productName, Modifier.size(38.dp))
                     Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                        Text("StudioRack", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text(productName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
                         Text(connection.label, color = when (connection.kind) { ConnectionKind.ONLINE -> Color(0xFF63E6A4); ConnectionKind.OFFLINE -> Cyan; ConnectionKind.WARNING -> Amber; ConnectionKind.ERROR -> Color(0xFFFF6B6B) }, fontSize = 9.sp, fontWeight = FontWeight.Black)
                     }
                     if (conflicts.isNotEmpty()) Surface(color = Color(0xFF8B2F3A), shape = RoundedCornerShape(8.dp)) {
@@ -292,6 +294,7 @@ private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: (
 
 @Composable
 private fun StudioRackSplash() {
+    val productName = stringResource(R.string.app_name)
     Box(
         Modifier
             .fillMaxSize()
@@ -308,12 +311,12 @@ private fun StudioRackSplash() {
             ) {
                 Image(
                     painterResource(R.drawable.studiorack_logo),
-                    "StudioRack",
+                    productName,
                     Modifier.padding(20.dp).fillMaxSize(),
                 )
             }
             Spacer(Modifier.height(22.dp))
-            Text("StudioRack", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+            Text(productName, color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
             Text("SYNCING YOUR STUDIO", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(22.dp))
             CircularProgressIndicator(color = Cyan, strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
@@ -323,18 +326,19 @@ private fun StudioRackSplash() {
 
 @Composable
 private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
+    val productName = stringResource(R.string.app_name)
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var mfa by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.studiorack_logo), "StudioRack", Modifier.size(54.dp))
-            Text("StudioRack", color = Amber, fontSize = 38.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 10.dp))
+            Image(painterResource(R.drawable.studiorack_logo), productName, Modifier.size(54.dp))
+            Text(productName, color = Amber, fontSize = 38.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 10.dp))
         }
         Text("Your performance library, available offline.", color = TextSoft)
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(code, { code = it }, label = { Text("StudioRack access code") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(code, { code = it }, label = { Text("$productName access code") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
         OutlinedTextField(mfa, { mfa = it.filter(Char::isDigit).take(6) }, label = { Text("Authenticator code") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(18.dp))
         StudioButton(onClick = { model.signIn(email, code, mfa) }, enabled = !uiState.busy && email.isNotBlank() && code.isNotBlank() && mfa.length == 6) {
@@ -347,6 +351,8 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
 
 @Composable
 private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiState, openGig: (String) -> Unit) {
+    val productName = stringResource(R.string.app_name)
+    val agentName = stringResource(R.string.agent_name)
     val events by model.events.collectAsState()
     val items by model.items.collectAsState()
     val kits by model.kits.collectAsState()
@@ -393,7 +399,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
                                 Spacer(Modifier.width(13.dp))
                             }
                             Column(Modifier.weight(1f)) {
-                                Text(account.optString("studio_name").ifBlank { account.optString("organization", "StudioRack") }, color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.Bold)
+                                Text(account.optString("studio_name").ifBlank { account.optString("organization", productName) }, color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.Bold)
                                 Text(studioAddress(account), color = TextSoft)
                             }
                         }
@@ -426,8 +432,8 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
         }
         item { SectionHeading("CARE READINESS", "What needs hands on it?") }
         item { CareSummary(careRows, model) }
-        item { SectionHeading("STUDIO BUDDY", "Recent activity") }
-        if (actions.isEmpty()) item { EmptyCard("No Studio Buddy actions are stored on this device.") }
+        item { SectionHeading(agentName.uppercase(), "Recent activity") }
+        if (actions.isEmpty()) item { EmptyCard("No $agentName actions are stored on this device.") }
         items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action)) }
         item { Spacer(Modifier.height(30.dp)) }
     }
@@ -789,13 +795,15 @@ private fun LibraryScreen(model: StudioRackViewModel) {
 
 @Composable
 private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
+    val productName = stringResource(R.string.app_name)
+    val agentName = stringResource(R.string.agent_name)
     var tab by remember { mutableStateOf("Reports") }
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SectionHeading("STUDIORACK", "More") }
-        item { ChoiceStrip(listOf("Reports", "Studio Buddy", "Reference", "Sync", "Settings"), tab) { tab = it } }
+        item { SectionHeading(productName.uppercase(), "More") }
+        item { ChoiceStrip(listOf("Reports", agentName, "Reference", "Sync", "Settings"), tab) { tab = it } }
         when (tab) {
             "Reports" -> reportsContent(model)
-            "Studio Buddy" -> buddyContent(model)
+            agentName -> buddyContent(model)
             "Reference" -> referenceContent(model)
             "Sync" -> syncContent(model, uiState)
             else -> settingsContent(model, uiState)
@@ -889,6 +897,7 @@ private fun ReportsPanel(model: StudioRackViewModel) {
 
 @Composable
 private fun ImportDataTab(online: Boolean, state: ReportUiState, model: StudioRackViewModel) {
+    val productName = stringResource(R.string.app_name)
     val context = LocalContext.current
     var kind by remember { mutableStateOf("Songs") }
     val kindValue = mapOf("Songs" to "songs", "Set Lists" to "setlists", "Items" to "items", "Kits" to "kits")
@@ -921,9 +930,9 @@ private fun ImportDataTab(online: Boolean, state: ReportUiState, model: StudioRa
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
         ) { Text("Import $kind", color = Color.White, fontWeight = FontWeight.Bold) }
-        if (!online) Text("Connect to StudioRack to import. Your synchronized working data remains available offline.", color = Amber, fontSize = 12.sp)
+        if (!online) Text("Connect to $productName to import. Your synchronized working data remains available offline.", color = Amber, fontSize = 12.sp)
         if (state.message.isNotBlank()) Text(state.message, color = if (state.message.startsWith("Import complete")) Cyan else TextSoft, fontSize = 12.sp)
-        Text("CSV, XLS, JSON, and XML files can be merged into your synchronized StudioRack account.", color = TextSoft, fontSize = 11.sp)
+        Text("CSV, XLS, JSON, and XML files can be merged into your synchronized $productName account.", color = TextSoft, fontSize = 11.sp)
     }
 }
 
@@ -938,6 +947,7 @@ private fun ContextExportDialog(
     close: () -> Unit,
 ) {
     val context = LocalContext.current
+    val productName = stringResource(R.string.app_name)
     var format by remember(target) { mutableStateOf("CSV") }
     var pendingExport by remember(target) { mutableStateOf<DataExport?>(null) }
     val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
@@ -976,7 +986,7 @@ private fun ContextExportDialog(
                     enabled = online && target.ids.isNotEmpty() && !state.busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (state.busy) "Preparing" else "Export as $format", color = Ink, fontWeight = FontWeight.Black) }
-                if (!online) Text("Connect to StudioRack to create this export.", color = Amber, fontSize = 12.sp)
+                if (!online) Text("Connect to $productName to create this export.", color = Amber, fontSize = 12.sp)
                 if (target.kind == "setlists") Text("Set and song details are included. Chart and other attachment files are not included.", color = TextSoft, fontSize = 11.sp)
                 TextButton(onClick = close, modifier = Modifier.align(Alignment.End)) { Text("Cancel", color = Cyan) }
             }
@@ -1153,8 +1163,9 @@ private fun AiReportTab(
     model: StudioRackViewModel,
     runs: List<SupportingRecord>,
 ) {
+    val agentName = stringResource(R.string.agent_name)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Ask Studio Buddy", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Ask $agentName", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Text("Describe the equipment report you need in ordinary language.", color = TextSoft)
         DictationTextField(question, changeQuestion, "Report question", enabled = online && !state.busy)
         StudioButton(onClick = { model.runAiReport(question) }, enabled = online && question.isNotBlank() && !state.busy, modifier = Modifier.fillMaxWidth()) {
@@ -1220,7 +1231,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Account and Device", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
-            StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize StudioRack", color = Ink, fontWeight = FontWeight.Black) }
+            StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
             Text("Changes made on the web are copied here automatically when the device reconnects.", color = TextSoft, fontSize = 12.sp)
         }
     }
@@ -1356,7 +1367,8 @@ private fun ReportCard(title: String, primary: String, secondary: String) {
 
 @Composable
 private fun BuddyActionCard(row: JSONObject) {
-    ExpandableRecordCard(row.optString("subject", "Studio Buddy action"), row.optString("updated_utc"), listOf(row.optString("priority").humanize(), row.optString("status").humanize())) {
+    val agentName = stringResource(R.string.agent_name)
+    ExpandableRecordCard(row.optString("subject", "$agentName action"), row.optString("updated_utc"), listOf(row.optString("priority").humanize(), row.optString("status").humanize())) {
         DetailLine("Recipient", row.optString("recipient")); DetailLine("Due", row.optString("source_due_date")); DetailLine("Draft", row.optString("body")); DetailLine("Last reply", row.optString("last_reply_body"))
     }
 }
@@ -1583,7 +1595,7 @@ private fun String.humanize(): String = replace('_', ' ').trim().split(' ').join
 private fun studioAddress(account: JSONObject): String = listOf(
     account.optString("location_name"), account.optString("address_line1"), account.optString("address_line2"),
     listOf(account.optString("city"), account.optString("region"), account.optString("postal_code")).filter(String::isNotBlank).joinToString(" "),
-).filter(String::isNotBlank).joinToString(" | ").ifBlank { "Offline StudioRack workspace" }
+).filter(String::isNotBlank).joinToString(" | ").ifBlank { "Offline workspace" }
 
 private data class EditorTarget(val id: String?, val data: JSONObject)
 
@@ -1745,6 +1757,7 @@ private fun contentDisplayName(context: Context, uri: Uri): String {
 
 @Composable
 private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close: () -> Unit) {
+    val agentName = stringResource(R.string.agent_name)
     val original = target.data
     val setLists by model.setLists.collectAsState()
     var title by remember { mutableStateOf(original.optString("title")) }
@@ -1772,7 +1785,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
             setListId = setLists.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
         }
         StudioField("Notes", notes, singleLine = false) { notes = it }
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(reminder, { reminder = it }); Text("Studio Buddy reminder", color = Color.White) }
+        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(reminder, { reminder = it }); Text("$agentName reminder", color = Color.White) }
         if (reminder) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("How close", lead, dictation = false) { lead = it.filter(Char::isDigit).take(3) } }
             Box(Modifier.weight(1f)) { Text("Unit", color = TextSoft); ChoiceStrip(listOf("hours", "days", "weeks"), unit) { unit = it } }
@@ -2294,7 +2307,7 @@ private fun openMediaLink(context: Context, link: String) {
     } catch (_: ActivityNotFoundException) {
         Toast.makeText(context, "No application is available to open this media link.", Toast.LENGTH_LONG).show()
     } catch (_: SecurityException) {
-        Toast.makeText(context, "StudioRack could not open this media link.", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "${context.getString(R.string.app_name)} could not open this media link.", Toast.LENGTH_LONG).show()
     }
 }
 

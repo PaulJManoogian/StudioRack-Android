@@ -58,7 +58,9 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
     fun createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val system = context.getSystemService(NotificationManager::class.java)
-        system.createNotificationChannelGroup(NotificationChannelGroup(GROUP_ID, "StudioRack"))
+        val productName = context.getString(R.string.app_name)
+        val agentName = context.getString(R.string.agent_name)
+        system.createNotificationChannelGroup(NotificationChannelGroup(GROUP_ID, productName))
         listOf(
             NotificationChannel(CHANNEL_MAINTENANCE, "Maintenance", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "Equipment care and maintenance reminders"
@@ -68,8 +70,8 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
                 description = "Performance, rehearsal, and session reminders"
                 group = GROUP_ID
             },
-            NotificationChannel(CHANNEL_BUDDY, "Studio Buddy", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Studio Buddy actions and responses"
+            NotificationChannel(CHANNEL_BUDDY, agentName, NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "$agentName actions and responses"
                 group = GROUP_ID
             },
         ).forEach(system::createNotificationChannel)
@@ -133,7 +135,7 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
                 sourceId = id,
                 fingerprint = listOf(row.optString("updated_utc"), row.optString("status"), row.optString("last_reply_utc")).joinToString("|"),
                 channelId = when { actionType == "event_reminder" -> CHANNEL_SCHEDULE; itemId.isNotBlank() -> CHANNEL_MAINTENANCE; else -> CHANNEL_BUDDY },
-                title = cleanSubject(row.optString("subject").ifBlank { "Studio Buddy" }),
+                title = cleanSubject(row.optString("subject").ifBlank { context.getString(R.string.agent_name) }),
                 body = row.optString("last_reply_body").ifBlank { row.optString("body") }.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(240),
                 destination = when { eventId.isNotBlank() -> "sessions"; itemId.isNotBlank() -> "equipment"; else -> "dashboard" },
                 recordId = eventId.ifBlank { itemId },
@@ -240,7 +242,7 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
             SUMMARY_ID,
             NotificationCompat.Builder(context, CHANNEL_BUDDY)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("StudioRack")
+                .setContentTitle(context.getString(R.string.app_name))
                 .setContentText("$count item${if (count == 1) "" else "s"} need your attention")
                 .setContentIntent(openIntent)
                 .setAutoCancel(true)
@@ -261,7 +263,7 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
             sourceId = "sba_evt_$eventId",
             fingerprint = listOf(event.optString("updated_utc"), event.optString("event_date"), event.optString("start_time")).joinToString("|"),
             channelId = CHANNEL_SCHEDULE,
-            title = event.optString("title", "Upcoming StudioRack session"),
+            title = event.optString("title", "Upcoming ${context.getString(R.string.app_name)} session"),
             body = listOf(whenLabel, event.optString("location")).filter(String::isNotBlank).joinToString(" - "),
             destination = "sessions",
             recordId = eventId,
@@ -277,7 +279,7 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
         event.optString("reminder_lead_unit", "days"),
     )
 
-    private fun cleanSubject(value: String): String = value.replace(Regex("^\\[SR-[^]]+]\\s*"), "").ifBlank { "StudioRack" }
+    private fun cleanSubject(value: String): String = value.replace(Regex("^\\[SR-[^]]+]\\s*"), "").ifBlank { context.getString(R.string.app_name) }
     private fun isRecent(value: String): Boolean = runCatching {
         Instant.parse(value).isAfter(Instant.now().minus(2, ChronoUnit.DAYS))
     }.getOrDefault(false)

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Display identity only. Package names, database names, API routes, and sync IDs stay stable. -->
+    <string name="app_name">StudioRack</string>
+    <string name="agent_name">Studio Buddy</string>
+    <string name="publisher_name">Manoogian Media</string>
+    <string name="copyright_holder">Manoogian Media, Inc.</string>
+    <string name="brand_tagline">You play. We\'ll keep track.</string>
+    <string name="brand_descriptor">Equipment. Music. The work between gigs.</string>
+</resources>

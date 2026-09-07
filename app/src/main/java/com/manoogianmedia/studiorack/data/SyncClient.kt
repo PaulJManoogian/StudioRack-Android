@@ -204,7 +204,7 @@ class SyncClient(
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             val json = if (text.isBlank()) JSONObject() else JSONObject(text)
-            if (status !in 200..299) throw SyncException(status, json.optString("detail", "StudioRack request failed."))
+            if (status !in 200..299) throw SyncException(status, json.optString("detail", "Request failed."))
             json
         } finally {
             connection.disconnect()

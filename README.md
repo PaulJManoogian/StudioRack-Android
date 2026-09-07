@@ -2,6 +2,8 @@
 
 Native offline-first Android client for StudioRack.
 
+User-facing product and assistant identity is isolated behind Android string resources. See `docs/branding-firewall.md`. Compatibility-sensitive package, database, API, notification, and synchronization identifiers intentionally retain their established names.
+
 ## Current foundation
 
 - Kotlin and Jetpack Compose interface.

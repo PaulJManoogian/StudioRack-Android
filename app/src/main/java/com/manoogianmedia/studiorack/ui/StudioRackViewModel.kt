@@ -110,7 +110,7 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         _uiState.value = _uiState.value.copy(busy = true, message = "")
         viewModelScope.launch {
             runCatching { repository.signIn(email, accessCode, mfaCode) }
-                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "StudioRack is ready offline.", syncError = false) }
+                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "This device is ready offline.", syncError = false) }
                 .onFailure { _uiState.value = StudioRackUiState(signedIn = false, message = it.message ?: "Sign-in failed.") }
         }
     }
