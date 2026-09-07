@@ -39,9 +39,15 @@ The native metronome synthesizes its click through `AudioTrack`, so it remains a
 
 The app receives a device token only after email, StudioRack access code, and authenticator code verification. The token is encrypted at rest and is scoped by the server to one registration and one account. Studio Buddy provider settings, API credentials, administrator records, and other tenants are outside the mobile protocol.
 
+## People, places, and sessions
+
+Venues, contacts, bands/groups, and their many-to-many relationship rows use the same generic Room record cache and queued-mutation pipeline as songs and events. They can be created and edited offline from the People directory. Event saves atomically queue the event, its selected groups, and its selected individual contacts.
+
+The event stores a reusable `venue_id` separately from room, stage, entrance, or one-off location details. Schedule cards and Gig Mode resolve the venue name from the local cache. Access-grant tokens remain server-only: creating or revoking a temporary share requires connectivity so the server can mint, hash, scope, expire, and audit the token.
+
 ## Next functional layers
 
-1. Offline song, set-list, and schedule editors backed by the mutation queue.
-2. Conflict resolution UI, especially for concurrent set-list reordering.
+1. Online mobile controls for creating and revoking expiring object-share links.
+2. Role and primary-contact editing for venue and band relationships.
 3. Selective download controls and storage-budget management for very large libraries.
 4. Signed release builds, tablet/phone visual QA, and Play Store internal testing.

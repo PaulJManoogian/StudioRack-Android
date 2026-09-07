@@ -143,6 +143,58 @@ class StudioRackRepository(
         syncNow()
     }
 
+    suspend fun saveEvent(eventId: String, event: JSONObject, ensembleIds: Set<String>, contactIds: Set<String>) {
+        val relationTypes = setOf("studio_event_ensemble", "studio_event_contact")
+        val existingRelations = relationTypes.flatMap { dao.records(it) }
+            .filter { JSONObject(it.json).optString("event_id") == eventId }
+        val desired = buildList {
+            add(Triple("studio_event", eventId, event))
+            ensembleIds.forEach { ensembleId ->
+                add(Triple("studio_event_ensemble", "$eventId|$ensembleId", JSONObject()
+                    .put("event_id", eventId).put("ensemble_id", ensembleId).put("relationship_role", "performer")))
+            }
+            contactIds.forEach { contactId ->
+                add(Triple("studio_event_contact", "$eventId|$contactId", JSONObject()
+                    .put("event_id", eventId).put("contact_id", contactId).put("relationship_role", "participant")))
+            }
+        }
+        val existingByKey = (existingRelations + listOfNotNull(dao.record("studio_event", eventId)))
+            .associateBy { it.entityType to it.entityId }
+        val desiredKeys = desired.mapTo(mutableSetOf()) { it.first to it.second }
+        val removed = existingRelations.filter { it.entityType to it.entityId !in desiredKeys }
+        var sequence = System.currentTimeMillis()
+        dao.applyLocalBundle(
+            upserts = desired.map { (type, id, json) -> CachedRecord(type, id, existingByKey[type to id]?.revision ?: 0, json.toString()) },
+            deletes = removed.map { RecordRef(it.entityType, it.entityId) },
+            mutations = desired.map { (type, id, json) -> mutation(type, id, "upsert", existingByKey[type to id]?.revision ?: 0, json.toString(), sequence++) } +
+                removed.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) },
+        )
+        notifications.reconcile()
+        syncNow()
+    }
+
+    suspend fun saveContactRelationships(parentType: String, parentId: String, contactIds: Set<String>) {
+        val relationType = if (parentType == "venue") "venue_contact" else "ensemble_contact"
+        val parentKey = if (parentType == "venue") "venue_id" else "ensemble_id"
+        val existing = dao.records(relationType).filter { JSONObject(it.json).optString(parentKey) == parentId }
+        val existingById = existing.associateBy { it.entityId }
+        val desired = contactIds.map { contactId ->
+            val id = "$parentId|$contactId"
+            id to JSONObject().put(parentKey, parentId).put("contact_id", contactId)
+                .put("relationship_role", "").put("is_primary", 0).put("notes", "")
+        }
+        val desiredIds = desired.mapTo(mutableSetOf()) { it.first }
+        val removed = existing.filter { it.entityId !in desiredIds }
+        var sequence = System.currentTimeMillis()
+        dao.applyLocalBundle(
+            upserts = desired.map { (id, json) -> CachedRecord(relationType, id, existingById[id]?.revision ?: 0, json.toString()) },
+            deletes = removed.map { RecordRef(it.entityType, it.entityId) },
+            mutations = desired.map { (id, json) -> mutation(relationType, id, "upsert", existingById[id]?.revision ?: 0, json.toString(), sequence++) } +
+                removed.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) },
+        )
+        syncNow()
+    }
+
     suspend fun deleteSetList(setListId: String) {
         val children = (dao.records("set_list_entry") + dao.records("set_list_section"))
             .filter { JSONObject(it.json).optString("set_list_id") == setListId }

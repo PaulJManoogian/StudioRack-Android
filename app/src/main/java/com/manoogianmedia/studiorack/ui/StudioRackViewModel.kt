@@ -40,6 +40,20 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val maintenanceHistory: StateFlow<List<CachedRecord>> = repository.records("maintenance_record")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val venues: StateFlow<List<CachedRecord>> = repository.records("venue")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val contacts: StateFlow<List<CachedRecord>> = repository.records("contact")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val ensembles: StateFlow<List<CachedRecord>> = repository.records("ensemble")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val venueContacts: StateFlow<List<CachedRecord>> = repository.records("venue_contact")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val ensembleContacts: StateFlow<List<CachedRecord>> = repository.records("ensemble_contact")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventEnsembles: StateFlow<List<CachedRecord>> = repository.records("studio_event_ensemble")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventContacts: StateFlow<List<CachedRecord>> = repository.records("studio_event_contact")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val cachedAttachments: StateFlow<List<CachedAttachment>> = repository.cachedAttachments()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val items: StateFlow<List<SupportingRecord>> = repository.supporting("item")
@@ -142,9 +156,31 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
 
     fun deleteSong(id: String, done: () -> Unit) = deleteRecord("song", id, done)
 
-    fun saveEvent(id: String?, data: JSONObject, done: () -> Unit) = saveRecord("studio_event", id ?: "event_${UUID.randomUUID().toString().replace("-", "")}", data, done)
+    fun saveEvent(id: String?, data: JSONObject, ensembleIds: Set<String>, contactIds: Set<String>, done: () -> Unit) {
+        val eventId = id ?: "event_${UUID.randomUUID().toString().replace("-", "")}"
+        viewModelScope.launch {
+            runCatching { repository.saveEvent(eventId, data, ensembleIds, contactIds) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Scheduled item saved. Synchronization is queued."); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save the scheduled item.") }
+        }
+    }
 
     fun deleteEvent(id: String, done: () -> Unit) = deleteRecord("studio_event", id, done)
+
+    fun saveDirectoryRecord(entityType: String, id: String?, data: JSONObject, done: () -> Unit) {
+        val prefix = when (entityType) { "venue" -> "venue"; "contact" -> "contact"; else -> "ensemble" }
+        saveRecord(entityType, id ?: "${prefix}_${UUID.randomUUID().toString().replace("-", "")}", data, done)
+    }
+
+    fun deleteDirectoryRecord(entityType: String, id: String, done: () -> Unit) = deleteRecord(entityType, id, done)
+
+    fun saveDirectoryRelationships(parentType: String, parentId: String, contactIds: Set<String>, done: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.saveContactRelationships(parentType, parentId, contactIds) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Contact relationships saved. Synchronization is queued."); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save contact relationships.") }
+        }
+    }
 
     fun saveMaintenanceNote(itemId: String, note: String, done: () -> Unit) {
         val id = "maintenance_${UUID.randomUUID().toString().replace("-", "")}"

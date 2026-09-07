@@ -617,6 +617,7 @@ private fun KitsScreen(model: StudioRackViewModel) {
 @Composable
 private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit) {
     val events by model.events.collectAsState()
+    val venues by model.venues.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
@@ -626,7 +627,11 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     var type by remember { mutableStateOf("All") }
     var editingEvent by remember { mutableStateOf<EditorTarget?>(null) }
     var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
-    val rows = events.map(::recordJson).filter {
+    val venueNames = venues.associate { it.entityId to recordJson(it).optString("name") }
+    val rows = events.map(::recordJson).onEach { event ->
+        val venueName = venueNames[event.optString("venue_id")].orEmpty()
+        if (venueName.isNotBlank()) event.put("location", listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - "))
+    }.filter {
         (type == "All" || it.optString("event_type").humanize() == type) && (query.isBlank() || it.toString().contains(query, true))
     }.sortedBy { it.optString("event_date") + it.optString("start_time") }
     Box(Modifier.fillMaxSize()) {
@@ -800,14 +805,148 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
     var tab by remember { mutableStateOf("Reports") }
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading(productName.uppercase(), "More") }
-        item { ChoiceStrip(listOf("Reports", agentName, "Reference", "Sync", "Settings"), tab) { tab = it } }
+        item { ChoiceStrip(listOf("Reports", "People", agentName, "Reference", "Sync", "Settings"), tab) { tab = it } }
         when (tab) {
             "Reports" -> reportsContent(model)
+            "People" -> directoryContent(model)
             agentName -> buddyContent(model)
             "Reference" -> referenceContent(model)
             "Sync" -> syncContent(model, uiState)
             else -> settingsContent(model, uiState)
         }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.directoryContent(model: StudioRackViewModel) {
+    item { DirectoryPanel(model) }
+}
+
+@Composable
+private fun DirectoryPanel(model: StudioRackViewModel) {
+    val venues by model.venues.collectAsState()
+    val contacts by model.contacts.collectAsState()
+    val ensembles by model.ensembles.collectAsState()
+    val venueContacts by model.venueContacts.collectAsState()
+    val ensembleContacts by model.ensembleContacts.collectAsState()
+    var tab by remember { mutableStateOf("Venues") }
+    var query by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf<EditorTarget?>(null) }
+    var managing by remember { mutableStateOf<Pair<String, CachedRecord>?>(null) }
+    val entityType = when (tab) { "Contacts" -> "contact"; "Bands / Groups" -> "ensemble"; else -> "venue" }
+    val records = when (entityType) { "contact" -> contacts; "ensemble" -> ensembles; else -> venues }
+    val filtered = records.filter {
+        val data = recordJson(it)
+        listOf(data.optString("name"), data.optString("display_name"), data.optString("organization_name"), data.optString("city"))
+            .joinToString(" ").contains(query, ignoreCase = true)
+    }.sortedBy { recordJson(it).optString(if (entityType == "contact") "display_name" else "name").lowercase() }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeading("PEOPLE & PLACES", "Directory")
+        ChoiceStrip(listOf("Venues", "Contacts", "Bands / Groups"), tab) { tab = it; query = "" }
+        StudioButton(onClick = { editing = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Add ${if (entityType == "ensemble") "Band / Group" else entityType.humanize()}", color = Ink, fontWeight = FontWeight.Black)
+        }
+        StudioField("Find ${tab.lowercase()}", query) { query = it }
+        filtered.forEach { record ->
+            val data = recordJson(record)
+            val title = data.optString(if (entityType == "contact") "display_name" else "name")
+            InfoCard {
+                Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                val detail = when (entityType) {
+                    "venue" -> listOf(data.optString("address_line1"), data.optString("city"), data.optString("region")).filter(String::isNotBlank).joinToString(", ")
+                    "contact" -> listOf(data.optString("job_title"), data.optString("organization_name"), data.optString("email")).filter(String::isNotBlank).joinToString(" / ")
+                    else -> data.optString("ensemble_type", "band").humanize()
+                }
+                if (detail.isNotBlank()) Text(detail, color = TextSoft)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioButton(onClick = { editing = EditorTarget(record.entityId, data) }, kind = StudioButtonKind.Secondary) { Text("Edit", color = Color.White) }
+                    if (entityType != "contact") StudioButton(onClick = { managing = entityType to record }, kind = StudioButtonKind.Secondary) { Text("Contacts", color = Color.White) }
+                }
+            }
+        }
+        if (filtered.isEmpty()) Text("No ${tab.lowercase()} match this search.", color = TextSoft)
+    }
+    editing?.let { target -> DirectoryEditor(entityType, target, model) { editing = null } }
+    managing?.let { (parentType, record) ->
+        DirectoryRelationshipsDialog(
+            parentType, record, contacts,
+            if (parentType == "venue") venueContacts else ensembleContacts,
+            model,
+        ) { managing = null }
+    }
+}
+
+@Composable
+private fun DirectoryEditor(entityType: String, target: EditorTarget, model: StudioRackViewModel, close: () -> Unit) {
+    val original = target.data
+    var name by remember { mutableStateOf(original.optString(if (entityType == "contact") "display_name" else "name")) }
+    var type by remember { mutableStateOf(original.optString("ensemble_type", "band")) }
+    var organization by remember { mutableStateOf(original.optString("organization_name")) }
+    var title by remember { mutableStateOf(original.optString("job_title")) }
+    var email by remember { mutableStateOf(original.optString("email")) }
+    var phone by remember { mutableStateOf(original.optString("phone")) }
+    var address by remember { mutableStateOf(original.optString("address_line1")) }
+    var city by remember { mutableStateOf(original.optString("city")) }
+    var region by remember { mutableStateOf(original.optString("region")) }
+    var postalCode by remember { mutableStateOf(original.optString("postal_code")) }
+    var website by remember { mutableStateOf(original.optString("website")) }
+    var mapsUrl by remember { mutableStateOf(original.optString("maps_url")) }
+    var loadIn by remember { mutableStateOf(original.optString("load_in_notes")) }
+    var parking by remember { mutableStateOf(original.optString("parking_notes")) }
+    var notes by remember { mutableStateOf(original.optString("notes")) }
+    val label = when (entityType) { "venue" -> "Venue"; "contact" -> "Contact"; else -> "Band / Group" }
+    EditorDialog(if (target.id == null) "Add $label" else "Edit $label", close) {
+        StudioField("Name", name) { name = it }
+        when (entityType) {
+            "venue" -> {
+                StudioField("Address", address) { address = it }; StudioField("City", city) { city = it }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.weight(1f)) { StudioField("State / Region", region) { region = it } }
+                    Box(Modifier.weight(1f)) { StudioField("Postal Code", postalCode) { postalCode = it } }
+                }
+                StudioField("Phone", phone) { phone = it }; StudioField("Email", email) { email = it }
+                StudioField("Website", website) { website = it }; StudioField("Google Maps Link", mapsUrl) { mapsUrl = it }
+                StudioField("Load-in Notes", loadIn, singleLine = false) { loadIn = it }
+                StudioField("Parking Notes", parking, singleLine = false) { parking = it }
+            }
+            "contact" -> {
+                StudioField("Organization", organization) { organization = it }; StudioField("Title / Role", title) { title = it }
+                StudioField("Email", email) { email = it }; StudioField("Phone", phone) { phone = it }
+            }
+            else -> {
+                Text("Type", color = TextSoft, fontWeight = FontWeight.Bold)
+                ChoiceStrip(listOf("band", "worship_group", "studio", "production_company", "other"), type) { type = it }
+                StudioField("Website", website) { website = it }
+            }
+        }
+        StudioField("Private Notes", notes, singleLine = false) { notes = it }
+        EditorActions(name.isNotBlank(), save = {
+            val data = JSONObject().put(if (entityType == "contact") "display_name" else "name", name.trim()).put("notes", notes.trim())
+            when (entityType) {
+                "venue" -> data.put("address_line1", address.trim()).put("city", city.trim()).put("region", region.trim()).put("postal_code", postalCode.trim()).put("phone", phone.trim()).put("email", email.trim()).put("website", website.trim()).put("maps_url", mapsUrl.trim()).put("load_in_notes", loadIn.trim()).put("parking_notes", parking.trim())
+                "contact" -> data.put("organization_name", organization.trim()).put("job_title", title.trim()).put("email", email.trim()).put("phone", phone.trim())
+                else -> data.put("ensemble_type", type).put("website", website.trim())
+            }
+            model.saveDirectoryRecord(entityType, target.id, data, close)
+        }, delete = target.id?.let { id -> { model.deleteDirectoryRecord(entityType, id, close) } })
+    }
+}
+
+@Composable
+private fun DirectoryRelationshipsDialog(parentType: String, parent: CachedRecord, contacts: List<CachedRecord>, relationships: List<CachedRecord>, model: StudioRackViewModel, close: () -> Unit) {
+    val parentKey = if (parentType == "venue") "venue_id" else "ensemble_id"
+    val selectedAtOpen = relationships.filter { recordJson(it).optString(parentKey) == parent.entityId }.mapTo(mutableSetOf()) { recordJson(it).optString("contact_id") }
+    var selected by remember { mutableStateOf(selectedAtOpen) }
+    EditorDialog("Contacts for ${recordJson(parent).optString("name")}", close) {
+        if (contacts.isEmpty()) Text("Add contacts in the Contact tab first.", color = TextSoft)
+        contacts.sortedBy { recordJson(it).optString("display_name") }.forEach { contact ->
+            val checked = contact.entityId in selected
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked, { enabled -> selected = selected.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) } })
+                Text(recordJson(contact).optString("display_name"), color = Color.White)
+            }
+        }
+        EditorActions(true, save = { model.saveDirectoryRelationships(parentType, parent.entityId, selected, close) }, delete = null)
     }
 }
 
@@ -1760,31 +1899,69 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
     val agentName = stringResource(R.string.agent_name)
     val original = target.data
     val setLists by model.setLists.collectAsState()
+    val venues by model.venues.collectAsState()
+    val contacts by model.contacts.collectAsState()
+    val ensembles by model.ensembles.collectAsState()
+    val eventContacts by model.eventContacts.collectAsState()
+    val eventEnsembles by model.eventEnsembles.collectAsState()
     var title by remember { mutableStateOf(original.optString("title")) }
     var type by remember { mutableStateOf(original.optString("event_type", "performance")) }
     var status by remember { mutableStateOf(original.optString("event_status", "scheduled")) }
     var date by remember { mutableStateOf(original.optString("event_date")) }
     var time by remember { mutableStateOf(original.optString("start_time")) }
+    var endDate by remember { mutableStateOf(original.optString("end_date")) }
+    var endTime by remember { mutableStateOf(original.optString("end_time")) }
+    var venueId by remember { mutableStateOf(original.optString("venue_id")) }
     var location by remember { mutableStateOf(original.optString("location")) }
     var setListId by remember { mutableStateOf(original.optString("set_list_id")) }
     var notes by remember { mutableStateOf(original.optString("notes")) }
     var reminder by remember { mutableStateOf(original.optInt("reminder_enabled", 1) == 1) }
     var lead by remember { mutableStateOf(original.optString("reminder_lead_value", "2")) }
     var unit by remember { mutableStateOf(original.optString("reminder_lead_unit", "days")) }
+    var selectedEnsembles by remember(target.id, eventEnsembles) { mutableStateOf(eventEnsembles.filter { recordJson(it).optString("event_id") == target.id }.mapTo(mutableSetOf()) { recordJson(it).optString("ensemble_id") }) }
+    var selectedContacts by remember(target.id, eventContacts) { mutableStateOf(eventContacts.filter { recordJson(it).optString("event_id") == target.id }.mapTo(mutableSetOf()) { recordJson(it).optString("contact_id") }) }
     EditorDialog(if (target.id == null) "Add Scheduled Event" else "Edit Scheduled Event", close) {
         StudioField("Name", title) { title = it }
         Text("Type", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("performance", "rehearsal", "studio_session", "other"), type) { type = it }
         Text("Status", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("scheduled", "ended"), status) { status = it }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("Date (YYYY-MM-DD)", date, dictation = false) { date = it.take(10) } }
-            Box(Modifier.weight(1f)) { StudioField("Time", time, dictation = false) { time = it.take(8) } }
+            Box(Modifier.weight(1f)) { StudioField("Start Time", time, dictation = false) { time = it.take(8) } }
         }
-        StudioField("Location", location) { location = it }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { StudioField("End Date", endDate, dictation = false) { endDate = it.take(10) } }
+            Box(Modifier.weight(1f)) { StudioField("End Time", endTime, dictation = false) { endTime = it.take(8) } }
+        }
+        Text("Venue", color = TextSoft, fontWeight = FontWeight.Bold)
+        ChoiceStrip(listOf("None") + venues.map { recordJson(it).optString("name") }, venues.firstOrNull { it.entityId == venueId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
+            venueId = venues.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
+        }
+        StudioField("Room / Stage / Location Details", location) { location = it }
         Text("Set list", color = TextSoft, fontWeight = FontWeight.Bold)
         ChoiceStrip(listOf("None") + setLists.map { recordJson(it).optString("name") }, setLists.firstOrNull { it.entityId == setListId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
             setListId = setLists.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
         }
         StudioField("Notes", notes, singleLine = false) { notes = it }
+        if (ensembles.isNotEmpty()) {
+            Text("Bands / Groups", color = TextSoft, fontWeight = FontWeight.Bold)
+            ensembles.forEach { ensemble ->
+                val checked = ensemble.entityId in selectedEnsembles
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked, { enabled -> selectedEnsembles = selectedEnsembles.toMutableSet().apply { if (enabled) add(ensemble.entityId) else remove(ensemble.entityId) } })
+                    Text(recordJson(ensemble).optString("name"), color = Color.White)
+                }
+            }
+        }
+        if (contacts.isNotEmpty()) {
+            Text("People / Contacts", color = TextSoft, fontWeight = FontWeight.Bold)
+            contacts.forEach { contact ->
+                val checked = contact.entityId in selectedContacts
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked, { enabled -> selectedContacts = selectedContacts.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) } })
+                    Text(recordJson(contact).optString("display_name"), color = Color.White)
+                }
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(reminder, { reminder = it }); Text("$agentName reminder", color = Color.White) }
         if (reminder) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("How close", lead, dictation = false) { lead = it.filter(Char::isDigit).take(3) } }
@@ -1795,10 +1972,11 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
             save = {
                 model.saveEvent(target.id, JSONObject()
                     .put("event_type", type).put("event_status", status).put("title", title.trim())
-                    .put("event_date", date.trim()).put("start_time", time.trim()).put("location", location.trim())
+                    .put("event_date", date.trim()).put("start_time", time.trim()).put("end_date", endDate.trim()).put("end_time", endTime.trim())
+                    .put("venue_id", venueId.ifBlank { JSONObject.NULL }).put("location", location.trim())
                     .put("set_list_id", setListId.ifBlank { JSONObject.NULL }).put("notes", notes.trim())
                     .put("reminder_enabled", if (reminder) 1 else 0).put("reminder_lead_value", lead.toIntOrNull() ?: 2)
-                    .put("reminder_lead_unit", unit), close)
+                    .put("reminder_lead_unit", unit), selectedEnsembles, selectedContacts, close)
             },
             delete = target.id?.let { id -> { model.deleteEvent(id, close) } },
         )
@@ -1887,6 +2065,7 @@ private fun GigModeScreen(
     onGigModeActive: (Boolean) -> Unit,
     back: () -> Unit,
 ) {
+    val venues by model.venues.collectAsState()
     val events by model.events.collectAsState()
     val songs by model.songs.collectAsState()
     val setLists by model.setLists.collectAsState()
@@ -2000,7 +2179,8 @@ private fun GigModeScreen(
                         Text(setList?.optString("name")?.ifBlank { null } ?: event.optString("title", "Set List"), color = Color.White, fontFamily = FontFamily.Serif, fontSize = 22.sp, maxLines = 1)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(event.optString("location"), color = TextSoft, fontSize = 11.sp, maxLines = 1)
+                        val venueName = venues.firstOrNull { it.entityId == event.optString("venue_id") }?.let { recordJson(it).optString("name") }.orEmpty()
+                        Text(listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - "), color = TextSoft, fontSize = 11.sp, maxLines = 1)
                         Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString("  "), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
