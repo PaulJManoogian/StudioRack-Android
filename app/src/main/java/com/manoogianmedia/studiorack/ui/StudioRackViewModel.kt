@@ -84,6 +84,8 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val statuses: StateFlow<List<SupportingRecord>> = repository.supporting("status_option")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val ownedShares: StateFlow<List<SupportingRecord>> = repository.supporting("owned_share")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val sharedAccess: StateFlow<List<SupportingRecord>> = repository.supporting("shared_access")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val sharedEvents: StateFlow<List<SupportingRecord>> = repository.supporting("shared_event")

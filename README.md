@@ -31,6 +31,7 @@ User-facing product and assistant identity is isolated behind Android string res
 - Song-length metadata, set-list duration estimates, and compact configurable Gig Mode clock, elapsed, and set-remaining displays.
 - Authenticated CSV, XLS, JSON, and XML exchange for songs, complete set lists, items, and kits through Android's document picker.
 - Native Android maintenance, session, and Studio Buddy notifications with local unread tracking, app-icon counts, notification deep links, and scheduled event alarms.
+- Offline Sharing with separate Shared With Me and My Shares views, including outgoing recipient, delivery, permissions, status, expiration, and last-access details.
 
 ## Build
 
@@ -48,7 +49,7 @@ https://www.manoogianmedia.com/studiorack/api/v1
 
 ## Alpha install
 
-Version 0.9.7 adds native Android notifications for maintenance, scheduled sessions, and Studio Buddy activity. Notifications are refreshed by background synchronization, known event reminders are scheduled locally, taps open the relevant StudioRack area, and Android launcher badges reflect the unread count on supported launchers.
+Version 0.11.0 adds owner-side Sharing visibility so outgoing active, expired, and revoked shares remain inspectable from the last successful synchronization.
 
 Download the current Android alpha directly from the StudioRack server:
 

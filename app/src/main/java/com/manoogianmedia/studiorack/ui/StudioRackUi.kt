@@ -805,10 +805,10 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
     var tab by remember { mutableStateOf("Reports") }
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading(productName.uppercase(), "More") }
-        item { ChoiceStrip(listOf("Reports", "Shared", "People", agentName, "Reference", "Sync", "Settings"), tab) { tab = it } }
+        item { ChoiceStrip(listOf("Reports", "Sharing", "People", agentName, "Reference", "Sync", "Settings"), tab) { tab = it } }
         when (tab) {
             "Reports" -> reportsContent(model)
-            "Shared" -> sharedWithMeContent(model)
+            "Sharing" -> sharingContent(model)
             "People" -> directoryContent(model)
             agentName -> buddyContent(model)
             "Reference" -> referenceContent(model)
@@ -818,12 +818,22 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.sharedWithMeContent(model: StudioRackViewModel) {
-    item { SharedWithMePanel(model) }
+private fun androidx.compose.foundation.lazy.LazyListScope.sharingContent(model: StudioRackViewModel) {
+    item { SharingPanel(model) }
 }
 
 @Composable
-private fun SharedWithMePanel(model: StudioRackViewModel) {
+private fun SharingPanel(model: StudioRackViewModel) {
+    var tab by remember { mutableStateOf("Shared With Me") }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeading("COLLABORATION", "Sharing")
+        ChoiceStrip(listOf("Shared With Me", "My Shares"), tab) { tab = it }
+        if (tab == "My Shares") MySharesPanel(model) else SharedWithMePanel(model, showHeading = false)
+    }
+}
+
+@Composable
+private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean = true) {
     val accessRows by model.sharedAccess.collectAsState()
     val events by model.sharedEvents.collectAsState()
     val venues by model.sharedVenues.collectAsState()
@@ -839,7 +849,7 @@ private fun SharedWithMePanel(model: StudioRackViewModel) {
     val cacheById = cached.associateBy(CachedAttachment::attachmentId)
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionHeading("COLLABORATION", "Shared With Me")
+        if (showHeading) SectionHeading("COLLABORATION", "Shared With Me")
         Text("Live sessions and set lists shared with your account remain available from the last successful sync.", color = TextSoft)
         if (accessRows.isEmpty()) EmptyCard("Nothing has been shared with this account.")
         accessRows.forEach { record ->
@@ -898,6 +908,56 @@ private fun SharedWithMePanel(model: StudioRackViewModel) {
         }
     }
     preview?.let { AttachmentPreviewDialog(it) { preview = null } }
+}
+
+@Composable
+private fun MySharesPanel(model: StudioRackViewModel) {
+    val shares by model.ownedShares.collectAsState()
+    val orderedShares = shares.sortedByDescending { supportingJson(it).optString("created_utc") }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Active and previous access you have given others remains visible from the last successful sync.", color = TextSoft)
+        if (orderedShares.isEmpty()) EmptyCard("You have not shared anything yet.")
+        orderedShares.forEach { record ->
+            val share = supportingJson(record)
+            val status = share.optString("status", "expired")
+            val statusColor = when (status) {
+                "active" -> Cyan
+                "revoked" -> Color(0xFFFF7C7C)
+                else -> TextSoft
+            }
+            val scopes = share.optJSONArray("scopes")?.let { values ->
+                (0 until values.length()).mapNotNull { index -> values.optString(index).takeIf(String::isNotBlank)?.humanize() }
+            }.orEmpty()
+            val recipient = share.optString("recipient_name").ifBlank {
+                share.optString("recipient_email").ifBlank { "Temporary recipient" }
+            }
+            val delivery = if (share.optString("share_mode") == "registered") "Registered Share" else "Guest Link"
+            InfoCard {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f)) {
+                        Text(share.optString("object_name", "Removed object"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text(recipient, color = Cyan, fontWeight = FontWeight.Bold)
+                        if (share.optString("recipient_email").isNotBlank() && share.optString("recipient_email") != recipient) {
+                            Text(share.optString("recipient_email"), color = TextSoft, fontSize = 13.sp)
+                        }
+                    }
+                    Text(
+                        status.uppercase(), color = statusColor, fontSize = 11.sp, fontWeight = FontWeight.Black,
+                        modifier = Modifier.background(statusColor.copy(alpha = .12f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+                DetailLine("Delivery", delivery)
+                DetailLine("Access", share.optString("access_role", "performer").humanize())
+                DetailLine("Includes", scopes.joinToString(", ").ifBlank { "No content selected" })
+                DetailLine("Expires", share.optString("expires_utc"))
+                DetailLine("Last opened", share.optString("last_accessed_utc").ifBlank { "Not opened yet" })
+                if (share.optString("share_mode") == "registered") {
+                    DetailLine("Keep a copy", if (share.optInt("allow_copy") == 1) "Allowed" else "Not allowed")
+                }
+            }
+        }
+    }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.directoryContent(model: StudioRackViewModel) {
