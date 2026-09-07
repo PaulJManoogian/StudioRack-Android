@@ -50,6 +50,23 @@ class StudioRackRepository(
 
     suspend fun runAiReport(question: String): JSONObject = client.runAiReport(question)
 
+    suspend fun shareLink(grantId: String): String = client.shareLink(grantId).getString("share_url")
+
+    suspend fun emailShare(grantId: String) {
+        client.emailShare(grantId)
+        sync()
+    }
+
+    suspend fun revokeShare(grantId: String) {
+        client.revokeShare(grantId)
+        sync()
+    }
+
+    suspend fun updateShare(grantId: String, data: JSONObject) {
+        client.updateShare(grantId, data)
+        sync()
+    }
+
     suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport = client.exportData(kind, format, ids)
 
     suspend fun importData(kind: String, file: File, displayName: String, mimeType: String): JSONObject {

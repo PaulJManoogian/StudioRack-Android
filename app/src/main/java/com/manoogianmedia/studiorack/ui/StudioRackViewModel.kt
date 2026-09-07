@@ -160,6 +160,38 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         viewModelScope.launch { runCatching { repository.reconcileNotifications() } }
     }
 
+    fun copyShareLink(grantId: String, done: (String?) -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.shareLink(grantId) }
+                .onSuccess { link -> _uiState.value = _uiState.value.copy(message = "Guest link copied."); done(link) }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not retrieve the guest link.", syncError = true); done(null) }
+        }
+    }
+
+    fun emailShare(grantId: String) {
+        viewModelScope.launch {
+            runCatching { repository.emailShare(grantId) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Guest link emailed.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not email the guest link.", syncError = true) }
+        }
+    }
+
+    fun updateShare(grantId: String, data: JSONObject, done: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.updateShare(grantId, data) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Shared access updated.", syncError = false); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not update shared access.", syncError = true) }
+        }
+    }
+
+    fun revokeShare(grantId: String, done: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.revokeShare(grantId) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Shared access revoked.", syncError = false); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not revoke shared access.", syncError = true) }
+        }
+    }
+
     fun saveSong(id: String?, data: JSONObject, attachments: List<SongAttachmentInput>, done: () -> Unit) {
         val songId = id ?: "song_${UUID.randomUUID().toString().replace("-", "")}"
         viewModelScope.launch {

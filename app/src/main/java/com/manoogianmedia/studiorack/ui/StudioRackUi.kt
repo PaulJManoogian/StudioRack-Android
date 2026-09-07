@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -910,10 +912,15 @@ private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean =
     preview?.let { AttachmentPreviewDialog(it) { preview = null } }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MySharesPanel(model: StudioRackViewModel) {
     val shares by model.ownedShares.collectAsState()
     val orderedShares = shares.sortedByDescending { supportingJson(it).optString("created_utc") }
+    val context = LocalContext.current
+    val online = rememberNetworkConnected()
+    var editingShare by remember { mutableStateOf<SupportingRecord?>(null) }
+    var revokingShare by remember { mutableStateOf<SupportingRecord?>(null) }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Active and previous access you have given others remains visible from the last successful sync.", color = TextSoft)
@@ -955,8 +962,88 @@ private fun MySharesPanel(model: StudioRackViewModel) {
                 if (share.optString("share_mode") == "registered") {
                     DetailLine("Keep a copy", if (share.optInt("allow_copy") == 1) "Allowed" else "Not allowed")
                 }
+                if (status == "active") FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioButton(onClick = { editingShare = record }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Edit", color = Color.White, fontWeight = FontWeight.Bold) }
+                    if (share.optString("share_mode") == "guest_link") {
+                        StudioButton(onClick = {
+                            model.copyShareLink(record.entityId) { link ->
+                                if (link != null) {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("Guest Link", link))
+                                    Toast.makeText(context, "Guest link copied.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Copy Link", color = Color.White, fontWeight = FontWeight.Bold) }
+                        if (share.optString("recipient_email").isNotBlank()) {
+                            StudioButton(onClick = { model.emailShare(record.entityId) }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Email Link", color = Color.White, fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                    StudioButton(onClick = { revokingShare = record }, enabled = online, kind = StudioButtonKind.Danger) { Text("Revoke", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+                if (!online && status == "active") Text("Connect to edit, copy, email, or revoke this share.", color = Amber, fontSize = 11.sp)
             }
         }
+    }
+    editingShare?.let { record -> ShareEditor(record, model, online) { editingShare = null } }
+    revokingShare?.let { record ->
+        val share = supportingJson(record)
+        EditorDialog("Revoke Shared Access", { revokingShare = null }) {
+            Text("Revoke access to ${share.optString("object_name", "this shared item")}? The recipient will no longer be able to open it.", color = Color.White)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StudioButton(onClick = { revokingShare = null }, modifier = Modifier.weight(1f), kind = StudioButtonKind.Secondary) { Text("Cancel", color = Color.White) }
+                StudioButton(onClick = { model.revokeShare(record.entityId) { revokingShare = null } }, enabled = online, modifier = Modifier.weight(1f), kind = StudioButtonKind.Danger) { Text("Revoke", color = Color.White, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShareEditor(record: SupportingRecord, model: StudioRackViewModel, online: Boolean, close: () -> Unit) {
+    val original = supportingJson(record)
+    var recipientName by remember(record.entityId) { mutableStateOf(original.optString("recipient_name")) }
+    var recipientEmail by remember(record.entityId) { mutableStateOf(original.optString("recipient_email")) }
+    var role by remember(record.entityId) { mutableStateOf(original.optString("access_role", "performer")) }
+    var expires by remember(record.entityId) { mutableStateOf(original.optString("expires_utc")) }
+    var allowCopy by remember(record.entityId) { mutableStateOf(original.optInt("allow_copy") == 1) }
+    val availableScopes = if (original.optString("object_type") == "set_list") {
+        listOf("set_list" to "Set list", "gig_mode" to "Live Gig Mode", "attachments" to "Charts and attachments")
+    } else {
+        listOf("event_summary" to "Event summary", "venue_directions" to "Venue location and directions", "set_list" to "Set list", "gig_mode" to "Live Gig Mode", "attachments" to "Charts and attachments")
+    }
+    val originalScopes = original.optJSONArray("scopes")?.let { values -> (0 until values.length()).map { values.optString(it) }.toSet() }.orEmpty()
+    var selectedScopes by remember(record.entityId) { mutableStateOf(originalScopes) }
+
+    EditorDialog("Edit Shared Access", close) {
+        Text(original.optString("object_name", "Shared item"), color = Amber, fontSize = 20.sp, fontWeight = FontWeight.Black)
+        StudioField("Recipient name", recipientName) { recipientName = it }
+        StudioField("Recipient email", recipientEmail, dictation = false) { recipientEmail = it }
+        Text("Access role", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        ChoiceStrip(listOf("Performer", "Crew", "Guest"), role.humanize()) { role = it.lowercase() }
+        StudioField("Expires (UTC, for example 2026-09-08T20:00:00Z)", expires, dictation = false) { expires = it }
+        Text("Allowed information", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        availableScopes.forEach { (value, label) ->
+            Row(Modifier.fillMaxWidth().clickable { selectedScopes = if (value in selectedScopes) selectedScopes - value else selectedScopes + value }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = value in selectedScopes, onCheckedChange = { checked -> selectedScopes = if (checked) selectedScopes + value else selectedScopes - value })
+                Text(label, color = Color.White)
+            }
+        }
+        if (original.optString("share_mode") == "registered") {
+            Row(Modifier.fillMaxWidth().clickable { allowCopy = !allowCopy }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = allowCopy, onCheckedChange = { allowCopy = it })
+                Text("Allow recipient to keep an editable copy", color = Color.White)
+            }
+        }
+        StudioButton(
+            onClick = {
+                model.updateShare(record.entityId, JSONObject()
+                    .put("recipient_name", recipientName.trim()).put("recipient_email", recipientEmail.trim())
+                    .put("access_role", role).put("expires_utc", expires.trim())
+                    .put("allow_copy", allowCopy).put("scopes", JSONArray(selectedScopes.toList())), close)
+            },
+            enabled = online && recipientEmail.length <= 320 && selectedScopes.isNotEmpty() && expires.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Save Share Changes", color = Ink, fontWeight = FontWeight.Black) }
+        Text("Share management requires an internet connection and is applied directly to the server.", color = TextSoft, fontSize = 11.sp)
     }
 }
 
