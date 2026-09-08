@@ -67,7 +67,13 @@ class StudioRackRepository(
         sync()
     }
 
-    suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport = client.exportData(kind, format, ids)
+    suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport =
+        LocalExchangeExporter(
+            dao,
+            context.getString(com.manoogianmedia.studiorack.R.string.app_name),
+            context.getString(com.manoogianmedia.studiorack.R.string.publisher_name),
+            context.getString(com.manoogianmedia.studiorack.R.string.export_file_prefix),
+        ).export(kind, format, ids)
 
     suspend fun importData(kind: String, file: File, displayName: String, mimeType: String): JSONObject {
         val result = client.importData(kind, file, displayName, mimeType)

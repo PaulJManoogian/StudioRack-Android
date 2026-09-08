@@ -450,8 +450,11 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
     val categories by model.categories.collectAsState()
     val types by model.itemTypes.collectAsState()
     val locations by model.locations.collectAsState()
+    val reportState by model.reportState.collectAsState()
+    val online = rememberNetworkConnected()
     var query by remember { mutableStateOf("") }
     var addingMaintenance by remember { mutableStateOf(false) }
+    var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
     val categoryNames = categories.associate { it.entityId to supportingJson(it).optString("name") }
     val typeNames = types.associate { it.entityId to supportingJson(it).optString("name") }
     val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
@@ -465,6 +468,14 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
             }
         }
         item { DictationTextField(query, { query = it }, "Find an item") }
+        item {
+            StudioButton(
+                onClick = { exportTarget = ExportTarget("items", "Visible equipment", filtered.map { it.entityId }) },
+                enabled = filtered.isNotEmpty() && !reportState.busy,
+                modifier = Modifier.fillMaxWidth(),
+                kind = StudioButtonKind.Secondary,
+            ) { Text("Export visible equipment (${filtered.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+        }
         if (filtered.isEmpty()) item { EmptyCard("No equipment matches this search.") }
         items(filtered, key = { it.entityId }) { record ->
             val row = supportingJson(record)
@@ -488,6 +499,7 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
         item { Spacer(Modifier.height(20.dp)) }
     }
     if (addingMaintenance) MaintenanceNoteEditor(items, model) { addingMaintenance = false }
+    exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
     }
 }
 
@@ -599,11 +611,23 @@ private fun KitsScreen(model: StudioRackViewModel) {
     val items by model.items.collectAsState()
     val members by model.kitMembers.collectAsState()
     val locations by model.locations.collectAsState()
+    val reportState by model.reportState.collectAsState()
+    val online = rememberNetworkConnected()
     var query by remember { mutableStateOf("") }
+    var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
     val itemNames = items.associate { it.entityId to supportingJson(it).optString("display_name", "Item") }
     val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
     val filtered = kits.filter { query.isBlank() || supportingJson(it).toString().contains(query, true) }
+    Box(Modifier.fillMaxSize()) {
     RecordListScreen("EQUIPMENT", "Kits", query, { query = it }, "Find a kit") {
+        item {
+            StudioButton(
+                onClick = { exportTarget = ExportTarget("kits", "Visible kits", filtered.map { it.entityId }) },
+                enabled = filtered.isNotEmpty() && !reportState.busy,
+                modifier = Modifier.fillMaxWidth(),
+                kind = StudioButtonKind.Secondary,
+            ) { Text("Export visible kits (${filtered.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+        }
         if (filtered.isEmpty()) item { EmptyCard("No kits match this search.") }
         items(filtered, key = { it.entityId }) { record ->
             val row = supportingJson(record)
@@ -613,6 +637,8 @@ private fun KitsScreen(model: StudioRackViewModel) {
                 kitMembers.forEach { member -> DetailLine(itemNames[member.optString("item_id")].orEmpty(), "Quantity ${member.optInt("quantity", 1)}") }
             }
         }
+    }
+    exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
     }
 }
 
@@ -645,7 +671,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
         item {
             StudioButton(
                 onClick = { exportTarget = ExportTarget("events", "Visible scheduled items", rows.map { it.optString("id") }) },
-                enabled = online && rows.isNotEmpty() && !reportState.busy,
+                enabled = rows.isNotEmpty() && !reportState.busy,
                 modifier = Modifier.fillMaxWidth(),
                 kind = StudioButtonKind.Secondary,
             ) { Text("Export visible scheduled items (${rows.size})", color = Color.White, fontWeight = FontWeight.Bold) }
@@ -716,7 +742,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
             item {
                 StudioButton(
                     onClick = { exportTarget = ExportTarget("songs", "Visible songs", filteredSongs.map { it.entityId }) },
-                    enabled = online && filteredSongs.isNotEmpty() && !reportState.busy,
+                    enabled = filteredSongs.isNotEmpty() && !reportState.busy,
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
                 ) { Text("Export visible songs (${filteredSongs.size})", color = Color.White, fontWeight = FontWeight.Bold) }
@@ -747,7 +773,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
             item {
                 StudioButton(
                     onClick = { exportTarget = ExportTarget("setlists", "Visible set lists", filteredSetLists.map { it.entityId }) },
-                    enabled = online && filteredSetLists.isNotEmpty() && !reportState.busy,
+                    enabled = filteredSetLists.isNotEmpty() && !reportState.busy,
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
                 ) { Text("Export visible set lists (${filteredSetLists.size})", color = Color.White, fontWeight = FontWeight.Bold) }
@@ -1318,7 +1344,6 @@ private fun ContextExportDialog(
     close: () -> Unit,
 ) {
     val context = LocalContext.current
-    val productName = stringResource(R.string.app_name)
     var format by remember(target) { mutableStateOf("CSV") }
     var pendingExport by remember(target) { mutableStateOf<DataExport?>(null) }
     val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
@@ -1354,10 +1379,15 @@ private fun ContextExportDialog(
                             }
                         }
                     },
-                    enabled = online && target.ids.isNotEmpty() && !state.busy,
+                    enabled = target.ids.isNotEmpty() && !state.busy,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (state.busy) "Preparing" else "Export as $format", color = Ink, fontWeight = FontWeight.Black) }
-                if (!online) Text("Connect to $productName to create this export.", color = Amber, fontSize = 12.sp)
+                Text(
+                    if (online) "Exporting the synchronized data stored on this device."
+                    else "Offline export ready. Pending device changes are included.",
+                    color = if (online) TextSoft else Cyan,
+                    fontSize = 12.sp,
+                )
                 if (target.kind == "setlists") Text("Set and song details are included. Chart and other attachment files are not included.", color = TextSoft, fontSize = 11.sp)
                 TextButton(onClick = close, modifier = Modifier.align(Alignment.End)) { Text("Cancel", color = Cyan) }
             }
