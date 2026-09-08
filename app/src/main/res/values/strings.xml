@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Display identity only. Package names, database names, API routes, and sync IDs stay stable. -->
-    <string name="app_name">StudioRack</string>
-    <string name="agent_name">Studio Buddy</string>
+    <string name="app_name">Studio Leviathan</string>
+    <string name="agent_name">Crew</string>
+    <string name="agent_workshop_name">The Foundry</string>
+    <string name="live_mode_name">Leviathan Live</string>
     <string name="publisher_name">Manoogian Media</string>
     <string name="copyright_holder">Manoogian Media, Inc.</string>
-    <string name="brand_tagline">You play. We\'ll keep track.</string>
-    <string name="brand_descriptor">Equipment. Music. The work between gigs.</string>
+    <string name="brand_tagline">Everything behind the performance.</string>
+    <string name="brand_descriptor">The performance operations platform.</string>
+    <string name="public_base_url" translatable="false">https://www.manoogianmedia.com/leviathan</string>
+    <string name="api_base_url" translatable="false">https://www.manoogianmedia.com/leviathan/api/v1</string>
+    <string name="export_file_prefix" translatable="false">studio-leviathan</string>
 </resources>

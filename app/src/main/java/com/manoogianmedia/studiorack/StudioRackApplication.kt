@@ -9,7 +9,12 @@ import com.manoogianmedia.studiorack.data.TokenStore
 class StudioRackApplication : Application() {
     val repository: StudioRackRepository by lazy {
         val tokenStore = TokenStore(this)
-        StudioRackRepository(this, StudioRackDatabase.create(this).dao(), tokenStore, SyncClient(tokenStore))
+        StudioRackRepository(
+            this,
+            StudioRackDatabase.create(this).dao(),
+            tokenStore,
+            SyncClient(tokenStore, getString(R.string.api_base_url), getString(R.string.export_file_prefix)),
+        )
     }
 
     override fun onCreate() {

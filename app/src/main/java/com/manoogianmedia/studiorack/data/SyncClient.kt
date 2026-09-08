@@ -14,7 +14,8 @@ import java.security.MessageDigest
 
 class SyncClient(
     private val tokenStore: TokenStore,
-    private val baseUrl: String = "https://www.manoogianmedia.com/studiorack/api/v1",
+    private val baseUrl: String,
+    private val exportFilePrefix: String,
 ) {
     suspend fun signIn(email: String, accessCode: String, mfaCode: String, deviceName: String, deviceId: String): JSONObject =
         request(
@@ -64,7 +65,7 @@ class SyncClient(
                 throw SyncException(status, runCatching { JSONObject(detail).optString("detail") }.getOrNull().orEmpty().ifBlank { "Data export failed." })
             }
             val disposition = connection.getHeaderField("Content-Disposition").orEmpty()
-            val filename = Regex("filename=\"?([^\";]+)").find(disposition)?.groupValues?.get(1) ?: "studiorack-$kind.$format"
+            val filename = Regex("filename=\"?([^\";]+)").find(disposition)?.groupValues?.get(1) ?: "$exportFilePrefix-$kind.$format"
             DataExport(filename, connection.contentType ?: "application/octet-stream", connection.inputStream.use { it.readBytes() })
         } finally {
             connection.disconnect()

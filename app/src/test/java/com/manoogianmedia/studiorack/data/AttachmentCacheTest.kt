@@ -22,11 +22,11 @@ class AttachmentCacheTest {
     }
 
     @Test
-    fun keepsAuthenticatedDownloadsUnderCanonicalStudioRackPath() {
+    fun keepsAuthenticatedDownloadsUnderCanonicalProductPath() {
         assertEquals(
-            "https://www.manoogianmedia.com/studiorack/api/v1/attachments/att_123",
+            "https://www.manoogianmedia.com/leviathan/api/v1/attachments/att_123",
             resolveDownloadUrl(
-                "https://www.manoogianmedia.com/studiorack/api/v1",
+                "https://www.manoogianmedia.com/leviathan/api/v1",
                 "/api/v1/attachments/att_123",
             ),
         )

@@ -215,7 +215,7 @@ private fun MainShell(
         topBar = {
             Surface(modifier = Modifier.statusBarsPadding(), color = Color(0xF20A0D15), shadowElevation = 8.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Image(painterResource(R.drawable.studiorack_logo), productName, Modifier.size(38.dp))
+                    Image(painterResource(R.drawable.brand_logo), productName, Modifier.size(38.dp))
                     Column(Modifier.weight(1f).padding(start = 8.dp)) {
                         Text(productName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
                         Text(connection.label, color = when (connection.kind) { ConnectionKind.ONLINE -> Color(0xFF63E6A4); ConnectionKind.OFFLINE -> Cyan; ConnectionKind.WARNING -> Amber; ConnectionKind.ERROR -> Color(0xFFFF6B6B) }, fontSize = 9.sp, fontWeight = FontWeight.Black)
@@ -312,7 +312,7 @@ private fun StudioRackSplash() {
                 shadowElevation = 12.dp,
             ) {
                 Image(
-                    painterResource(R.drawable.studiorack_logo),
+                    painterResource(R.drawable.brand_logo),
                     productName,
                     Modifier.padding(20.dp).fillMaxSize(),
                 )
@@ -334,7 +334,7 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
     var mfa by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.studiorack_logo), productName, Modifier.size(54.dp))
+            Image(painterResource(R.drawable.brand_logo), productName, Modifier.size(54.dp))
             Text(productName, color = Amber, fontSize = 38.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 10.dp))
         }
         Text("Your performance library, available offline.", color = TextSoft)
@@ -836,6 +836,7 @@ private fun SharingPanel(model: StudioRackViewModel) {
 
 @Composable
 private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean = true) {
+    val productName = stringResource(R.string.app_name)
     val accessRows by model.sharedAccess.collectAsState()
     val events by model.sharedEvents.collectAsState()
     val venues by model.sharedVenues.collectAsState()
@@ -865,7 +866,7 @@ private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean =
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                        Text("From ${access.optString("owner_organization").ifBlank { access.optString("owner_name", "Another StudioRack user") }}", color = Cyan)
+                        Text("From ${access.optString("owner_organization").ifBlank { access.optString("owner_name", "Another $productName user") }}", color = Cyan)
                         Text("${access.optString("access_role", "performer").humanize()} access | Expires ${access.optString("expires_utc")}", color = TextSoft, fontSize = 12.sp)
                     }
                     StudioButton(onClick = { selectedGrant = if (selectedGrant == grantId) null else grantId }, kind = StudioButtonKind.Secondary) {
@@ -999,6 +1000,7 @@ private fun MySharesPanel(model: StudioRackViewModel) {
 
 @Composable
 private fun ShareEditor(record: SupportingRecord, model: StudioRackViewModel, online: Boolean, close: () -> Unit) {
+    val liveModeName = stringResource(R.string.live_mode_name)
     val original = supportingJson(record)
     var recipientName by remember(record.entityId) { mutableStateOf(original.optString("recipient_name")) }
     var recipientEmail by remember(record.entityId) { mutableStateOf(original.optString("recipient_email")) }
@@ -1006,9 +1008,9 @@ private fun ShareEditor(record: SupportingRecord, model: StudioRackViewModel, on
     var expires by remember(record.entityId) { mutableStateOf(original.optString("expires_utc")) }
     var allowCopy by remember(record.entityId) { mutableStateOf(original.optInt("allow_copy") == 1) }
     val availableScopes = if (original.optString("object_type") == "set_list") {
-        listOf("set_list" to "Set list", "gig_mode" to "Live Gig Mode", "attachments" to "Charts and attachments")
+        listOf("set_list" to "Set list", "gig_mode" to liveModeName, "attachments" to "Charts and attachments")
     } else {
-        listOf("event_summary" to "Event summary", "venue_directions" to "Venue location and directions", "set_list" to "Set list", "gig_mode" to "Live Gig Mode", "attachments" to "Charts and attachments")
+        listOf("event_summary" to "Event summary", "venue_directions" to "Venue location and directions", "set_list" to "Set list", "gig_mode" to liveModeName, "attachments" to "Charts and attachments")
     }
     val originalScopes = original.optJSONArray("scopes")?.let { values -> (0 until values.length()).map { values.optString(it) }.toSet() }.orEmpty()
     var selectedScopes by remember(record.entityId) { mutableStateOf(originalScopes) }
@@ -2257,6 +2259,7 @@ private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Uni
 
 @Composable
 private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit, edit: (() -> Unit)? = null) {
+    val liveModeName = stringResource(R.string.live_mode_name)
     Card(
         Modifier.fillMaxWidth().clickable(onClick = open),
         colors = CardDefaults.cardColors(containerColor = PanelRaised),
@@ -2278,7 +2281,7 @@ private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () ->
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
-                if (event.optString("set_list_id").isNotBlank()) Text("Open Gig Mode", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                if (event.optString("set_list_id").isNotBlank()) Text("Open $liveModeName", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
                 if (edit != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = edit) { Text("Edit", color = Amber) }
                 }

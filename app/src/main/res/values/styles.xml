@@ -8,7 +8,7 @@
 
     <style name="Theme.StudioRack.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">#080B13</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/studiorack_splash_icon</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/brand_splash_icon</item>
         <item name="windowSplashScreenIconBackgroundColor">#121621</item>
         <item name="postSplashScreenTheme">@style/Theme.StudioRack</item>
     </style>
