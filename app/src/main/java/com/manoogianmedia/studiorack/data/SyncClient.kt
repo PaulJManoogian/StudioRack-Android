@@ -73,7 +73,7 @@ class SyncClient(
     }
 
     suspend fun importData(kind: String, file: File, displayName: String, mimeType: String): JSONObject = withContext(Dispatchers.IO) {
-        val boundary = "StudioRack-Exchange-${System.currentTimeMillis()}"
+        val boundary = "ApplicationExchange-${System.currentTimeMillis()}"
         val encodedKind = URLEncoder.encode(kind, Charsets.UTF_8.name())
         val connection = URL("$baseUrl/exchange/import?kind=$encodedKind").openConnection() as HttpURLConnection
         try {
@@ -105,7 +105,7 @@ class SyncClient(
     }
 
     suspend fun uploadAttachment(file: File, displayName: String, mimeType: String): JSONObject = withContext(Dispatchers.IO) {
-        val boundary = "StudioRack-${System.currentTimeMillis()}"
+        val boundary = "ApplicationAttachment-${System.currentTimeMillis()}"
         val connection = URL("$baseUrl/attachments/upload").openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"

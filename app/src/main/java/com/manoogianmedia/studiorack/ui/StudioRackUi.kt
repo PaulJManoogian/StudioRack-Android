@@ -1275,7 +1275,7 @@ private fun ImportDataTab(online: Boolean, state: ReportUiState, model: StudioRa
     val chooseImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             val displayName = contentDisplayName(context, uri)
-            val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "-").ifBlank { "studiorack-import" }
+            val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "-").ifBlank { "import-file" }
             val temporary = File(context.cacheDir, "exchange-${System.currentTimeMillis()}-$safeName")
             runCatching {
                 context.contentResolver.openInputStream(uri)?.use { input -> temporary.outputStream().use(input::copyTo) }
