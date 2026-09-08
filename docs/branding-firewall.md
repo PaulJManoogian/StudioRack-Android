@@ -20,7 +20,7 @@ All user-facing identity values live in `app/src/main/res/values/strings.xml`:
 
 Launcher labels, splash and login screens, navigation labels, notifications, live-mode labels, assistant-facing copy, and network locations must use these resources. A white-label source set can override the strings and the generic `brand_logo` and `brand_splash_icon` drawables without changing Kotlin code.
 
-The default package displays **Studio Leviathan**, **Crew**, **The Foundry**, and **Leviathan Live**. The current rack-shaped drawable is an interim asset until the Studio Leviathan visual identity is approved.
+The default package displays **Studio Leviathan**, **Crew**, **The Foundry**, and **Leviathan Live**. The Crown is the approved product symbol. Its canonical SVG and raster exports live in the web repository under `drumdb/branding/studio-leviathan`; Android drawables are platform derivatives of that master.
 
 ## Stable compatibility identifiers
 

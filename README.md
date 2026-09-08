@@ -49,7 +49,7 @@ https://www.manoogianmedia.com/leviathan/api/v1
 
 ## Alpha install
 
-Version 0.12.0 introduces the Studio Leviathan identity, configurable brand endpoints, and owner-side share management for editing, redelivering, copying, and revoking outgoing access from Android.
+Version 0.12.1 introduces the production Studio Leviathan Crown identity across the launcher, splash screen, and application interface. The broader Studio Leviathan identity and configurable brand endpoints arrived in 0.12.0.
 
 Download the current Android alpha directly from the Studio Leviathan server:
 
