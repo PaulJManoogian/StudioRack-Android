@@ -49,7 +49,7 @@ https://www.manoogianmedia.com/leviathan/api/v1
 
 ## Alpha install
 
-Version 0.12.1 introduces the production Studio Leviathan Crown identity across the launcher, splash screen, and application interface. The broader Studio Leviathan identity and configurable brand endpoints arrived in 0.12.0.
+Version 0.12.3 gives Leviathan Live a full-width previous/next song rail and compact, touch-friendly icon controls on phones and tablets. The Studio Leviathan Crown identity remains consistent across the launcher, splash screen, and application interface.
 
 Download the current Android alpha directly from the Studio Leviathan server:
 

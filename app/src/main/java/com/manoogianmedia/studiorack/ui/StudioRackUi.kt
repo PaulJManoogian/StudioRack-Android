@@ -57,6 +57,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -65,6 +66,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.material3.Shapes
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.List as ListIcon
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.NavigateBefore
+import androidx.compose.material.icons.rounded.NavigateNext
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -83,6 +96,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -2436,7 +2450,7 @@ private fun GigModeScreen(
         item {
             Surface(color = Color(0xF207090F), shape = RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp), border = BorderStroke(1.dp, Color(0x2EFF9D1E))) {
                 Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    GigCircleButton("<", back)
+                    GigIconButton(Icons.Rounded.ArrowBack, "Back to upcoming schedule", back)
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text("SET LIST", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
                         Text(setList?.optString("name")?.ifBlank { null } ?: event.optString("title", "Set List"), color = Color.White, fontFamily = FontFamily.Serif, fontSize = 22.sp, maxLines = 1)
@@ -2451,9 +2465,9 @@ private fun GigModeScreen(
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                GigPill("List", active = true)
+                GigIconButton(Icons.Rounded.ListIcon, "List view", onClick = {}, active = true)
                 Spacer(Modifier.width(7.dp))
-                GigPill("Chart", onClick = { if (performanceSongs.isNotEmpty()) detailOpen = true })
+                GigIconButton(Icons.Rounded.Description, "Chart view", onClick = { if (performanceSongs.isNotEmpty()) detailOpen = true })
             }
         }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
@@ -2509,10 +2523,15 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
             if (attachment != null || mediaLink != null) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
                     if (attachment != null) {
-                        GigPill(if (availableOffline) attachmentLabel(attachment) else "${attachmentLabel(attachment)} unavailable", onClick = openAttachment)
+                        GigIconButton(
+                            Icons.Rounded.Description,
+                            if (availableOffline) "Open ${attachmentLabel(attachment)}" else "${attachmentLabel(attachment)} unavailable offline",
+                            onClick = openAttachment,
+                            enabled = availableOffline,
+                        )
                     }
                     if (attachment != null && mediaLink != null) Spacer(Modifier.width(7.dp))
-                    mediaLink?.let { link -> GigPill("Listen", onClick = { openMediaLink(context, link) }) }
+                    mediaLink?.let { link -> GigIconButton(Icons.Rounded.Headphones, "Listen", onClick = { openMediaLink(context, link) }) }
                 }
             }
         }
@@ -2594,24 +2613,45 @@ private fun PerformanceSongScreen(
             .verticalScroll(rememberScrollState())
             .padding(12.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            GigCircleButton("<", close)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            GigIconButton(Icons.Rounded.Close, "Return to set list", close)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GigCircleButton("<", previous, position > 0)
-                    Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                        Text(item.sectionName, color = Color.White, fontWeight = FontWeight.Bold)
-                        Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                        nextItem?.let { Text("> ${gigSongTitle(it)}  ${gigSongCue(it)}", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
-                        previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = 9.sp, maxLines = 1) }
-                    }
-                    GigCircleButton(">", next, position < total - 1)
-                }
+                Text(item.sectionName, color = Color.White, fontWeight = FontWeight.Bold)
+                Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                mediaLink?.let { link -> GigPill("Listen", onClick = { openMediaLink(context, link) }) }
-                GigCircleButton(if (metronomeState.running) "||" else "♪", metronome::toggle)
+                mediaLink?.let { link -> GigIconButton(Icons.Rounded.Headphones, "Listen", onClick = { openMediaLink(context, link) }) }
+                GigIconButton(
+                    if (metronomeState.running) Icons.Rounded.Pause else Icons.Rounded.MusicNote,
+                    if (metronomeState.running) "Stop metronome" else "Start metronome",
+                    metronome::toggle,
+                    active = metronomeState.running,
+                )
+                GigIconButton(
+                    if (metronomeState.muted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+                    if (metronomeState.muted) "Unmute metronome" else "Mute metronome",
+                    metronome::toggleMuted,
+                    active = metronomeState.muted,
+                )
             }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            GigIconButton(Icons.Rounded.NavigateBefore, "Previous song", previous, position > 0)
+            Column(Modifier.weight(1f)) {
+                if (nextItem != null) {
+                    Text("> ${gigSongTitle(nextItem)}", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                    val nextCue = gigSongCue(nextItem)
+                    if (nextCue.isNotBlank()) Text(nextCue, color = TextSoft, fontSize = 10.sp, maxLines = 2)
+                } else {
+                    Text("> END OF SET LIST", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                }
+                previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = 10.sp, maxLines = 2) }
+            }
+            GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
         }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
             GigTimeStrip(settings, elapsedSeconds, setRemainingSeconds, item.sectionName)
@@ -2638,9 +2678,6 @@ private fun PerformanceSongScreen(
             val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
             GigDetail("Patch", patch)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            GigPill(if (metronomeState.muted) "Unmute" else "Mute", onClick = metronome::toggleMuted)
-        }
         val entryNote = item.entry.optString("entry_notes")
         val songNote = item.song?.optString("notes").orEmpty()
         if (entryNote.isNotBlank() || songNote.isNotBlank()) {
@@ -2656,9 +2693,9 @@ private fun PerformanceSongScreen(
         }
         if (pageCount > 1) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                StudioButton(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0, kind = StudioButtonKind.Secondary) { Text("Previous page", color = Color.White) }
+                GigIconButton(Icons.Rounded.NavigateBefore, "Previous chart page", onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0)
                 Spacer(Modifier.size(6.dp))
-                StudioButton(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1) { Text("Next page", color = Ink, fontWeight = FontWeight.Black) }
+                GigIconButton(Icons.Rounded.NavigateNext, "Next chart page", onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1)
             }
         }
         val renderedBitmap = rendered.bitmap
@@ -2688,6 +2725,31 @@ private fun GigCircleButton(label: String, onClick: () -> Unit, enabled: Boolean
         color = Amber.copy(alpha = if (enabled) 1f else 0.28f), contentColor = Ink, shape = RoundedCornerShape(50),
         modifier = Modifier.size(46.dp).clickable(enabled = enabled, onClick = onClick),
     ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = if (label == "♪") 24.sp else 20.sp, fontWeight = FontWeight.Black) } }
+}
+
+@Composable
+private fun GigIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    active: Boolean = false,
+) {
+    Surface(
+        color = when {
+            !enabled -> Amber.copy(alpha = 0.18f)
+            active -> Cyan
+            else -> Amber
+        },
+        contentColor = Ink,
+        shape = RoundedCornerShape(50),
+        border = BorderStroke(1.dp, if (active) Cyan else Amber.copy(alpha = if (enabled) 0.9f else 0.22f)),
+        modifier = Modifier.size(46.dp).clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(23.dp), tint = Ink.copy(alpha = if (enabled) 1f else 0.45f))
+        }
+    }
 }
 
 @Composable
