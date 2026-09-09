@@ -70,6 +70,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.List as ListIcon
 import androidx.compose.material.icons.rounded.MusicNote
@@ -889,7 +890,19 @@ private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean =
     val context = LocalContext.current
     var selectedGrant by remember { mutableStateOf<String?>(null) }
     var preview by remember { mutableStateOf<CachedAttachment?>(null) }
+    var liveShareRevision by remember(selectedGrant) { mutableStateOf("") }
+    var liveShareConnected by remember(selectedGrant) { mutableStateOf(false) }
     val cacheById = cached.associateBy(CachedAttachment::attachmentId)
+
+    LaunchedEffect(selectedGrant) {
+        val grantId = selectedGrant ?: return@LaunchedEffect
+        while (true) {
+            val result = model.refreshLiveShare(grantId, liveShareRevision)
+            liveShareRevision = result.revision
+            liveShareConnected = result.connected
+            delay(2_500)
+        }
+    }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (showHeading) SectionHeading("COLLABORATION", "Shared With Me")
@@ -914,6 +927,7 @@ private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean =
                     }
                 }
                 if (selectedGrant == grantId) {
+                    Text(if (liveShareConnected) "LIVE UPDATES CONNECTED" else "OFFLINE COPY", color = if (liveShareConnected) Color(0xFF58E99B) else TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black)
                     event?.let {
                         Text(listOf(it.optString("event_date"), it.optString("start_time"), it.optString("event_type").humanize()).filter(String::isNotBlank).joinToString(" | "), color = Amber, fontWeight = FontWeight.Bold)
                     }
@@ -2359,7 +2373,8 @@ private fun GigModeScreen(
     val listState = rememberLazyListState()
     val event = events.firstOrNull { it.entityId == eventId }?.let(::recordJson) ?: JSONObject()
     val setListId = event.optString("set_list_id")
-    val setList = setLists.firstOrNull { it.entityId == setListId }?.let(::recordJson)
+    val setListRecord = setLists.firstOrNull { it.entityId == setListId }
+    val setList = setListRecord?.let(::recordJson)
     val songMap = songs.associate { it.entityId to recordJson(it) }
     val sectionRows = sections.map(::recordJson).filter { it.optString("set_list_id") == setListId }.sortedBy { it.optInt("position") }
     val entryRows = entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") }
@@ -2374,12 +2389,26 @@ private fun GigModeScreen(
     }
     var currentSong by remember(eventId) { mutableIntStateOf(0) }
     var detailOpen by remember(eventId) { mutableStateOf(false) }
+    var editingLiveSet by remember(eventId) { mutableStateOf(false) }
+    var liveRevision by remember(eventId) { mutableStateOf("") }
+    var liveConnected by remember(eventId) { mutableStateOf(false) }
+    var liveUpdating by remember(eventId) { mutableStateOf(false) }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
     var clockTick by remember(eventId) { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(eventId) {
         while (true) {
             clockTick = System.currentTimeMillis()
             delay(1_000)
+        }
+    }
+    LaunchedEffect(eventId) {
+        while (true) {
+            liveUpdating = true
+            val result = model.refreshLiveEvent(eventId, liveRevision)
+            liveRevision = result.revision
+            liveConnected = result.connected
+            liveUpdating = false
+            delay(2_500)
         }
     }
     val activeGigSong = performanceSongs.getOrNull(currentSong)
@@ -2424,6 +2453,15 @@ private fun GigModeScreen(
         }
     }
 
+    if (editingLiveSet && setListRecord != null) {
+        Dialog(
+            onDismissRequest = { editingLiveSet = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            SetListEditor(setListRecord, sections, entries, songs, attachments, model) { editingLiveSet = false }
+        }
+    }
+
     if (detailOpen && performanceSongs.isNotEmpty()) {
         PerformanceSongScreen(
             item = performanceSongs[currentSong],
@@ -2459,12 +2497,20 @@ private fun GigModeScreen(
                         val venueName = venues.firstOrNull { it.entityId == event.optString("venue_id") }?.let { recordJson(it).optString("name") }.orEmpty()
                         Text(listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - "), color = TextSoft, fontSize = 11.sp, maxLines = 1)
                         Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString("  "), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            when { liveUpdating -> "UPDATING"; liveConnected -> "LIVE"; else -> "OFFLINE READY" },
+                            color = when { liveUpdating -> Cyan; liveConnected -> Color(0xFF58E99B); else -> TextSoft },
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                        )
                     }
                 }
             }
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                GigIconButton(Icons.Rounded.Edit, "Edit live set list", onClick = { editingLiveSet = true }, enabled = setListRecord != null)
+                Spacer(Modifier.width(7.dp))
                 GigIconButton(Icons.Rounded.ListIcon, "List view", onClick = {}, active = true)
                 Spacer(Modifier.width(7.dp))
                 GigIconButton(Icons.Rounded.Description, "Chart view", onClick = { if (performanceSongs.isNotEmpty()) detailOpen = true })

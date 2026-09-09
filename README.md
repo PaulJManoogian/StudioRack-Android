@@ -49,7 +49,7 @@ https://www.manoogianmedia.com/leviathan/api/v1
 
 ## Alpha install
 
-Version 0.12.3 gives Leviathan Live a full-width previous/next song rail and compact, touch-friendly icon controls on phones and tablets. The Studio Leviathan Crown identity remains consistent across the launcher, splash screen, and application interface.
+Version 0.13.0 adds a native in-performance set-list editor, connected live revision checks, and automatic refresh for registered shares. Leviathan Live still opens immediately from its offline packet, while connected changes synchronize without blocking the stage view.
 
 Download the current Android alpha directly from the Studio Leviathan server:
 

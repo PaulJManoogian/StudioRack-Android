@@ -50,6 +50,10 @@ class StudioRackRepository(
 
     suspend fun runAiReport(question: String): JSONObject = client.runAiReport(question)
 
+    suspend fun liveEventStatus(eventId: String): JSONObject = client.liveEventStatus(eventId)
+
+    suspend fun liveShareStatus(grantId: String): JSONObject = client.liveShareStatus(grantId)
+
     suspend fun shareLink(grantId: String): String = client.shareLink(grantId).getString("share_url")
 
     suspend fun emailShare(grantId: String) {

@@ -156,6 +156,20 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         }
     }
 
+    suspend fun refreshLiveEvent(eventId: String, knownRevision: String): LiveRefreshResult = runCatching {
+        val status = repository.liveEventStatus(eventId)
+        val revision = status.optString("revision")
+        if (knownRevision.isBlank() || (revision.isNotBlank() && revision != knownRevision)) repository.sync()
+        LiveRefreshResult(revision, connected = true, changed = knownRevision.isNotBlank() && revision != knownRevision)
+    }.getOrElse { LiveRefreshResult(knownRevision, connected = false, changed = false) }
+
+    suspend fun refreshLiveShare(grantId: String, knownRevision: String): LiveRefreshResult = runCatching {
+        val status = repository.liveShareStatus(grantId)
+        val revision = status.optString("revision")
+        if (knownRevision.isBlank() || (revision.isNotBlank() && revision != knownRevision)) repository.sync()
+        LiveRefreshResult(revision, connected = true, changed = knownRevision.isNotBlank() && revision != knownRevision)
+    }.getOrElse { LiveRefreshResult(knownRevision, connected = false, changed = false) }
+
     fun refreshNotifications() {
         viewModelScope.launch { runCatching { repository.reconcileNotifications() } }
     }
@@ -380,6 +394,8 @@ data class ReportUiState(
     val onlineOverview: JSONObject? = null,
     val aiResult: JSONObject? = null,
 )
+
+data class LiveRefreshResult(val revision: String, val connected: Boolean, val changed: Boolean)
 
 data class SetListDraft(
     val id: String,

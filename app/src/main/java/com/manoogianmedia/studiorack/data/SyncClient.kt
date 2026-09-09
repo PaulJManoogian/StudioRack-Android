@@ -36,6 +36,12 @@ class SyncClient(
     suspend fun push(mutations: JSONArray): JSONObject =
         request("/sync/push", "POST", JSONObject().put("mutations", mutations))
 
+    suspend fun liveEventStatus(eventId: String): JSONObject =
+        request("/live/events/${URLEncoder.encode(eventId, Charsets.UTF_8.name())}/status")
+
+    suspend fun liveShareStatus(grantId: String): JSONObject =
+        request("/live/shares/${URLEncoder.encode(grantId, Charsets.UTF_8.name())}/status")
+
     suspend fun revoke() = request("/auth/revoke", "POST", JSONObject())
 
     suspend fun shareLink(grantId: String): JSONObject = request("/sharing/$grantId/link", "POST", JSONObject())
