@@ -36,15 +36,22 @@ import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -76,6 +83,8 @@ internal fun SetListEditor(
     }
     var pickingSection by remember { mutableStateOf<String?>(null) }
     var removedEntry by remember { mutableStateOf<RemovedSetEntry?>(null) }
+    val currentDraft by rememberUpdatedState(draft)
+    val entryHeights = remember { mutableStateMapOf<String, Int>() }
     val songRows = songs.associate { it.entityId to JSONObject(it.json) }
     val attachmentsBySong = attachments.groupBy { JSONObject(it.json).optString("song_id") }
     val estimatedSeconds = draft.sections.sumOf { section ->
@@ -149,17 +158,30 @@ internal fun SetListEditor(
                         DictationTextField(section.name, { value -> draft = draft.updateSection(section.id) { it.copy(name = value) } }, "Set name")
                         DictationTextField(section.notes, { value -> draft = draft.updateSection(section.id) { it.copy(notes = value) } }, "Set notes", singleLine = false, minLines = 2)
                         section.entries.forEachIndexed { index, entry ->
+                            key(entry.id) {
                             val song = entry.songId?.let(songRows::get)
                             val label = song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.manualTitle.ifBlank { "item" }
                             var dragDistance by remember(entry.id) { mutableFloatStateOf(0f) }
+                            var dragging by remember(entry.id) { mutableStateOf(false) }
+                            var rowHeight by remember(entry.id) { mutableIntStateOf(1) }
                             val dismissState = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
                                 if (value != SwipeToDismissBoxValue.Settled) {
-                                    removedEntry = RemovedSetEntry(section.id, index, entry, label)
-                                    draft = draft.removeEntry(section.id, entry.id)
+                                    val liveIndex = currentDraft.sections.firstOrNull { it.id == section.id }?.entries?.indexOfFirst { it.id == entry.id }?.coerceAtLeast(0) ?: index
+                                    removedEntry = RemovedSetEntry(section.id, liveIndex, entry, label)
+                                    draft = currentDraft.removeEntry(section.id, entry.id)
                                 }
                                 false
                             })
                             SwipeToDismissBox(
+                                modifier = Modifier
+                                    .zIndex(if (dragging) 20f else 0f)
+                                    .graphicsLayer {
+                                        translationY = dragDistance
+                                        scaleX = if (dragging) 1.018f else 1f
+                                        scaleY = if (dragging) 1.018f else 1f
+                                        shadowElevation = if (dragging) 24.dp.toPx() else 0f
+                                        alpha = if (dragging) .98f else 1f
+                                    },
                                 state = dismissState,
                                 backgroundContent = {
                                     Row(
@@ -173,23 +195,33 @@ internal fun SetListEditor(
                                 },
                             ) {
                             Column(
-                                Modifier.fillMaxWidth().background(EditorPanel).padding(vertical = 4.dp).pointerInput(section.id, entry.id, index) {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .onSizeChanged { size -> rowHeight = size.height.coerceAtLeast(1); entryHeights[entry.id] = rowHeight }
+                                    .background(if (dragging) EditorRaised else EditorPanel, RoundedCornerShape(8.dp))
+                                    .padding(vertical = 4.dp)
+                                    .pointerInput(section.id, entry.id) {
                                     detectDragGesturesAfterLongPress(
-                                        onDragStart = { dragDistance = 0f },
-                                        onDragCancel = { dragDistance = 0f },
-                                        onDragEnd = { dragDistance = 0f },
+                                        onDragStart = { dragging = true; dragDistance = 0f },
+                                        onDragCancel = { dragging = false; dragDistance = 0f },
+                                        onDragEnd = { dragging = false; dragDistance = 0f },
                                     ) { change, amount ->
                                         change.consume()
                                         dragDistance += amount.y
-                                        val threshold = 52.dp.toPx()
+                                        val liveSection = currentDraft.sections.firstOrNull { it.id == section.id }
+                                        val liveIndex = liveSection?.entries?.indexOfFirst { it.id == entry.id } ?: -1
+                                        val previous = liveSection?.entries?.getOrNull(liveIndex - 1)
+                                        val next = liveSection?.entries?.getOrNull(liveIndex + 1)
+                                        val previousHeight = previous?.let { entryHeights[it.id] }?.coerceAtLeast(1) ?: rowHeight
+                                        val nextHeight = next?.let { entryHeights[it.id] }?.coerceAtLeast(1) ?: rowHeight
                                         when {
-                                            dragDistance <= -threshold && index > 0 -> {
-                                                draft = draft.moveEntry(section.id, index, -1)
-                                                dragDistance = 0f
+                                            previous != null && dragDistance <= -(previousHeight * .52f) -> {
+                                                draft = currentDraft.moveEntry(section.id, liveIndex, -1)
+                                                dragDistance += previousHeight
                                             }
-                                            dragDistance >= threshold && index < section.entries.lastIndex -> {
-                                                draft = draft.moveEntry(section.id, index, 1)
-                                                dragDistance = 0f
+                                            next != null && dragDistance >= nextHeight * .52f -> {
+                                                draft = currentDraft.moveEntry(section.id, liveIndex, 1)
+                                                dragDistance -= nextHeight
                                             }
                                         }
                                     }
@@ -231,6 +263,7 @@ internal fun SetListEditor(
                             }
                             }
                             HorizontalDivider(color = Color(0xFF30384A))
+                            }
                         }
                         StudioButton(onClick = { pickingSection = section.id }) { Text("Choose Songs", color = EditorInk, fontWeight = FontWeight.Black) }
                         OutlinedButton(onClick = {
