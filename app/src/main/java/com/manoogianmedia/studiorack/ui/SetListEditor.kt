@@ -1,7 +1,9 @@
 package com.manoogianmedia.studiorack.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,15 +25,24 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,6 +75,7 @@ internal fun SetListEditor(
         mutableStateOf(setListDraft(original, allSections, allEntries))
     }
     var pickingSection by remember { mutableStateOf<String?>(null) }
+    var removedEntry by remember { mutableStateOf<RemovedSetEntry?>(null) }
     val songRows = songs.associate { it.entityId to JSONObject(it.json) }
     val attachmentsBySong = attachments.groupBy { JSONObject(it.json).optString("song_id") }
     val estimatedSeconds = draft.sections.sumOf { section ->
@@ -78,6 +90,19 @@ internal fun SetListEditor(
                     Column(Modifier.weight(1f).padding(start = 14.dp)) {
                         Text("SET LIST BUILDER", color = EditorAmber, fontSize = 11.sp, fontWeight = FontWeight.Black)
                         Text(if (original == null) "Create Set List" else "Edit Set List", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            removedEntry?.let { removed ->
+                item {
+                    Surface(color = Color(0xFF2B2023), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFFFF7A82).copy(alpha = .55f))) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Removed ${removed.label}", color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
+                            TextButton(onClick = {
+                                draft = draft.restoreEntry(removed.sectionId, removed.index, removed.entry)
+                                removedEntry = null
+                            }) { Text("Undo", color = EditorAmber, fontWeight = FontWeight.Black) }
+                        }
                     }
                 }
             }
@@ -125,7 +150,51 @@ internal fun SetListEditor(
                         DictationTextField(section.notes, { value -> draft = draft.updateSection(section.id) { it.copy(notes = value) } }, "Set notes", singleLine = false, minLines = 2)
                         section.entries.forEachIndexed { index, entry ->
                             val song = entry.songId?.let(songRows::get)
-                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            val label = song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.manualTitle.ifBlank { "item" }
+                            var dragDistance by remember(entry.id) { mutableFloatStateOf(0f) }
+                            val dismissState = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
+                                if (value != SwipeToDismissBoxValue.Settled) {
+                                    removedEntry = RemovedSetEntry(section.id, index, entry, label)
+                                    draft = draft.removeEntry(section.id, entry.id)
+                                }
+                                false
+                            })
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                backgroundContent = {
+                                    Row(
+                                        Modifier.fillMaxSize().background(Color(0xFF7D2930), RoundedCornerShape(8.dp)).padding(horizontal = 18.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Arrangement.Start else Arrangement.End,
+                                    ) {
+                                        Icon(Icons.Rounded.Delete, contentDescription = "Remove $label", tint = Color.White)
+                                        Text(" Remove", color = Color.White, fontWeight = FontWeight.Black)
+                                    }
+                                },
+                            ) {
+                            Column(
+                                Modifier.fillMaxWidth().background(EditorPanel).padding(vertical = 4.dp).pointerInput(section.id, entry.id, index) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { dragDistance = 0f },
+                                        onDragCancel = { dragDistance = 0f },
+                                        onDragEnd = { dragDistance = 0f },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        dragDistance += amount.y
+                                        val threshold = 52.dp.toPx()
+                                        when {
+                                            dragDistance <= -threshold && index > 0 -> {
+                                                draft = draft.moveEntry(section.id, index, -1)
+                                                dragDistance = 0f
+                                            }
+                                            dragDistance >= threshold && index < section.entries.lastIndex -> {
+                                                draft = draft.moveEntry(section.id, index, 1)
+                                                dragDistance = 0f
+                                            }
+                                        }
+                                    }
+                                }
+                            ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("${index + 1}", color = EditorCyan, fontWeight = FontWeight.Black, modifier = Modifier.padding(end = 10.dp))
                                     Column(Modifier.weight(1f)) {
@@ -140,9 +209,7 @@ internal fun SetListEditor(
                                             song.optString("artist").takeIf(String::isNotBlank)?.let { Text(it, color = EditorSoft, fontSize = 12.sp) }
                                         }
                                     }
-                                    TextButton(onClick = { draft = draft.moveEntry(section.id, index, -1) }, enabled = index > 0) { Text("^") }
-                                    TextButton(onClick = { draft = draft.moveEntry(section.id, index, 1) }, enabled = index < section.entries.lastIndex) { Text("v") }
-                                    TextButton(onClick = { draft = draft.updateSection(section.id) { it.copy(entries = it.entries.filterNot { row -> row.id == entry.id }) } }) { Text("X", color = Color(0xFFFF7A82)) }
+                                    Icon(Icons.Rounded.DragHandle, contentDescription = "Hold and drag to reorder $label", tint = EditorAmber, modifier = Modifier.size(34.dp))
                                 }
                                 DictationTextField(entry.notes, { value -> draft = draft.updateEntry(section.id, entry.id) { it.copy(notes = value) } }, "Notation for this set", singleLine = false, minLines = 2)
                                 val songAttachments = entry.songId?.let { attachmentsBySong[it] }.orEmpty()
@@ -161,6 +228,7 @@ internal fun SetListEditor(
                                         }
                                     }
                                 }
+                            }
                             }
                             HorizontalDivider(color = Color(0xFF30384A))
                         }
@@ -262,9 +330,14 @@ private fun setListDraft(original: CachedRecord?, allSections: List<CachedRecord
 
 private fun SetListDraft.updateSection(id: String, transform: (SetSectionDraft) -> SetSectionDraft) = copy(sections = sections.map { if (it.id == id) transform(it) else it })
 private fun SetListDraft.updateEntry(sectionId: String, entryId: String, transform: (SetEntryDraft) -> SetEntryDraft) = updateSection(sectionId) { section -> section.copy(entries = section.entries.map { if (it.id == entryId) transform(it) else it }) }
+private fun SetListDraft.removeEntry(sectionId: String, entryId: String) = updateSection(sectionId) { section -> section.copy(entries = section.entries.filterNot { it.id == entryId }) }
+private fun SetListDraft.restoreEntry(sectionId: String, index: Int, entry: SetEntryDraft) = updateSection(sectionId) { section ->
+    section.copy(entries = section.entries.toMutableList().apply { add(index.coerceIn(0, size), entry) })
+}
 private fun SetListDraft.moveEntry(sectionId: String, index: Int, delta: Int) = updateSection(sectionId) { section ->
     val target = index + delta
     if (index !in section.entries.indices || target !in section.entries.indices) section else section.copy(entries = section.entries.toMutableList().apply { add(target, removeAt(index)) })
 }
 private fun newId(prefix: String) = "${prefix}_${UUID.randomUUID().toString().replace("-", "").take(12)}"
 private fun attachmentName(data: JSONObject) = data.optString("display_name").ifBlank { data.optString("attachment_type", "Attachment").replace('_', ' ').replaceFirstChar(Char::uppercase) }
+private data class RemovedSetEntry(val sectionId: String, val index: Int, val entry: SetEntryDraft, val label: String)

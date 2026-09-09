@@ -2388,6 +2388,7 @@ private fun GigModeScreen(
         }
     }
     var currentSong by remember(eventId) { mutableIntStateOf(0) }
+    var currentEntryId by remember(eventId) { mutableStateOf("") }
     var detailOpen by remember(eventId) { mutableStateOf(false) }
     var editingLiveSet by remember(eventId) { mutableStateOf(false) }
     var liveRevision by remember(eventId) { mutableStateOf("") }
@@ -2399,6 +2400,16 @@ private fun GigModeScreen(
         while (true) {
             clockTick = System.currentTimeMillis()
             delay(1_000)
+        }
+    }
+    LaunchedEffect(performanceSongs.map { it.entry.optString("id") }) {
+        if (performanceSongs.isEmpty()) {
+            currentSong = 0
+            currentEntryId = ""
+        } else {
+            val anchoredIndex = performanceSongs.indexOfFirst { it.entry.optString("id") == currentEntryId }
+            currentSong = if (anchoredIndex >= 0) anchoredIndex else currentSong.coerceIn(0, performanceSongs.lastIndex)
+            currentEntryId = performanceSongs[currentSong].entry.optString("id")
         }
     }
     LaunchedEffect(eventId) {
@@ -2445,6 +2456,7 @@ private fun GigModeScreen(
                         listState.scrollBy(listState.layoutInfo.viewportSize.height * fraction * direction)
                     } else if (performanceSongs.isNotEmpty()) {
                         currentSong = (currentSong + direction).coerceIn(0, performanceSongs.lastIndex)
+                        currentEntryId = performanceSongs[currentSong].entry.optString("id")
                         if (!detailOpen) listState.animateScrollToItem(gigListItemIndex(currentSong, performanceSongs))
                     }
                 }
@@ -2475,8 +2487,14 @@ private fun GigModeScreen(
             elapsedSeconds = elapsedSeconds,
             setRemainingSeconds = setRemainingSeconds,
             close = { detailOpen = false },
-            previous = { currentSong = (currentSong - 1).coerceAtLeast(0) },
-            next = { currentSong = (currentSong + 1).coerceAtMost(performanceSongs.lastIndex) },
+            previous = {
+                currentSong = (currentSong - 1).coerceAtLeast(0)
+                currentEntryId = performanceSongs[currentSong].entry.optString("id")
+            },
+            next = {
+                currentSong = (currentSong + 1).coerceAtMost(performanceSongs.lastIndex)
+                currentEntryId = performanceSongs[currentSong].entry.optString("id")
+            },
         )
         return
     }
@@ -2533,6 +2551,7 @@ private fun GigModeScreen(
                 val cached = attachment?.optString("id")?.let(cacheById::get)
                 SongRow(entry, song, attachment, cached) {
                     currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
+                    currentEntryId = performanceSongs[currentSong].entry.optString("id")
                     detailOpen = true
                 }
             }

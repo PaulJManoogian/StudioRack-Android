@@ -49,7 +49,7 @@ https://www.manoogianmedia.com/leviathan/api/v1
 
 ## Alpha install
 
-Version 0.13.0 adds a native in-performance set-list editor, connected live revision checks, and automatic refresh for registered shares. Leviathan Live still opens immediately from its offline packet, while connected changes synchronize without blocking the stage view.
+Version 0.13.1 adds touch-first set-list editing: hold and drag songs to reorder them, swipe either direction to remove them, and undo accidental removal. The same editor is used from the library and inside Leviathan Live, while Chart mode remains anchored to the active set-list entry as live changes arrive.
 
 Download the current Android alpha directly from the Studio Leviathan server:
 
