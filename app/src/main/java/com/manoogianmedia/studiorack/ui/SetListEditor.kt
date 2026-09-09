@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +45,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,8 +53,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,6 +68,10 @@ import androidx.compose.foundation.rememberScrollState
 import com.manoogianmedia.studiorack.data.CachedRecord
 import org.json.JSONObject
 import java.util.UUID
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 private val EditorInk = Color(0xFF07090F)
 private val EditorPanel = Color(0xFF121621)
@@ -85,6 +97,11 @@ internal fun SetListEditor(
     var removedEntry by remember { mutableStateOf<RemovedSetEntry?>(null) }
     val currentDraft by rememberUpdatedState(draft)
     val entryHeights = remember { mutableStateMapOf<String, Int>() }
+    val editorListState = rememberLazyListState()
+    val dragScope = rememberCoroutineScope()
+    var listBounds by remember { mutableStateOf(Rect.Zero) }
+    val dragEdgeSize = with(LocalDensity.current) { 76.dp.toPx() }
+    val maximumEdgeScroll = with(LocalDensity.current) { 22.dp.toPx() }
     val songRows = songs.associate { it.entityId to JSONObject(it.json) }
     val attachmentsBySong = attachments.groupBy { JSONObject(it.json).optString("song_id") }
     val estimatedSeconds = draft.sections.sumOf { section ->
@@ -92,7 +109,11 @@ internal fun SetListEditor(
     }
 
     Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = EditorInk) {
-        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().onGloballyPositioned { listBounds = it.boundsInRoot() }.padding(16.dp),
+            state = editorListState,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(onClick = close, border = BorderStroke(1.dp, EditorAmber)) { Text("Back", color = EditorAmber) }
@@ -164,6 +185,30 @@ internal fun SetListEditor(
                             var dragDistance by remember(entry.id) { mutableFloatStateOf(0f) }
                             var dragging by remember(entry.id) { mutableStateOf(false) }
                             var rowHeight by remember(entry.id) { mutableIntStateOf(1) }
+                            var rowTopInRoot by remember(entry.id) { mutableFloatStateOf(0f) }
+                            var pointerYInRoot by remember(entry.id) { mutableFloatStateOf(0f) }
+                            var edgeScrollJob by remember(entry.id) { mutableStateOf<Job?>(null) }
+                            DisposableEffect(entry.id) {
+                                onDispose { edgeScrollJob?.cancel() }
+                            }
+                            fun moveAcrossNeighbor() {
+                                val liveSection = currentDraft.sections.firstOrNull { it.id == section.id }
+                                val liveIndex = liveSection?.entries?.indexOfFirst { it.id == entry.id } ?: -1
+                                val previous = liveSection?.entries?.getOrNull(liveIndex - 1)
+                                val next = liveSection?.entries?.getOrNull(liveIndex + 1)
+                                val previousHeight = previous?.let { entryHeights[it.id] }?.coerceAtLeast(1) ?: rowHeight
+                                val nextHeight = next?.let { entryHeights[it.id] }?.coerceAtLeast(1) ?: rowHeight
+                                when {
+                                    previous != null && dragDistance <= -(previousHeight * .52f) -> {
+                                        draft = currentDraft.moveEntry(section.id, liveIndex, -1)
+                                        dragDistance += previousHeight
+                                    }
+                                    next != null && dragDistance >= nextHeight * .52f -> {
+                                        draft = currentDraft.moveEntry(section.id, liveIndex, 1)
+                                        dragDistance -= nextHeight
+                                    }
+                                }
+                            }
                             val dismissState = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
                                 if (value != SwipeToDismissBoxValue.Settled) {
                                     val liveIndex = currentDraft.sections.firstOrNull { it.id == section.id }?.entries?.indexOfFirst { it.id == entry.id }?.coerceAtLeast(0) ?: index
@@ -198,32 +243,55 @@ internal fun SetListEditor(
                                 Modifier
                                     .fillMaxWidth()
                                     .onSizeChanged { size -> rowHeight = size.height.coerceAtLeast(1); entryHeights[entry.id] = rowHeight }
+                                    .onGloballyPositioned { rowTopInRoot = it.boundsInRoot().top }
                                     .background(if (dragging) EditorRaised else EditorPanel, RoundedCornerShape(8.dp))
                                     .padding(vertical = 4.dp)
                                     .pointerInput(section.id, entry.id) {
                                     detectDragGesturesAfterLongPress(
-                                        onDragStart = { dragging = true; dragDistance = 0f },
-                                        onDragCancel = { dragging = false; dragDistance = 0f },
-                                        onDragEnd = { dragging = false; dragDistance = 0f },
+                                        onDragStart = { offset ->
+                                            dragging = true
+                                            dragDistance = 0f
+                                            pointerYInRoot = rowTopInRoot + offset.y
+                                            edgeScrollJob?.cancel()
+                                            edgeScrollJob = dragScope.launch {
+                                                while (isActive && dragging) {
+                                                    val edgeDirection = when {
+                                                        pointerYInRoot < listBounds.top + dragEdgeSize -> {
+                                                            -((listBounds.top + dragEdgeSize - pointerYInRoot) / dragEdgeSize).coerceIn(.18f, 1f)
+                                                        }
+                                                        pointerYInRoot > listBounds.bottom - dragEdgeSize -> {
+                                                            ((pointerYInRoot - (listBounds.bottom - dragEdgeSize)) / dragEdgeSize).coerceIn(.18f, 1f)
+                                                        }
+                                                        else -> 0f
+                                                    }
+                                                    if (edgeDirection != 0f) {
+                                                        val consumed = editorListState.scrollBy(maximumEdgeScroll * edgeDirection)
+                                                        if (consumed != 0f) {
+                                                            dragDistance += consumed
+                                                            moveAcrossNeighbor()
+                                                        }
+                                                    }
+                                                    delay(16)
+                                                }
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            edgeScrollJob?.cancel()
+                                            edgeScrollJob = null
+                                            dragging = false
+                                            dragDistance = 0f
+                                        },
+                                        onDragEnd = {
+                                            edgeScrollJob?.cancel()
+                                            edgeScrollJob = null
+                                            dragging = false
+                                            dragDistance = 0f
+                                        },
                                     ) { change, amount ->
                                         change.consume()
                                         dragDistance += amount.y
-                                        val liveSection = currentDraft.sections.firstOrNull { it.id == section.id }
-                                        val liveIndex = liveSection?.entries?.indexOfFirst { it.id == entry.id } ?: -1
-                                        val previous = liveSection?.entries?.getOrNull(liveIndex - 1)
-                                        val next = liveSection?.entries?.getOrNull(liveIndex + 1)
-                                        val previousHeight = previous?.let { entryHeights[it.id] }?.coerceAtLeast(1) ?: rowHeight
-                                        val nextHeight = next?.let { entryHeights[it.id] }?.coerceAtLeast(1) ?: rowHeight
-                                        when {
-                                            previous != null && dragDistance <= -(previousHeight * .52f) -> {
-                                                draft = currentDraft.moveEntry(section.id, liveIndex, -1)
-                                                dragDistance += previousHeight
-                                            }
-                                            next != null && dragDistance >= nextHeight * .52f -> {
-                                                draft = currentDraft.moveEntry(section.id, liveIndex, 1)
-                                                dragDistance -= nextHeight
-                                            }
-                                        }
+                                        pointerYInRoot += amount.y
+                                        moveAcrossNeighbor()
                                     }
                                 }
                             ) {
