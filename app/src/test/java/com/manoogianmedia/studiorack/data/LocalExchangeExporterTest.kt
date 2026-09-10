@@ -49,7 +49,8 @@ class LocalExchangeExporterTest {
                 ),
                 "set_list_entry" to listOf(
                     JSONObject().put("id", "entry_2").put("set_list_id", "set_b").put("section_id", "section_2").put("song_id", "song_2").put("position", 1),
-                    JSONObject().put("id", "entry_1").put("set_list_id", "set_b").put("section_id", "section_1").put("song_id", "song_1").put("position", 1).put("entry_notes", "Count four"),
+                    JSONObject().put("id", "entry_1").put("set_list_id", "set_b").put("section_id", "section_1").put("song_id", "song_1").put("position", 1).put("entry_notes", "Count four")
+                        .put("performance_group_id", "grp_1").put("performance_group_type", "medley").put("performance_group_name", "Opening Run"),
                 ),
             ),
             supporting = emptyMap(),
@@ -59,7 +60,7 @@ class LocalExchangeExporterTest {
             .bytes.toString(Charsets.UTF_8)
         assertFalse(csv.contains("First Set List"))
         assertTrue(csv.indexOf("First Song") < csv.indexOf("Second Song"))
-        assertTrue(csv.contains("Selected Set List,Road show,Set One,1,1,First Song,Test Artist,Bb,120,3:45,4/4,Rock,Guitar"))
+        assertTrue(csv.contains("Selected Set List,Road show,Set One,1,1,medley,Opening Run,First Song,Test Artist,Bb,120,3:45,4/4,Rock,Guitar"))
 
         val json = JSONObject(exporter.export("setlists", "json", listOf("set_b"), store).bytes.toString(Charsets.UTF_8))
         val exported = json.getJSONArray("records").getJSONObject(0)
@@ -67,6 +68,7 @@ class LocalExchangeExporterTest {
         assertEquals("Set One", exported.getJSONArray("sections").getJSONObject(0).getString("name"))
         assertEquals("First Song", exported.getJSONArray("sections").getJSONObject(0).getJSONArray("entries").getJSONObject(0).getString("song_title"))
         assertEquals("Bb", exported.getJSONArray("sections").getJSONObject(0).getJSONArray("entries").getJSONObject(0).getString("song_key"))
+        assertEquals("Opening Run", exported.getJSONArray("sections").getJSONObject(0).getJSONArray("entries").getJSONObject(0).getString("performance_group_name"))
     }
 
     @Test

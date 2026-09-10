@@ -360,6 +360,33 @@ internal fun SetListEditor(
                                     Icon(Icons.Rounded.DragHandle, contentDescription = "Hold and drag to reorder $label", tint = EditorAmber, modifier = Modifier.size(34.dp))
                                 }
                                 DictationTextField(entry.notes, { value -> draft = draft.updateEntry(section.id, entry.id) { it.copy(notes = value) } }, "Notation for this set", singleLine = false, minLines = 2)
+                                Text("PERFORMANCE GROUP", color = EditorSoft, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 6.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf("" to "None", "medley" to "Medley", "tribute" to "Tribute").forEach { (value, groupLabel) ->
+                                        val active = entry.performanceGroupType == value
+                                        Surface(
+                                            color = if (active) EditorAmber else EditorRaised,
+                                            contentColor = if (active) EditorInk else Color.White,
+                                            shape = RoundedCornerShape(50),
+                                            modifier = Modifier.weight(1f).clickable {
+                                                draft = draft.updateEntry(section.id, entry.id) {
+                                                    it.copy(
+                                                        performanceGroupType = value,
+                                                        performanceGroupName = if (value.isBlank()) "" else it.performanceGroupName,
+                                                        performanceGroupId = if (value.isBlank()) null else it.performanceGroupId,
+                                                    )
+                                                }
+                                            },
+                                        ) { Text(groupLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) }
+                                    }
+                                }
+                                if (entry.performanceGroupType.isNotBlank()) {
+                                    DictationTextField(
+                                        entry.performanceGroupName,
+                                        { value -> draft = draft.updateEntry(section.id, entry.id) { it.copy(performanceGroupName = value.take(160)) } },
+                                        "${entry.performanceGroupType.replaceFirstChar(Char::uppercase)} name",
+                                    )
+                                }
                                 val songAttachments = entry.songId?.let { attachmentsBySong[it] }.orEmpty()
                                 if (songAttachments.isNotEmpty()) {
                                     Text("PERFORMANCE ATTACHMENT", color = EditorSoft, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 6.dp))
@@ -472,6 +499,9 @@ private fun setListDraft(original: CachedRecord?, allSections: List<CachedRecord
                 entry.optString("manual_title"),
                 entry.optString("entry_notes"),
                 entry.optString("performance_attachment_id").takeIf(String::isNotBlank),
+                entry.optString("performance_group_id").takeIf(String::isNotBlank),
+                entry.optString("performance_group_type"),
+                entry.optString("performance_group_name"),
             )
         }
         SetSectionDraft(sectionRecord.entityId, section.optString("name"), section.optString("notes"), entries)

@@ -204,7 +204,7 @@ internal class LocalExchangeExporter(
     private fun flatten(kind: String, records: List<JSONObject>): Pair<List<String>, List<Map<String, String>>> {
         val headers = when (kind) {
             "songs" -> listOf("title", "artist", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "media_ref", "notes", "favorite")
-            "setlists" -> listOf("set_list", "description", "set", "set_number", "song_number", "song", "artist", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "set_note", "song_note", "set_list_notes", "favorite")
+            "setlists" -> listOf("set_list", "description", "set", "set_number", "song_number", "group_type", "group_name", "song", "artist", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "set_note", "song_note", "set_list_notes", "favorite")
             "items" -> listOf("display_name", "brand", "category", "type", "location", "usage_status", "quantity", "notes")
             "kits" -> listOf("name", "designation", "location", "members", "notes")
             else -> listOf("title", "type", "status", "date", "start_time", "location", "set_list", "kits", "notes")
@@ -253,6 +253,7 @@ internal class LocalExchangeExporter(
                     "set_list" to record.text("name"), "description" to record.text("description"), "set" to section.text("name"),
                     "set_number" to if (section.length() > 0) (sectionIndex + 1).toString() else "",
                     "song_number" to if (entry.length() > 0) (entryIndex + 1).toString() else "",
+                    "group_type" to entry.text("performance_group_type"), "group_name" to entry.text("performance_group_name"),
                     "song" to entry.text("song_title").ifBlank { entry.text("manual_title") }, "artist" to entry.text("song_artist"), "key" to entry.text("song_key"),
                     "tempo" to entry.text("song_tempo"), "duration" to duration(entry.opt("song_duration_seconds")),
                     "time_signature" to entry.text("song_time_signature"), "style" to entry.text("song_style"),

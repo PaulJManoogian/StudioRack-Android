@@ -2921,12 +2921,20 @@ private fun GigModeScreen(
     val entryRows = entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") }
     val attachmentsBySong = attachments.map(::recordJson).groupBy { it.optString("song_id") }
     val cacheById = cachedAttachments.associateBy(CachedAttachment::attachmentId)
-    val performanceSongs = sectionRows.flatMap { section ->
+    val rawPerformanceSongs = sectionRows.flatMap { section ->
         entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
             val song = songMap[entry.optString("song_id")]
             val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
             GigSong(section.optString("name", "Set"), entry, song, attachment, attachment?.optString("id")?.let(cacheById::get))
         }
+    }
+    val performanceSongs = rawPerformanceSongs.map { item ->
+        val groupId = item.entry.optString("performance_group_id")
+        val members = rawPerformanceSongs.filter { groupId.isNotBlank() && it.entry.optString("performance_group_id") == groupId }
+        item.copy(
+            performanceGroupPosition = members.indexOfFirst { it.entry.optString("id") == item.entry.optString("id") }.takeIf { it >= 0 }?.plus(1) ?: 0,
+            performanceGroupCount = members.size,
+        )
     }
     var currentSong by remember(eventId) { mutableIntStateOf(0) }
     var currentEntryId by remember(eventId) { mutableStateOf("") }
@@ -3099,10 +3107,20 @@ private fun GigModeScreen(
                 val song = songMap[entry.optString("song_id")]
                 val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
                 val cached = attachment?.optString("id")?.let(cacheById::get)
-                SongRow(entry, song, attachment, cached) {
-                    currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
-                    currentEntryId = performanceSongs[currentSong].entry.optString("id")
-                    detailOpen = true
+                val gigSong = performanceSongs.firstOrNull { it.entry.optString("id") == entry.optString("id") }
+                Column {
+                    if (gigSong?.performanceGroupPosition == 1) {
+                        Row(Modifier.fillMaxWidth().padding(start = 18.dp, top = 10.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(entry.optString("performance_group_type").uppercase(), color = Amber, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                            Text(entry.optString("performance_group_name"), color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("${gigSong.performanceGroupCount} songs", color = TextSoft, fontSize = 10.sp)
+                        }
+                    }
+                    SongRow(entry, song, attachment, cached, modifier = if (gigSong?.performanceGroupCount ?: 0 > 0) Modifier.padding(start = 22.dp) else Modifier) {
+                        currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
+                        currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                        detailOpen = true
+                    }
                 }
             }
         }
@@ -3163,14 +3181,14 @@ private fun LiveUpdatingLight() {
 }
 
 @Composable
-private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, openAttachment: () -> Unit) {
+private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, modifier: Modifier = Modifier, openAttachment: () -> Unit) {
     val context = LocalContext.current
     val availableOffline = cached?.status == "ready" && cached.localPath != null
     val mediaLink = normalizedMediaLink(song?.optString("media_ref").orEmpty())
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xE8202635)),
         shape = RoundedCornerShape(6.dp),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = openAttachment),
+        modifier = modifier.fillMaxWidth().clickable(onClick = openAttachment),
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -3284,6 +3302,7 @@ private fun PerformanceSongScreen(
             GigIconButton(Icons.Rounded.Close, "Return to set list", close)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(item.sectionName, color = Color.White, fontWeight = FontWeight.Bold)
+                if (item.performanceGroupCount > 0) Text("${item.entry.optString("performance_group_type").uppercase()}: ${item.entry.optString("performance_group_name")}  •  ${item.performanceGroupPosition} OF ${item.performanceGroupCount}", color = Amber, fontSize = 9.sp, fontWeight = FontWeight.Black)
                 Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -3553,6 +3572,8 @@ private data class GigSong(
     val song: JSONObject?,
     val attachment: JSONObject?,
     val cache: CachedAttachment?,
+    val performanceGroupPosition: Int = 0,
+    val performanceGroupCount: Int = 0,
 )
 private data class PacketReadiness(val ready: Int, val total: Int)
 private data class AttachmentRender(val bitmap: Bitmap? = null, val complete: Boolean = false)

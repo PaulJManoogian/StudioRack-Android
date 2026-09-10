@@ -358,11 +358,23 @@ class StudioRackViewModel(
         draft.sections.forEachIndexed { index, section ->
             sections.put(JSONObject().put("id", section.id).put("set_list_id", draft.id)
                 .put("name", section.name.trim().ifBlank { "Set ${index + 1}" }).put("position", index).put("notes", section.notes.trim()))
+            val performanceGroups = mutableMapOf<Pair<String, String>, String>()
+            section.entries.forEach { entry ->
+                val key = entry.performanceGroupType to entry.performanceGroupName.trim().lowercase()
+                entry.performanceGroupId?.takeIf { key.first.isNotBlank() && key.second.isNotBlank() }?.let { performanceGroups.putIfAbsent(key, it) }
+            }
             section.entries.forEachIndexed { entryIndex, entry ->
+                val groupKey = entry.performanceGroupType to entry.performanceGroupName.trim().lowercase()
+                val groupId = if (groupKey.first in setOf("medley", "tribute") && groupKey.second.isNotBlank()) {
+                    performanceGroups.getOrPut(groupKey) { "grp_${UUID.randomUUID().toString().replace("-", "").take(12)}" }
+                } else null
                 entries.put(JSONObject().put("id", entry.id).put("set_list_id", draft.id)
                     .put("section_id", section.id).put("song_id", entry.songId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
                     .put("position", entryIndex).put("manual_title", entry.manualTitle.trim())
                     .put("entry_notes", entry.notes.trim())
+                    .put("performance_group_id", groupId ?: JSONObject.NULL)
+                    .put("performance_group_type", entry.performanceGroupType.takeIf { groupId != null } ?: JSONObject.NULL)
+                    .put("performance_group_name", entry.performanceGroupName.trim().takeIf { groupId != null } ?: JSONObject.NULL)
                     .put("performance_attachment_id", entry.performanceAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL))
             }
         }
@@ -485,6 +497,9 @@ data class SetEntryDraft(
     val manualTitle: String = "",
     val notes: String = "",
     val performanceAttachmentId: String? = null,
+    val performanceGroupId: String? = null,
+    val performanceGroupType: String = "",
+    val performanceGroupName: String = "",
 )
 
 class StudioRackViewModelFactory(
