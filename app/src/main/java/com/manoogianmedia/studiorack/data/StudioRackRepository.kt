@@ -615,6 +615,9 @@ class StudioRackRepository(
             for (type in listOf("item", "kit")) {
                 dao.supporting(type).forEach { add(JSONObject(it.json).optString("image_url")) }
             }
+            for (type in listOf("venue", "contact", "ensemble")) {
+                dao.records(type).forEach { add(JSONObject(it.json).optString("image_url")) }
+            }
         }.filter(String::isNotBlank).distinct()
         imageUrls.forEach { cacheImageFile(context, it) }
     }

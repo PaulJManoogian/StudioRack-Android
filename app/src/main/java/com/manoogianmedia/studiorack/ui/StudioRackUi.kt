@@ -1223,7 +1223,10 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
                 title = title,
                 subtitle = detail,
                 chips = listOf(data.optString("phone"), if (entityType != "contact") "$connectedCount contacts" else ""),
-                imageUrl = if (entityType in setOf("venue", "contact")) data.optString("image_url") else "",
+                imageUrl = data.optString("image_url"),
+                showImage = true,
+                circularImage = entityType == "contact",
+                imageFallback = title.take(1).uppercase(),
             ) {
                 when (entityType) {
                     "venue" -> {
@@ -1452,7 +1455,7 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
                     Box(Modifier.weight(1f)) { StudioField("Postal Code", postalCode) { postalCode = it } }
                 }
                 StudioField("Phone", phone) { phone = it }; StudioField("Email", email) { email = it }
-                if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current venue photo", Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop)
+                if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current venue photo", Modifier.size(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop, fallbackText = name.take(1).uppercase())
                 StudioButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
                     Text(if (selectedImageName.isBlank()) "Choose Venue Photo" else "Photo: $selectedImageName", color = Color.White, fontWeight = FontWeight.Bold)
                 }
@@ -1501,7 +1504,7 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
                     StudioButton(onClick = { contactMethodDrafts = contactMethodDrafts + ContactMethodDraft(type = "phone", label = "Mobile", value = "", isPrimary = contactMethodDrafts.none { it.type == "phone" }) }, kind = StudioButtonKind.Secondary) { Text("Add Phone", color = Color.White) }
                     StudioButton(onClick = { contactMethodDrafts = contactMethodDrafts + ContactMethodDraft(type = "email", label = "Primary", value = "", isPrimary = contactMethodDrafts.none { it.type == "email" }) }, kind = StudioButtonKind.Secondary) { Text("Add Email", color = Color.White) }
                 }
-                if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current contact photo", Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop)
+                if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current contact photo", Modifier.size(150.dp).clip(CircleShape), ContentScale.Crop, fallbackText = name.take(1).uppercase())
                 StudioButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
                     Text(if (selectedImageName.isBlank()) "Choose Contact Photo" else "Photo: $selectedImageName", color = Color.White, fontWeight = FontWeight.Bold)
                 }
@@ -1510,6 +1513,11 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
             else -> {
                 Text("Type", color = TextSoft, fontWeight = FontWeight.Bold)
                 ChoiceStrip(listOf("band", "worship_group", "studio", "production_company", "other"), type) { type = it }
+                if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current group photo", Modifier.size(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop, fallbackText = name.take(1).uppercase())
+                StudioButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                    Text(if (selectedImageName.isBlank()) "Choose Group Photo or Logo" else "Photo: $selectedImageName", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                StudioField("Group Photo URL", imageUrl) { imageUrl = it }
                 StudioField("Website", website) { website = it }
             }
         }
@@ -1530,7 +1538,7 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
                     model.saveDirectoryRecord(entityType, target.id, data, selectedImageUri?.toString(), selectedImageName, selectedImageMime, cleanMethods, done = close)
                     return@EditorActions
                 }
-                else -> data.put("ensemble_type", type).put("website", website.trim())
+                else -> data.put("ensemble_type", type).put("website", website.trim()).put("image_url", imageUrl.trim())
             }
             model.saveDirectoryRecord(entityType, target.id, data, selectedImageUri?.toString(), selectedImageName, selectedImageMime, done = close)
         }, delete = target.id?.let { id -> { model.deleteDirectoryRecord(entityType, id, close) } })
@@ -2133,6 +2141,9 @@ private fun ExpandableRecordCard(
     actionLabel: String? = null,
     action: (() -> Unit)? = null,
     imageUrl: String = "",
+    showImage: Boolean = false,
+    circularImage: Boolean = false,
+    imageFallback: String = "SR",
     details: @Composable ColumnScope.() -> Unit,
 ) {
     var expanded by remember(title, subtitle) { mutableStateOf(false) }
@@ -2144,13 +2155,22 @@ private fun ExpandableRecordCard(
     ) {
         Column(Modifier.padding(15.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (imageUrl.isNotBlank()) {
-                    CachedNetworkImage(
-                        imageUrl = imageUrl,
-                        contentDescription = title,
-                        modifier = Modifier.size(58.dp).clip(RoundedCornerShape(6.dp)).background(Ink),
-                        contentScale = ContentScale.Crop,
-                    )
+                if (showImage || imageUrl.isNotBlank()) {
+                    val imageShape = if (circularImage) CircleShape else RoundedCornerShape(7.dp)
+                    val imageModifier = Modifier.size(58.dp).clip(imageShape).background(Ink)
+                    if (imageUrl.isNotBlank()) {
+                        CachedNetworkImage(
+                            imageUrl = imageUrl,
+                            contentDescription = title,
+                            modifier = imageModifier,
+                            contentScale = ContentScale.Crop,
+                            fallbackText = imageFallback,
+                        )
+                    } else {
+                        Box(imageModifier, contentAlignment = Alignment.Center) {
+                            Text(imageFallback, color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
                     Spacer(Modifier.width(11.dp))
                 }
                 Column(Modifier.weight(1f)) {
