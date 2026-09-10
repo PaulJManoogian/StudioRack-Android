@@ -274,9 +274,20 @@ class StudioRackViewModel(
 
     fun deleteEvent(id: String, done: () -> Unit) = deleteRecord("studio_event", id, done)
 
-    fun saveDirectoryRecord(entityType: String, id: String?, data: JSONObject, done: () -> Unit) {
+    fun saveDirectoryRecord(entityType: String, id: String?, data: JSONObject, imageUri: String? = null, imageName: String = "", imageMimeType: String = "", done: () -> Unit) {
         val prefix = when (entityType) { "venue" -> "venue"; "contact" -> "contact"; else -> "ensemble" }
-        saveRecord(entityType, id ?: "${prefix}_${UUID.randomUUID().toString().replace("-", "")}", data, done)
+        val recordId = id ?: "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
+        viewModelScope.launch {
+            runCatching {
+                if (entityType == "venue" && !imageUri.isNullOrBlank()) {
+                    data.put("image_url", repository.uploadVenueImage(imageUri, imageName, imageMimeType))
+                }
+                repository.save(entityType, recordId, data)
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(message = "${prefix.replaceFirstChar(Char::uppercase)} saved. Synchronization is queued.")
+                done()
+            }.onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save the record.") }
+        }
     }
 
     fun deleteDirectoryRecord(entityType: String, id: String, done: () -> Unit) = deleteRecord(entityType, id, done)

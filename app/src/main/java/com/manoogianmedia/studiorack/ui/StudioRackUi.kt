@@ -1123,13 +1123,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.directoryContent(mode
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun DirectoryPanel(model: StudioRackViewModel) {
+    val context = LocalContext.current
     val venues by model.venues.collectAsState()
     val contacts by model.contacts.collectAsState()
     val ensembles by model.ensembles.collectAsState()
     val venueContacts by model.venueContacts.collectAsState()
     val ensembleContacts by model.ensembleContacts.collectAsState()
     var tab by remember { mutableStateOf("Venues") }
+    var mode by remember { mutableStateOf("Browse") }
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<EditorTarget?>(null) }
     var managing by remember { mutableStateOf<Pair<String, CachedRecord>?>(null) }
@@ -1143,31 +1146,61 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeading("PEOPLE & PLACES", "Directory")
-        ChoiceStrip(listOf("Venues", "Contacts", "Bands / Groups"), tab) { tab = it; query = "" }
-        StudioButton(onClick = { editing = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Add ${if (entityType == "ensemble") "Band / Group" else entityType.humanize()}", color = Ink, fontWeight = FontWeight.Black)
+        ChoiceStrip(listOf("Venues", "Contacts", "Bands / Groups"), tab) { tab = it; query = ""; mode = "Browse" }
+        val modes = if (entityType == "contact") listOf("Browse", "Add") else listOf("Browse", "Add", "Connections")
+        ChoiceStrip(modes, mode) { choice ->
+            mode = choice
+            if (choice == "Add") editing = EditorTarget(null, JSONObject())
         }
-        StudioField("Find ${tab.lowercase()}", query) { query = it }
-        filtered.forEach { record ->
+        if (mode != "Add") StudioField("Find ${tab.lowercase()}", query) { query = it }
+        if (mode == "Connections") Text("Expand a record and choose Contacts to manage its connected people.", color = TextSoft)
+        if (mode != "Add") filtered.forEach { record ->
             val data = recordJson(record)
             val title = data.optString(if (entityType == "contact") "display_name" else "name")
-            InfoCard {
-                Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                val detail = when (entityType) {
-                    "venue" -> listOf(data.optString("address_line1"), data.optString("city"), data.optString("region")).filter(String::isNotBlank).joinToString(", ")
-                    "contact" -> listOf(data.optString("job_title"), data.optString("organization_name"), data.optString("email")).filter(String::isNotBlank).joinToString(" / ")
-                    else -> data.optString("ensemble_type", "band").humanize()
+            val detail = when (entityType) {
+                "venue" -> listOf(data.optString("city"), data.optString("region")).filter(String::isNotBlank).joinToString(", ")
+                "contact" -> listOf(data.optString("job_title"), data.optString("organization_name")).filter(String::isNotBlank).joinToString(" / ")
+                else -> data.optString("ensemble_type", "band").humanize()
+            }
+            val connectedCount = when (entityType) {
+                "venue" -> venueContacts.count { recordJson(it).optString("venue_id") == record.entityId }
+                "ensemble" -> ensembleContacts.count { recordJson(it).optString("ensemble_id") == record.entityId }
+                else -> 0
+            }
+            ExpandableRecordCard(
+                title = title,
+                subtitle = detail,
+                chips = listOf(data.optString("phone"), if (entityType != "contact") "$connectedCount contacts" else ""),
+                imageUrl = if (entityType == "venue") data.optString("image_url") else "",
+            ) {
+                when (entityType) {
+                    "venue" -> {
+                        DetailLine("Address", listOf(data.optString("address_line1"), data.optString("address_line2"), data.optString("city"), data.optString("region"), data.optString("postal_code")).filter(String::isNotBlank).joinToString(", "))
+                        DetailLine("Phone", data.optString("phone")); DetailLine("Email", data.optString("email")); DetailLine("Website", data.optString("website"))
+                        DetailLine("Load-in", data.optString("load_in_notes")); DetailLine("Parking", data.optString("parking_notes")); DetailLine("Private notes", data.optString("notes"))
+                    }
+                    "contact" -> {
+                        DetailLine("Organization", data.optString("organization_name")); DetailLine("Role", data.optString("job_title"))
+                        DetailLine("Phone", data.optString("phone")); DetailLine("Email", data.optString("email")); DetailLine("Private notes", data.optString("notes"))
+                    }
+                    else -> { DetailLine("Type", data.optString("ensemble_type").humanize()); DetailLine("Website", data.optString("website")); DetailLine("Private notes", data.optString("notes")) }
                 }
-                if (detail.isNotBlank()) Text(detail, color = TextSoft)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    data.optString("phone").takeIf(String::isNotBlank)?.let { phone ->
+                        StudioButton(onClick = { openContactLink(context, "tel", phone) }) { Text("Call", color = Ink, fontWeight = FontWeight.Bold) }
+                        StudioButton(onClick = { openContactLink(context, "smsto", phone) }, kind = StudioButtonKind.Secondary) { Text("Text", color = Color.White) }
+                    }
+                    data.optString("email").takeIf(String::isNotBlank)?.let { email -> StudioButton(onClick = { openContactLink(context, "mailto", email) }, kind = StudioButtonKind.Secondary) { Text("Email", color = Color.White) } }
+                    normalizedMediaLink(data.optString("maps_url"))?.let { link -> StudioButton(onClick = { openMediaLink(context, link) }, kind = StudioButtonKind.Secondary) { Text("Directions", color = Color.White) } }
+                    normalizedMediaLink(data.optString("website"))?.let { link -> StudioButton(onClick = { openMediaLink(context, link) }, kind = StudioButtonKind.Secondary) { Text("Website", color = Color.White) } }
                     StudioButton(onClick = { editing = EditorTarget(record.entityId, data) }, kind = StudioButtonKind.Secondary) { Text("Edit", color = Color.White) }
                     if (entityType != "contact") StudioButton(onClick = { managing = entityType to record }, kind = StudioButtonKind.Secondary) { Text("Contacts", color = Color.White) }
                 }
             }
         }
-        if (filtered.isEmpty()) Text("No ${tab.lowercase()} match this search.", color = TextSoft)
+        if (mode != "Add" && filtered.isEmpty()) Text("No ${tab.lowercase()} match this search.", color = TextSoft)
     }
-    editing?.let { target -> DirectoryEditor(entityType, target, model) { editing = null } }
+    editing?.let { target -> DirectoryEditor(entityType, target, model) { editing = null; mode = "Browse" } }
     managing?.let { (parentType, record) ->
         DirectoryRelationshipsDialog(
             parentType, record, contacts,
@@ -1179,6 +1212,7 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
 
 @Composable
 private fun DirectoryEditor(entityType: String, target: EditorTarget, model: StudioRackViewModel, close: () -> Unit) {
+    val context = LocalContext.current
     val original = target.data
     var name by remember { mutableStateOf(original.optString(if (entityType == "contact") "display_name" else "name")) }
     var type by remember { mutableStateOf(original.optString("ensemble_type", "band")) }
@@ -1192,6 +1226,17 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
     var postalCode by remember { mutableStateOf(original.optString("postal_code")) }
     var website by remember { mutableStateOf(original.optString("website")) }
     var mapsUrl by remember { mutableStateOf(original.optString("maps_url")) }
+    var imageUrl by remember { mutableStateOf(original.optString("image_url")) }
+    var selectedImageUri by remember(target.id) { mutableStateOf<Uri?>(null) }
+    var selectedImageName by remember(target.id) { mutableStateOf("") }
+    var selectedImageMime by remember(target.id) { mutableStateOf("") }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            selectedImageUri = uri
+            selectedImageName = contentDisplayName(context, uri)
+            selectedImageMime = context.contentResolver.getType(uri).orEmpty()
+        }
+    }
     var loadIn by remember { mutableStateOf(original.optString("load_in_notes")) }
     var parking by remember { mutableStateOf(original.optString("parking_notes")) }
     var notes by remember { mutableStateOf(original.optString("notes")) }
@@ -1206,6 +1251,11 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
                     Box(Modifier.weight(1f)) { StudioField("Postal Code", postalCode) { postalCode = it } }
                 }
                 StudioField("Phone", phone) { phone = it }; StudioField("Email", email) { email = it }
+                if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current venue photo", Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop)
+                StudioButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                    Text(if (selectedImageName.isBlank()) "Choose Venue Photo" else "Photo: $selectedImageName", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                StudioField("Venue Photo URL", imageUrl) { imageUrl = it }
                 StudioField("Website", website) { website = it }; StudioField("Google Maps Link", mapsUrl) { mapsUrl = it }
                 StudioField("Load-in Notes", loadIn, singleLine = false) { loadIn = it }
                 StudioField("Parking Notes", parking, singleLine = false) { parking = it }
@@ -1224,11 +1274,11 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
         EditorActions(name.isNotBlank(), save = {
             val data = JSONObject().put(if (entityType == "contact") "display_name" else "name", name.trim()).put("notes", notes.trim())
             when (entityType) {
-                "venue" -> data.put("address_line1", address.trim()).put("city", city.trim()).put("region", region.trim()).put("postal_code", postalCode.trim()).put("phone", phone.trim()).put("email", email.trim()).put("website", website.trim()).put("maps_url", mapsUrl.trim()).put("load_in_notes", loadIn.trim()).put("parking_notes", parking.trim())
+                "venue" -> data.put("address_line1", address.trim()).put("city", city.trim()).put("region", region.trim()).put("postal_code", postalCode.trim()).put("phone", phone.trim()).put("email", email.trim()).put("image_url", imageUrl.trim()).put("website", website.trim()).put("maps_url", mapsUrl.trim()).put("load_in_notes", loadIn.trim()).put("parking_notes", parking.trim())
                 "contact" -> data.put("organization_name", organization.trim()).put("job_title", title.trim()).put("email", email.trim()).put("phone", phone.trim())
                 else -> data.put("ensemble_type", type).put("website", website.trim())
             }
-            model.saveDirectoryRecord(entityType, target.id, data, close)
+            model.saveDirectoryRecord(entityType, target.id, data, selectedImageUri?.toString(), selectedImageName, selectedImageMime, close)
         }, delete = target.id?.let { id -> { model.deleteDirectoryRecord(entityType, id, close) } })
     }
 }
@@ -3052,6 +3102,18 @@ private fun openMediaLink(context: Context, link: String) {
         Toast.makeText(context, "No application is available to open this media link.", Toast.LENGTH_LONG).show()
     } catch (_: SecurityException) {
         Toast.makeText(context, "${context.getString(R.string.app_name)} could not open this media link.", Toast.LENGTH_LONG).show()
+    }
+}
+
+private fun openContactLink(context: Context, scheme: String, value: String) {
+    val action = if (scheme == "tel") Intent.ACTION_DIAL else Intent.ACTION_SENDTO
+    val intent = Intent(action, Uri.fromParts(scheme, value.trim(), null))
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "No application is available for this action.", Toast.LENGTH_LONG).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, "This action is not available on this device.", Toast.LENGTH_LONG).show()
     }
 }
 
