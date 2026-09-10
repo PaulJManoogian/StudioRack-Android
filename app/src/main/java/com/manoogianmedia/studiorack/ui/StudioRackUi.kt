@@ -1141,23 +1141,61 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
     var managing by remember { mutableStateOf<Pair<String, CachedRecord>?>(null) }
     val entityType = when (tab) { "Contacts" -> "contact"; "Bands / Groups" -> "ensemble"; else -> "venue" }
     val records = when (entityType) { "contact" -> contacts; "ensemble" -> ensembles; else -> venues }
+    val relationshipMode = if (entityType == "ensemble") "Members" else "Contacts"
     val filtered = records.filter {
         val data = recordJson(it)
-        listOf(data.optString("name"), data.optString("display_name"), data.optString("organization_name"), data.optString("city"))
+        val relationshipText = when (entityType) {
+            "ensemble" -> ensembleContacts.filter { relation -> recordJson(relation).optString("ensemble_id") == it.entityId }
+            "venue" -> venueContacts.filter { relation -> recordJson(relation).optString("venue_id") == it.entityId }
+            else -> emptyList()
+        }.joinToString(" ") { relation ->
+            val relationData = recordJson(relation)
+            val contact = contacts.firstOrNull { candidate -> candidate.entityId == relationData.optString("contact_id") }
+            val contactData = contact?.let(::recordJson) ?: JSONObject()
+            val methods = contact?.let { linked -> contactMethods.filter { method -> recordJson(method).optString("contact_id") == linked.entityId } }.orEmpty()
+            listOf(
+                relationData.optString("relationship_role"), contactData.optString("display_name"),
+                contactData.optString("organization_name"), contactData.optString("job_title"),
+                contactData.optString("phone"), contactData.optString("email"),
+                methods.joinToString(" ") { method -> recordJson(method).optString("value") },
+            ).joinToString(" ")
+        }
+        listOf(data.optString("name"), data.optString("display_name"), data.optString("organization_name"), data.optString("city"), relationshipText)
             .joinToString(" ").contains(query, ignoreCase = true)
     }.sortedBy { recordJson(it).optString(if (entityType == "contact") "display_name" else "name").lowercase() }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeading("PEOPLE & PLACES", "Directory")
         ChoiceStrip(listOf("Venues", "Contacts", "Bands / Groups"), tab) { tab = it; query = ""; mode = "Browse" }
-        val modes = if (entityType == "contact") listOf("Browse", "Add") else listOf("Browse", "Add", "Connections")
+        val modes = if (entityType == "contact") listOf("Browse", "Add") else listOf("Browse", "Add", relationshipMode)
         ChoiceStrip(modes, mode) { choice ->
             mode = choice
             if (choice == "Add") editing = EditorTarget(null, JSONObject())
         }
         if (mode != "Add") StudioField("Find ${tab.lowercase()}", query) { query = it }
-        if (mode == "Connections") Text("Expand a record and choose Contacts to manage its connected people.", color = TextSoft)
-        if (mode != "Add") filtered.forEach { record ->
+        if (mode == relationshipMode && entityType != "contact") {
+            if (contacts.isEmpty()) Text("Add contacts first, then return here to connect them.", color = TextSoft)
+            filtered.forEach { record ->
+                val data = recordJson(record)
+                val count = if (entityType == "ensemble") ensembleContacts.count { recordJson(it).optString("ensemble_id") == record.entityId }
+                    else venueContacts.count { recordJson(it).optString("venue_id") == record.entityId }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = PanelRaised),
+                    border = BorderStroke(1.dp, Color(0xFF343B4D)),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(data.optString("name"), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("$count ${if (entityType == "ensemble") "member" else "contact"}${if (count == 1) "" else "s"}", color = TextSoft)
+                        }
+                        StudioButton(onClick = { managing = entityType to record }) {
+                            Text(if (entityType == "ensemble") "Manage Members" else "Manage Contacts", color = Ink, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        } else if (mode != "Add") filtered.forEach { record ->
             val data = recordJson(record)
             val title = data.optString(if (entityType == "contact") "display_name" else "name")
             val detail = when (entityType) {
@@ -1241,7 +1279,7 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
                     normalizedMediaLink(data.optString("maps_url"))?.let { link -> StudioButton(onClick = { openMediaLink(context, link) }, kind = StudioButtonKind.Secondary) { Text("Directions", color = Color.White) } }
                     normalizedMediaLink(data.optString("website"))?.let { link -> StudioButton(onClick = { openMediaLink(context, link) }, kind = StudioButtonKind.Secondary) { Text("Website", color = Color.White) } }
                     StudioButton(onClick = { editing = EditorTarget(record.entityId, data) }, kind = StudioButtonKind.Secondary) { Text("Edit", color = Color.White) }
-                    if (entityType != "contact") StudioButton(onClick = { managing = entityType to record }, kind = StudioButtonKind.Secondary) { Text("Contacts", color = Color.White) }
+                    if (entityType != "contact") StudioButton(onClick = { managing = entityType to record }, kind = StudioButtonKind.Secondary) { Text(if (entityType == "ensemble") "Manage Members" else "Manage Contacts", color = Color.White) }
                 }
             }
         }
