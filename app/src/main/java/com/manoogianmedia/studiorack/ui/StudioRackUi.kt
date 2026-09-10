@@ -19,6 +19,7 @@ import android.os.Build
 import android.content.pm.PackageManager
 import android.provider.OpenableColumns
 import android.provider.ContactsContract
+import android.util.LruCache
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -2911,34 +2912,36 @@ private fun GigModeScreen(
         PerformanceSettings.fromJson(syncState?.performanceSettingsJson ?: "{}")
     }
     val metronome = remember { NativeMetronome() }
-    val metronomeState by metronome.state.collectAsState()
     val listState = rememberLazyListState()
-    val event = events.firstOrNull { it.entityId == eventId }?.let(::recordJson) ?: JSONObject()
+    val event = remember(events, eventId) { events.firstOrNull { it.entityId == eventId }?.let(::recordJson) ?: JSONObject() }
     val setListId = event.optString("set_list_id")
-    val setListRecord = setLists.firstOrNull { it.entityId == setListId }
-    val setList = setListRecord?.let(::recordJson)
-    val songMap = songs.associate { it.entityId to recordJson(it) }
-    val sectionRows = sections.map(::recordJson).filter { it.optString("set_list_id") == setListId }.sortedBy { it.optInt("position") }
-    val entryRows = entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") }
-    val attachmentsBySong = attachments.map(::recordJson).groupBy { it.optString("song_id") }
-    val cacheById = cachedAttachments.associateBy(CachedAttachment::attachmentId)
-    val rawPerformanceSongs = sectionRows.flatMap { section ->
-        entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
-            val song = songMap[entry.optString("song_id")]
-            val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
-            GigSong(section.optString("name", "Set"), entry, song, attachment, attachment?.optString("id")?.let(cacheById::get))
+    val setListRecord = remember(setLists, setListId) { setLists.firstOrNull { it.entityId == setListId } }
+    val setList = remember(setListRecord) { setListRecord?.let(::recordJson) }
+    val songMap = remember(songs) { songs.associate { it.entityId to recordJson(it) } }
+    val sectionRows = remember(sections, setListId) { sections.map(::recordJson).filter { it.optString("set_list_id") == setListId }.sortedBy { it.optInt("position") } }
+    val entryRows = remember(entries, setListId) { entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") } }
+    val attachmentsBySong = remember(attachments) { attachments.map(::recordJson).groupBy { it.optString("song_id") } }
+    val cacheById = remember(cachedAttachments) { cachedAttachments.associateBy(CachedAttachment::attachmentId) }
+    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, cacheById) {
+        sectionRows.flatMap { section ->
+            entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
+                val song = songMap[entry.optString("song_id")]
+                val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
+                GigSong(section.optString("name", "Set"), entry, song, attachment, attachment?.optString("id")?.let(cacheById::get))
+            }
         }
     }
-    val performanceSongs = rawPerformanceSongs.map { item ->
-        val performanceGroup = item.entry.performanceGroupOrNull()
-        val members = if (performanceGroup == null) emptyList() else rawPerformanceSongs.filter {
-            it.entry.performanceGroupOrNull()?.id == performanceGroup.id
+    val performanceSongs = remember(rawPerformanceSongs) {
+        val groups = rawPerformanceSongs.mapNotNull { item -> item.entry.performanceGroupOrNull()?.let { it.id to item } }.groupBy({ it.first }, { it.second })
+        rawPerformanceSongs.map { item ->
+            val performanceGroup = item.entry.performanceGroupOrNull()
+            val members = performanceGroup?.let { groups[it.id] }.orEmpty()
+            item.copy(
+                performanceGroup = performanceGroup,
+                performanceGroupPosition = members.indexOfFirst { it.entry.optString("id") == item.entry.optString("id") }.takeIf { it >= 0 }?.plus(1) ?: 0,
+                performanceGroupCount = members.size,
+            )
         }
-        item.copy(
-            performanceGroup = performanceGroup,
-            performanceGroupPosition = members.indexOfFirst { it.entry.optString("id") == item.entry.optString("id") }.takeIf { it >= 0 }?.plus(1) ?: 0,
-            performanceGroupCount = members.size,
-        )
     }
     var currentSong by remember(eventId) { mutableIntStateOf(0) }
     var currentEntryId by remember(eventId) { mutableStateOf("") }
@@ -2949,13 +2952,6 @@ private fun GigModeScreen(
     var liveUpdating by remember(eventId) { mutableStateOf(false) }
     var showLocalLive by remember(eventId) { mutableStateOf(false) }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
-    var clockTick by remember(eventId) { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(eventId) {
-        while (true) {
-            clockTick = System.currentTimeMillis()
-            delay(1_000)
-        }
-    }
     LaunchedEffect(performanceSongs.map { it.entry.optString("id") }) {
         if (performanceSongs.isEmpty()) {
             currentSong = 0
@@ -2977,10 +2973,20 @@ private fun GigModeScreen(
         }
     }
     val activeGigSong = performanceSongs.getOrNull(currentSong)
-    val setRemainingSeconds = performanceSongs.drop(currentSong)
-        .takeWhile { it.sectionName == activeGigSong?.sectionName }
-        .sumOf { it.song?.optInt("duration_seconds") ?: 0 }
-    val elapsedSeconds = ((clockTick - gigStartedAt) / 1_000).coerceAtLeast(0)
+    val setRemainingSeconds = remember(performanceSongs, currentSong) {
+        performanceSongs.drop(currentSong)
+            .takeWhile { it.sectionName == activeGigSong?.sectionName }
+            .sumOf { it.song?.optInt("duration_seconds") ?: 0 }
+    }
+
+    LaunchedEffect(currentSong, performanceSongs) {
+        withContext(Dispatchers.IO) {
+            listOf(currentSong, currentSong + 1, currentSong - 1)
+                .distinct()
+                .mapNotNull(performanceSongs::getOrNull)
+                .forEach(::preloadPerformanceAttachment)
+        }
+    }
 
     DisposableEffect(settings.pedalEnabled) {
         onGigModeActive(settings.pedalEnabled)
@@ -3036,11 +3042,10 @@ private fun GigModeScreen(
             position = currentSong,
             total = performanceSongs.size,
             metronome = metronome,
-            metronomeState = metronomeState,
             previousItem = performanceSongs.getOrNull(currentSong - 1),
             nextItem = performanceSongs.getOrNull(currentSong + 1),
             settings = settings,
-            elapsedSeconds = elapsedSeconds,
+            gigStartedAt = gigStartedAt,
             setRemainingSeconds = setRemainingSeconds,
             close = { detailOpen = false },
             previous = {
@@ -3097,7 +3102,7 @@ private fun GigModeScreen(
             }
         }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
-            item { GigTimeStrip(settings, elapsedSeconds, setRemainingSeconds, activeGigSong?.sectionName.orEmpty()) }
+            item { GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, activeGigSong?.sectionName.orEmpty()) }
         }
         sectionRows.forEach { section ->
             item {
@@ -3260,7 +3265,15 @@ private fun GigSongCues(song: JSONObject?, compact: Boolean) {
 }
 
 @Composable
-private fun GigTimeStrip(settings: PerformanceSettings, elapsedSeconds: Long, remainingSeconds: Int, sectionName: String) {
+private fun GigTimeStrip(settings: PerformanceSettings, startedAt: Long, remainingSeconds: Int, sectionName: String) {
+    var now by remember(startedAt) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(startedAt) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+    val elapsedSeconds = ((now - startedAt) / 1_000).coerceAtLeast(0)
     Surface(
         color = Color(0xC9161B26),
         shape = RoundedCornerShape(7.dp),
@@ -3293,11 +3306,10 @@ private fun PerformanceSongScreen(
     position: Int,
     total: Int,
     metronome: NativeMetronome,
-    metronomeState: com.manoogianmedia.studiorack.performance.MetronomeState,
     previousItem: GigSong?,
     nextItem: GigSong?,
     settings: PerformanceSettings,
-    elapsedSeconds: Long,
+    gigStartedAt: Long,
     setRemainingSeconds: Int,
     close: () -> Unit,
     previous: () -> Unit,
@@ -3306,15 +3318,14 @@ private fun PerformanceSongScreen(
     val context = LocalContext.current
     val mediaLink = normalizedMediaLink(item.song?.optString("media_ref").orEmpty())
     val path = item.cache?.localPath.orEmpty()
+    val attachmentVersion = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
     val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
-    val pageCount = remember(path, isPdf) { if (isPdf) pdfPageCount(path) else 1 }
     var page by remember(path) { mutableIntStateOf(0) }
-    val rendered by produceState(initialValue = AttachmentRender(), path, page) {
-        val bitmap = withContext(Dispatchers.IO) {
-            if (path.isBlank()) null else if (isPdf) renderPdfPage(path, page) else decodeAttachmentImage(path)
-        }
-        value = AttachmentRender(bitmap = bitmap, complete = true)
+    var rendered by remember(path, attachmentVersion, page) { mutableStateOf(cachedPerformanceAttachment(path, attachmentVersion, page) ?: AttachmentRender()) }
+    LaunchedEffect(path, attachmentVersion, isPdf, page) {
+        if (!rendered.complete) rendered = withContext(Dispatchers.IO) { loadPerformanceAttachment(path, attachmentVersion, isPdf, page) }
     }
+    val pageCount = rendered.pageCount
     Column(
         Modifier
             .fillMaxSize()
@@ -3332,19 +3343,7 @@ private fun PerformanceSongScreen(
                 Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                mediaLink?.let { link -> GigIconButton(Icons.Rounded.Headphones, "Listen", onClick = { openMediaLink(context, link) }) }
-                GigIconButton(
-                    if (metronomeState.running) Icons.Rounded.Pause else Icons.Rounded.MusicNote,
-                    if (metronomeState.running) "Stop metronome" else "Start metronome",
-                    metronome::toggle,
-                    active = metronomeState.running,
-                )
-                GigIconButton(
-                    if (metronomeState.muted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
-                    if (metronomeState.muted) "Unmute metronome" else "Mute metronome",
-                    metronome::toggleMuted,
-                    active = metronomeState.muted,
-                )
+                PerformanceMetronomeControls(mediaLink, context, metronome)
             }
         }
         Row(
@@ -3366,7 +3365,7 @@ private fun PerformanceSongScreen(
             GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
         }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
-            GigTimeStrip(settings, elapsedSeconds, setRemainingSeconds, item.sectionName)
+            GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, item.sectionName)
         }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val tablet = maxWidth >= 600.dp
@@ -3375,7 +3374,8 @@ private fun PerformanceSongScreen(
                     item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
                     color = Color.White,
                     fontFamily = FontFamily.Serif,
-                    fontSize = if (tablet) 56.sp else 42.sp,
+                    fontSize = if (tablet) 56.sp else 38.sp,
+                    lineHeight = if (tablet) 62.sp else 44.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
                 Text(item.song?.optString("artist").orEmpty(), color = TextSoft, fontFamily = FontFamily.Serif, fontSize = if (tablet) 28.sp else 23.sp)
@@ -3385,10 +3385,7 @@ private fun PerformanceSongScreen(
             Modifier.fillMaxWidth().height(5.dp).padding(top = 2.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Surface(
-                Modifier.fillMaxWidth().height(if (metronomeState.pulse) 5.dp else 2.dp),
-                color = if (metronomeState.downbeat) Cyan else Amber,
-            ) {}
+            PerformancePulseLine(metronome)
         }
         val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -3400,7 +3397,7 @@ private fun PerformanceSongScreen(
                     GigDetail("Starts", item.song?.optString("starts_by").orEmpty(), Modifier.weight(1f), primarySize)
                     GigDetail("Key", displaySongKey(item.song?.optString("song_key").orEmpty()), Modifier.weight(1f), primarySize)
                     GigDetail("Tempo", item.song?.optString("tempo").orEmpty(), Modifier.weight(1f), primarySize)
-                    GigDetail("Time Signature", item.song?.optString("time_signature").orEmpty(), Modifier.weight(1f), primarySize)
+                    GigDetail("Time", item.song?.optString("time_signature").orEmpty(), Modifier.weight(1f), primarySize)
                 }
                 Row(Modifier.fillMaxWidth()) {
                     GigDetail("Length", formatDuration(item.song?.optInt("duration_seconds") ?: 0), Modifier.weight(1f), secondarySize)
@@ -3448,6 +3445,33 @@ private fun PerformanceSongScreen(
             }
         }
     }
+}
+
+@Composable
+private fun PerformanceMetronomeControls(mediaLink: String?, context: Context, metronome: NativeMetronome) {
+    val state by metronome.state.collectAsState()
+    mediaLink?.let { link -> GigIconButton(Icons.Rounded.Headphones, "Listen", onClick = { openMediaLink(context, link) }) }
+    GigIconButton(
+        if (state.running) Icons.Rounded.Pause else Icons.Rounded.MusicNote,
+        if (state.running) "Stop metronome" else "Start metronome",
+        metronome::toggle,
+        active = state.running,
+    )
+    GigIconButton(
+        if (state.muted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+        if (state.muted) "Unmute metronome" else "Mute metronome",
+        metronome::toggleMuted,
+        active = state.muted,
+    )
+}
+
+@Composable
+private fun PerformancePulseLine(metronome: NativeMetronome) {
+    val state by metronome.state.collectAsState()
+    Surface(
+        Modifier.fillMaxWidth().height(if (state.pulse) 5.dp else 2.dp),
+        color = if (state.downbeat) Cyan else Amber,
+    ) {}
 }
 
 @Composable
@@ -3604,7 +3628,8 @@ private fun SongDetailFallback(item: GigSong) {
                 item.song?.optString("title")?.takeIf(String::isNotBlank) ?: item.entry.optString("manual_title", "Untitled"),
                 color = Color.White,
                 fontFamily = FontFamily.Serif,
-                fontSize = if (tablet) 56.sp else 42.sp,
+                fontSize = if (tablet) 56.sp else 38.sp,
+                lineHeight = if (tablet) 62.sp else 44.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             Text(
@@ -3636,7 +3661,54 @@ private data class GigSong(
     val performanceGroupCount: Int = 0,
 )
 private data class PacketReadiness(val ready: Int, val total: Int)
-private data class AttachmentRender(val bitmap: Bitmap? = null, val complete: Boolean = false)
+private data class AttachmentRender(val bitmap: Bitmap? = null, val complete: Boolean = false, val pageCount: Int = 1)
+
+private val performanceAttachmentCache = object : LruCache<String, AttachmentRender>(64 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: AttachmentRender): Int = value.bitmap?.allocationByteCount ?: 1
+}
+private val performanceAttachmentRenderLock = Any()
+
+private fun performanceAttachmentCacheKey(path: String, version: String, page: Int) = "$path#$version#$page"
+
+private fun cachedPerformanceAttachment(path: String, version: String, page: Int): AttachmentRender? =
+    path.takeIf(String::isNotBlank)?.let { performanceAttachmentCache.get(performanceAttachmentCacheKey(it, version, page)) }
+
+private fun preloadPerformanceAttachment(item: GigSong) {
+    val path = item.cache?.localPath.orEmpty()
+    if (path.isBlank()) return
+    val version = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
+    val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
+    loadPerformanceAttachment(path, version, isPdf, 0)
+}
+
+private fun loadPerformanceAttachment(path: String, version: String, isPdf: Boolean, page: Int): AttachmentRender {
+    if (path.isBlank()) return AttachmentRender(complete = true)
+    val key = performanceAttachmentCacheKey(path, version, page)
+    performanceAttachmentCache.get(key)?.let { return it }
+    return synchronized(performanceAttachmentRenderLock) {
+        performanceAttachmentCache.get(key) ?: run {
+            val rendered = if (isPdf) renderPdfAttachment(path, page) else AttachmentRender(decodeAttachmentImage(path), complete = true)
+            if (rendered.bitmap != null) performanceAttachmentCache.put(key, rendered)
+            rendered
+        }
+    }
+}
+
+private fun renderPdfAttachment(path: String, pageIndex: Int): AttachmentRender = runCatching {
+    ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+        PdfRenderer(descriptor).use { renderer ->
+            val count = renderer.pageCount.coerceAtLeast(1)
+            renderer.openPage(pageIndex.coerceIn(0, count - 1)).use { page ->
+                val width = 1800
+                val height = (width.toFloat() / page.width * page.height).toInt().coerceAtLeast(1)
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                AttachmentRender(bitmap, complete = true, pageCount = count)
+            }
+        }
+    }
+}.getOrElse { AttachmentRender(complete = true) }
 
 private fun gigListItemIndex(songIndex: Int, songs: List<GigSong>): Int {
     val sectionHeaders = songs.take(songIndex + 1).map(GigSong::sectionName).distinct().size
