@@ -1171,7 +1171,7 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
                 title = title,
                 subtitle = detail,
                 chips = listOf(data.optString("phone"), if (entityType != "contact") "$connectedCount contacts" else ""),
-                imageUrl = if (entityType == "venue") data.optString("image_url") else "",
+                imageUrl = if (entityType in setOf("venue", "contact")) data.optString("image_url") else "",
             ) {
                 when (entityType) {
                     "venue" -> {
@@ -1263,6 +1263,11 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
             "contact" -> {
                 StudioField("Organization", organization) { organization = it }; StudioField("Title / Role", title) { title = it }
                 StudioField("Email", email) { email = it }; StudioField("Phone", phone) { phone = it }
+                if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current contact photo", Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop)
+                StudioButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                    Text(if (selectedImageName.isBlank()) "Choose Contact Photo" else "Photo: $selectedImageName", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                StudioField("Contact Photo URL", imageUrl) { imageUrl = it }
             }
             else -> {
                 Text("Type", color = TextSoft, fontWeight = FontWeight.Bold)
@@ -1275,7 +1280,7 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
             val data = JSONObject().put(if (entityType == "contact") "display_name" else "name", name.trim()).put("notes", notes.trim())
             when (entityType) {
                 "venue" -> data.put("address_line1", address.trim()).put("city", city.trim()).put("region", region.trim()).put("postal_code", postalCode.trim()).put("phone", phone.trim()).put("email", email.trim()).put("image_url", imageUrl.trim()).put("website", website.trim()).put("maps_url", mapsUrl.trim()).put("load_in_notes", loadIn.trim()).put("parking_notes", parking.trim())
-                "contact" -> data.put("organization_name", organization.trim()).put("job_title", title.trim()).put("email", email.trim()).put("phone", phone.trim())
+                "contact" -> data.put("organization_name", organization.trim()).put("job_title", title.trim()).put("email", email.trim()).put("phone", phone.trim()).put("image_url", imageUrl.trim())
                 else -> data.put("ensemble_type", type).put("website", website.trim())
             }
             model.saveDirectoryRecord(entityType, target.id, data, selectedImageUri?.toString(), selectedImageName, selectedImageMime, close)

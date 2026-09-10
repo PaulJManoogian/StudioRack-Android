@@ -331,14 +331,14 @@ class StudioRackRepository(
         syncNow()
     }
 
-    suspend fun uploadVenueImage(uri: String, displayName: String, mimeType: String): String {
+    suspend fun uploadDirectoryImage(uri: String, displayName: String, mimeType: String): String {
         val extension = attachmentExtension(displayName).ifBlank { ".jpg" }
         val temporary = File.createTempFile("venue-photo-", extension, context.cacheDir)
         try {
             withContext(Dispatchers.IO) {
                 context.contentResolver.openInputStream(Uri.parse(uri))?.use { source ->
                     temporary.outputStream().use(source::copyTo)
-                } ?: error("The selected venue photo could not be opened.")
+                } ?: error("The selected directory photo could not be opened.")
             }
             return client.uploadAttachment(temporary, displayName, mimeType).getString("file_ref")
         } finally {

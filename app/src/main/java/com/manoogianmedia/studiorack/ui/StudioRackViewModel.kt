@@ -279,8 +279,8 @@ class StudioRackViewModel(
         val recordId = id ?: "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
         viewModelScope.launch {
             runCatching {
-                if (entityType == "venue" && !imageUri.isNullOrBlank()) {
-                    data.put("image_url", repository.uploadVenueImage(imageUri, imageName, imageMimeType))
+                if (entityType in setOf("venue", "contact") && !imageUri.isNullOrBlank()) {
+                    data.put("image_url", repository.uploadDirectoryImage(imageUri, imageName, imageMimeType))
                 }
                 repository.save(entityType, recordId, data)
             }.onSuccess {
