@@ -1595,15 +1595,30 @@ private fun DirectoryRelationshipsDialog(parentType: String, parent: CachedRecor
     val parentKey = if (parentType == "venue") "venue_id" else "ensemble_id"
     val selectedAtOpen = relationships.filter { recordJson(it).optString(parentKey) == parent.entityId }.mapTo(mutableSetOf()) { recordJson(it).optString("contact_id") }
     var selected by remember { mutableStateOf(selectedAtOpen) }
-    EditorDialog("Contacts for ${recordJson(parent).optString("name")}", close) {
+    var query by remember(parent.entityId) { mutableStateOf("") }
+    val filteredContacts = contacts.filter { contact ->
+        val data = recordJson(contact)
+        listOf(data.optString("display_name"), data.optString("organization_name"), data.optString("job_title"), data.optString("phone"), data.optString("email"))
+            .joinToString(" ").contains(query, ignoreCase = true)
+    }.sortedBy { recordJson(it).optString("display_name").lowercase() }
+    EditorDialog("${if (parentType == "ensemble") "Members" else "Contacts"} for ${recordJson(parent).optString("name")}", close) {
         if (contacts.isEmpty()) Text("Add contacts in the Contact tab first.", color = TextSoft)
-        contacts.sortedBy { recordJson(it).optString("display_name") }.forEach { contact ->
+        else {
+            StudioField("Find a person", query) { query = it }
+            Text("${selected.size} selected / ${filteredContacts.size} shown", color = TextSoft, fontSize = 12.sp)
+        }
+        filteredContacts.forEach { contact ->
             val checked = contact.entityId in selected
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked, { enabled -> selected = selected.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) } })
-                Text(recordJson(contact).optString("display_name"), color = Color.White)
+                Column {
+                    Text(recordJson(contact).optString("display_name"), color = Color.White, fontWeight = FontWeight.Bold)
+                    val detail = listOf(recordJson(contact).optString("job_title"), recordJson(contact).optString("organization_name")).filter(String::isNotBlank).joinToString(" / ")
+                    if (detail.isNotBlank()) Text(detail, color = TextSoft, fontSize = 12.sp)
+                }
             }
         }
+        if (contacts.isNotEmpty() && filteredContacts.isEmpty()) Text("No contacts match this search.", color = TextSoft)
         EditorActions(true, save = { model.saveDirectoryRelationships(parentType, parent.entityId, selected, close) }, delete = null)
     }
 }
@@ -2582,6 +2597,10 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
     var unit by remember { mutableStateOf(original.optString("reminder_lead_unit", "days")) }
     var selectedEnsembles by remember(target.id, eventEnsembles) { mutableStateOf(eventEnsembles.filter { recordJson(it).optString("event_id") == target.id }.mapTo(mutableSetOf()) { recordJson(it).optString("ensemble_id") }) }
     var selectedContacts by remember(target.id, eventContacts) { mutableStateOf(eventContacts.filter { recordJson(it).optString("event_id") == target.id }.mapTo(mutableSetOf()) { recordJson(it).optString("contact_id") }) }
+    var venueQuery by remember(target.id) { mutableStateOf("") }
+    var setListQuery by remember(target.id) { mutableStateOf("") }
+    var ensembleQuery by remember(target.id) { mutableStateOf("") }
+    var contactQuery by remember(target.id) { mutableStateOf("") }
     EditorDialog(if (target.id == null) "Add Scheduled Event" else "Edit Scheduled Event", close) {
         StudioField("Name", title) { title = it }
         Text("Type", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("performance", "rehearsal", "studio_session", "other"), type) { type = it }
@@ -2595,18 +2614,23 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
             Box(Modifier.weight(1f)) { StudioField("End Time", endTime, dictation = false) { endTime = it.take(8) } }
         }
         Text("Venue", color = TextSoft, fontWeight = FontWeight.Bold)
-        ChoiceStrip(listOf("None") + venues.map { recordJson(it).optString("name") }, venues.firstOrNull { it.entityId == venueId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
+        StudioField("Find a venue", venueQuery) { venueQuery = it }
+        val visibleVenues = venues.filter { recordJson(it).optString("name").contains(venueQuery, ignoreCase = true) }
+        ChoiceStrip(listOf("None") + visibleVenues.map { recordJson(it).optString("name") }, venues.firstOrNull { it.entityId == venueId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
             venueId = venues.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
         }
         StudioField("Room / Stage / Location Details", location) { location = it }
         Text("Set list", color = TextSoft, fontWeight = FontWeight.Bold)
-        ChoiceStrip(listOf("None") + setLists.map { recordJson(it).optString("name") }, setLists.firstOrNull { it.entityId == setListId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
+        StudioField("Find a set list", setListQuery) { setListQuery = it }
+        val visibleSetLists = setLists.filter { recordJson(it).optString("name").contains(setListQuery, ignoreCase = true) }
+        ChoiceStrip(listOf("None") + visibleSetLists.map { recordJson(it).optString("name") }, setLists.firstOrNull { it.entityId == setListId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
             setListId = setLists.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
         }
         StudioField("Notes", notes, singleLine = false) { notes = it }
         if (ensembles.isNotEmpty()) {
             Text("Bands / Groups", color = TextSoft, fontWeight = FontWeight.Bold)
-            ensembles.forEach { ensemble ->
+            StudioField("Find a band or group", ensembleQuery) { ensembleQuery = it }
+            ensembles.filter { recordJson(it).optString("name").contains(ensembleQuery, ignoreCase = true) }.forEach { ensemble ->
                 val checked = ensemble.entityId in selectedEnsembles
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked, { enabled -> selectedEnsembles = selectedEnsembles.toMutableSet().apply { if (enabled) add(ensemble.entityId) else remove(ensemble.entityId) } })
@@ -2616,7 +2640,12 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
         }
         if (contacts.isNotEmpty()) {
             Text("People / Contacts", color = TextSoft, fontWeight = FontWeight.Bold)
-            contacts.forEach { contact ->
+            StudioField("Find a person", contactQuery) { contactQuery = it }
+            contacts.filter { contact ->
+                val data = recordJson(contact)
+                listOf(data.optString("display_name"), data.optString("organization_name"), data.optString("job_title"), data.optString("phone"), data.optString("email"))
+                    .joinToString(" ").contains(contactQuery, ignoreCase = true)
+            }.forEach { contact ->
                 val checked = contact.entityId in selectedContacts
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked, { enabled -> selectedContacts = selectedContacts.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) } })
