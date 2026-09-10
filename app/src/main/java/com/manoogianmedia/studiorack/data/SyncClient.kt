@@ -36,6 +36,9 @@ class SyncClient(
     suspend fun push(mutations: JSONArray): JSONObject =
         request("/sync/push", "POST", JSONObject().put("mutations", mutations))
 
+    suspend fun updatePerformanceSettings(settings: JSONObject): JSONObject =
+        request("/settings/performance", "PUT", settings)
+
     suspend fun liveEventStatus(eventId: String): JSONObject =
         request("/live/events/${URLEncoder.encode(eventId, Charsets.UTF_8.name())}/status")
 

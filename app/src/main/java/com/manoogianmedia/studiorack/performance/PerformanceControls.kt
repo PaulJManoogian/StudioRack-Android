@@ -37,6 +37,24 @@ data class PerformanceSettings(
     val showElapsed: Boolean = true,
     val showSetRemaining: Boolean = true,
 ) {
+    fun toJson(pendingSync: Boolean = false): JSONObject = JSONObject()
+        .put("gig_metronome_autostart", if (metronomeAutostart) 1 else 0)
+        .put("gig_metronome_muted", if (metronomeMuted) 1 else 0)
+        .put("gig_metronome_mode", metronomeMode)
+        .put("gig_metronome_sound", metronomeSound)
+        .put("gig_pedal_enabled", if (pedalEnabled) 1 else 0)
+        .put("gig_pedal_mode", pedalMode)
+        .put("gig_pedal_reverse", if (pedalReverse) 1 else 0)
+        .put("gig_pedal_scroll_amount", pedalScrollAmount)
+        .put("gig_pedal_prev_key", previousKey)
+        .put("gig_pedal_next_key", nextKey)
+        .put("gig_pedal_metronome_key", metronomeKey)
+        .put("gig_pedal_mute_key", muteKey)
+        .put("gig_show_clock", if (showClock) 1 else 0)
+        .put("gig_show_elapsed", if (showElapsed) 1 else 0)
+        .put("gig_show_set_remaining", if (showSetRemaining) 1 else 0)
+        .put("_mobile_pending", if (pendingSync) 1 else 0)
+
     companion object {
         fun fromJson(value: String): PerformanceSettings {
             val json = runCatching { JSONObject(value) }.getOrDefault(JSONObject())

@@ -2071,12 +2071,81 @@ private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(mode
 private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model: StudioRackViewModel, uiState: StudioRackUiState) {
     item {
         val state by model.syncState.collectAsState(); val account = runCatching { JSONObject(state?.accountJson ?: "{}") }.getOrDefault(JSONObject())
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Account and Device", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
-            StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
-            Text("Changes made on the web are copied here automatically when the device reconnects.", color = TextSoft, fontSize = 12.sp)
+        var tab by remember { mutableStateOf("Leviathan Live") }
+        val loadedSettings = remember(state?.performanceSettingsJson) {
+            PerformanceSettings.fromJson(state?.performanceSettingsJson ?: "{}")
         }
+        var settings by remember(state?.performanceSettingsJson) { mutableStateOf(loadedSettings) }
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Settings", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            ChoiceStrip(listOf("Leviathan Live", "Account & Device"), tab) { tab = it }
+            if (tab == "Account & Device") {
+                InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
+                StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
+                Text("Changes made on the web are copied here automatically when the device reconnects.", color = TextSoft, fontSize = 12.sp)
+            } else {
+                Text("Display", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                SettingToggle("Show clock", settings.showClock) { settings = settings.copy(showClock = it) }
+                SettingToggle("Show elapsed set time", settings.showElapsed) { settings = settings.copy(showElapsed = it) }
+                SettingToggle("Show estimated time remaining", settings.showSetRemaining) { settings = settings.copy(showSetRemaining = it) }
+
+                Text("Metronome", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                SettingToggle("Auto-start when the song changes", settings.metronomeAutostart) { settings = settings.copy(metronomeAutostart = it) }
+                SettingToggle("Start muted", settings.metronomeMuted) { settings = settings.copy(metronomeMuted = it) }
+                LabeledChoice("Beat mode", listOf("Tempo", "Downbeat"), settings.metronomeMode.replaceFirstChar(Char::uppercase)) {
+                    settings = settings.copy(metronomeMode = it.lowercase())
+                }
+                LabeledChoice("Sound", listOf("Tone", "Clave", "Woodblock", "Cowbell"), settings.metronomeSound.replaceFirstChar(Char::uppercase)) {
+                    settings = settings.copy(metronomeSound = it.lowercase())
+                }
+
+                Text("Bluetooth Page Turner", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("Supports keyboard-mode pedals including AirTurn and Donner devices.", color = TextSoft, fontSize = 13.sp)
+                SettingToggle("Enable pedal controls", settings.pedalEnabled) { settings = settings.copy(pedalEnabled = it) }
+                SettingToggle("Reverse previous and next", settings.pedalReverse) { settings = settings.copy(pedalReverse = it) }
+                LabeledChoice("Pedal mode", listOf("Hybrid", "Song", "Scroll"), settings.pedalMode.replaceFirstChar(Char::uppercase)) {
+                    settings = settings.copy(pedalMode = it.lowercase())
+                }
+                LabeledChoice("Page scroll distance", listOf("Small", "Half", "Full"), settings.pedalScrollAmount.replaceFirstChar(Char::uppercase)) {
+                    settings = settings.copy(pedalScrollAmount = it.lowercase())
+                }
+                PedalKeyChoice("Previous Song", settings.previousKey) { settings = settings.copy(previousKey = it) }
+                PedalKeyChoice("Next Song", settings.nextKey) { settings = settings.copy(nextKey = it) }
+                PedalKeyChoice("Metronome Start / Stop", settings.metronomeKey) { settings = settings.copy(metronomeKey = it) }
+                PedalKeyChoice("Metronome Mute / Unmute", settings.muteKey) { settings = settings.copy(muteKey = it) }
+                StudioButton(onClick = { model.savePerformanceSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Save Leviathan Live Settings", color = Ink, fontWeight = FontWeight.Black)
+                }
+                Text("Settings take effect on this device immediately and synchronize when connected.", color = TextSoft, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label, color = Color.White, fontSize = 16.sp)
+    }
+}
+
+@Composable
+private fun LabeledChoice(label: String, options: List<String>, selected: String, choose: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        ChoiceStrip(options, selected, choose)
+    }
+}
+
+@Composable
+private fun PedalKeyChoice(label: String, selected: String, choose: (String) -> Unit) {
+    val keys = linkedMapOf("Left" to "ArrowLeft", "Right" to "ArrowRight", "Up" to "ArrowUp", "Down" to "ArrowDown")
+    LabeledChoice(label, keys.keys.toList(), keys.entries.firstOrNull { it.value == selected }?.key ?: "Left") {
+        choose(keys.getValue(it))
     }
 }
 

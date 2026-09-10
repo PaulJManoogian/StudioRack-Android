@@ -15,6 +15,7 @@ import com.manoogianmedia.studiorack.data.DataExport
 import com.manoogianmedia.studiorack.data.LocalLiveCoordinator
 import com.manoogianmedia.studiorack.data.LocalLivePeer
 import com.manoogianmedia.studiorack.data.LocalLiveRole
+import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -167,6 +168,24 @@ class StudioRackViewModel(
             runCatching { repository.sync() }
                 .onSuccess { _uiState.value = _uiState.value.copy(busy = false, message = "Synced.", syncError = false) }
                 .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = it.message ?: "Synchronization failed.", syncError = true) }
+        }
+    }
+
+    fun savePerformanceSettings(settings: PerformanceSettings) {
+        viewModelScope.launch {
+            runCatching { repository.savePerformanceSettings(settings.toJson(pendingSync = true)) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        message = "Leviathan Live settings saved. They will synchronize when connected.",
+                        syncError = false,
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        message = it.message ?: "Could not save Leviathan Live settings.",
+                        syncError = true,
+                    )
+                }
         }
     }
 

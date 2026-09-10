@@ -424,9 +424,17 @@ class StudioRackRepository(
         tokenStore.clear()
     }
 
+    suspend fun savePerformanceSettings(settings: JSONObject) {
+        val state = dao.syncState() ?: SyncState()
+        settings.put("_mobile_pending", 1)
+        dao.putState(state.copy(performanceSettingsJson = settings.toString()))
+        syncNow()
+    }
+
     suspend fun sync() {
         _syncHealth.value = _syncHealth.value.copy(running = true, error = null)
         try {
+            pushPendingPerformanceSettings()
             pushPendingAttachments()
             pushPending()
             var cursor = dao.syncState()?.cursor ?: 0
@@ -443,6 +451,15 @@ class StudioRackRepository(
             _syncHealth.value = _syncHealth.value.copy(running = false, error = error.message ?: "Synchronization failed.")
             throw error
         }
+    }
+
+    private suspend fun pushPendingPerformanceSettings() {
+        val state = dao.syncState() ?: return
+        val settings = runCatching { JSONObject(state.performanceSettingsJson) }.getOrNull() ?: return
+        if (settings.optInt("_mobile_pending") != 1) return
+        settings.remove("_mobile_pending")
+        val saved = client.updatePerformanceSettings(settings).getJSONObject("performance_settings")
+        dao.putState(state.copy(performanceSettingsJson = saved.toString()))
     }
 
     fun syncNow() {

@@ -29,4 +29,25 @@ class PerformanceControlsTest {
         assertEquals(PedalAction.METRONOME, mappedPedalAction(KeyEvent.KEYCODE_DPAD_UP, settings))
         assertEquals(PedalAction.MUTE, mappedPedalAction(KeyEvent.KEYCODE_DPAD_DOWN, settings))
     }
+
+    @Test
+    fun settingsRoundTripForOfflinePersistence() {
+        val expected = PerformanceSettings(
+            metronomeAutostart = true,
+            metronomeMode = "downbeat",
+            metronomeSound = "cowbell",
+            pedalEnabled = true,
+            pedalMode = "scroll",
+            pedalReverse = true,
+            pedalScrollAmount = "full",
+            previousKey = "ArrowUp",
+            nextKey = "ArrowDown",
+            metronomeKey = "ArrowLeft",
+            muteKey = "ArrowRight",
+            showClock = false,
+        )
+        val encoded = expected.toJson(pendingSync = true)
+        assertEquals(1, encoded.getInt("_mobile_pending"))
+        assertEquals(expected, PerformanceSettings.fromJson(encoded.toString()))
+    }
 }
