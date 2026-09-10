@@ -3111,9 +3111,8 @@ private fun GigModeScreen(
                 Column {
                     if (gigSong?.performanceGroupPosition == 1) {
                         Row(Modifier.fillMaxWidth().padding(start = 18.dp, top = 10.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(entry.optString("performance_group_type").uppercase(), color = Amber, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                            Text(entry.optString("performance_group_name"), color = Color.White, fontWeight = FontWeight.Bold)
-                            Text("${gigSong.performanceGroupCount} songs", color = TextSoft, fontSize = 10.sp)
+                            Text("${entry.optString("performance_group_type").replaceFirstChar(Char::uppercase)}:", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                            Text(entry.optString("performance_group_name"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     SongRow(entry, song, attachment, cached, modifier = if (gigSong?.performanceGroupCount ?: 0 > 0) Modifier.padding(start = 22.dp) else Modifier) {
@@ -3302,7 +3301,7 @@ private fun PerformanceSongScreen(
             GigIconButton(Icons.Rounded.Close, "Return to set list", close)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(item.sectionName, color = Color.White, fontWeight = FontWeight.Bold)
-                if (item.performanceGroupCount > 0) Text("${item.entry.optString("performance_group_type").uppercase()}: ${item.entry.optString("performance_group_name")}  •  ${item.performanceGroupPosition} OF ${item.performanceGroupCount}", color = Amber, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                if (item.performanceGroupCount > 0) Text("${item.entry.optString("performance_group_type").replaceFirstChar(Char::uppercase)}: ${item.entry.optString("performance_group_name")}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
                 Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

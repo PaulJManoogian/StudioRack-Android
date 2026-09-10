@@ -230,6 +230,22 @@ internal fun SetListEditor(
                             key(entry.id) {
                             val song = entry.songId?.let(songRows::get)
                             val label = song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.manualTitle.ifBlank { "item" }
+                            val groupLabel = if (entry.performanceGroupType.isNotBlank() && entry.performanceGroupName.isNotBlank()) {
+                                "${entry.performanceGroupType.replaceFirstChar(Char::uppercase)}: ${entry.performanceGroupName}"
+                            } else ""
+                            val previousEntry = section.entries.getOrNull(index - 1)
+                            val previousGroupLabel = if (previousEntry?.performanceGroupType?.isNotBlank() == true && previousEntry.performanceGroupName.isNotBlank()) {
+                                "${previousEntry.performanceGroupType.replaceFirstChar(Char::uppercase)}: ${previousEntry.performanceGroupName}"
+                            } else ""
+                            if (groupLabel.isNotBlank() && groupLabel != previousGroupLabel) {
+                                Text(
+                                    groupLabel,
+                                    color = EditorAmber,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.fillMaxWidth().padding(start = 10.dp, top = 10.dp, bottom = 2.dp),
+                                )
+                            }
                             var dragDistance by remember(entry.id) { mutableFloatStateOf(0f) }
                             var dragging by remember(entry.id) { mutableStateOf(false) }
                             var rowHeight by remember(entry.id) { mutableIntStateOf(1) }
@@ -267,6 +283,7 @@ internal fun SetListEditor(
                             })
                             SwipeToDismissBox(
                                 modifier = Modifier
+                                    .padding(start = if (groupLabel.isNotBlank()) 20.dp else 0.dp)
                                     .zIndex(if (dragging) 20f else 0f)
                                     .graphicsLayer {
                                         translationY = dragDistance
