@@ -5,6 +5,7 @@ import com.manoogianmedia.studiorack.data.StudioRackDatabase
 import com.manoogianmedia.studiorack.data.StudioRackRepository
 import com.manoogianmedia.studiorack.data.SyncClient
 import com.manoogianmedia.studiorack.data.TokenStore
+import com.manoogianmedia.studiorack.data.LocalLiveCoordinator
 
 class StudioRackApplication : Application() {
     val repository: StudioRackRepository by lazy {
@@ -16,6 +17,7 @@ class StudioRackApplication : Application() {
             SyncClient(tokenStore, getString(R.string.api_base_url), getString(R.string.export_file_prefix)),
         )
     }
+    val localLive: LocalLiveCoordinator by lazy { LocalLiveCoordinator(this) }
 
     override fun onCreate() {
         super.onCreate()

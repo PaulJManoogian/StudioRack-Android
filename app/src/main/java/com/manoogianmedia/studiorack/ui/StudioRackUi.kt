@@ -80,6 +80,7 @@ import androidx.compose.material.icons.rounded.NavigateNext
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -124,6 +125,8 @@ import com.manoogianmedia.studiorack.data.DataExport
 import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SongAttachmentInput
 import com.manoogianmedia.studiorack.data.NotificationRoute
+import com.manoogianmedia.studiorack.data.LocalLivePeer
+import com.manoogianmedia.studiorack.data.LocalLiveRole
 import com.manoogianmedia.studiorack.data.cacheImageFile
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
@@ -677,6 +680,8 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     var type by remember { mutableStateOf("All") }
     var editingEvent by remember { mutableStateOf<EditorTarget?>(null) }
     var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
+    var localLiveEvent by remember { mutableStateOf<JSONObject?>(null) }
+    var showLocalLive by remember { mutableStateOf(false) }
     val venueNames = venues.associate { it.entityId to recordJson(it).optString("name") }
     val rows = events.map(::recordJson).onEach { event ->
         val venueName = venueNames[event.optString("venue_id")].orEmpty()
@@ -688,6 +693,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading("SESSIONS", "Schedule") }
         item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
+        item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = Color.White, fontWeight = FontWeight.Bold) } }
         item { DictationTextField(query, { query = it }, "Find scheduled work") }
         item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
         item {
@@ -705,11 +711,13 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
                 eventPacketReadiness(event, entries, attachments, cachedAttachments),
                 open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) },
                 edit = { editingEvent = EditorTarget(event.optString("id"), event) },
+                host = if (event.optString("set_list_id").isNotBlank()) ({ localLiveEvent = event; showLocalLive = true }) else null,
             )
         }
     }
     editingEvent?.let { target -> EventEditor(target, model, close = { editingEvent = null }) }
     exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
+    if (showLocalLive) LocalLiveDialog(model, localLiveEvent) { showLocalLive = false }
     }
 }
 
@@ -2323,7 +2331,7 @@ private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Uni
 }
 
 @Composable
-private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit, edit: (() -> Unit)? = null) {
+private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit, edit: (() -> Unit)? = null, host: (() -> Unit)? = null) {
     val liveModeName = stringResource(R.string.live_mode_name)
     Card(
         Modifier.fillMaxWidth().clickable(onClick = open),
@@ -2347,8 +2355,105 @@ private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () ->
                     )
                 }
                 if (event.optString("set_list_id").isNotBlank()) Text("Open $liveModeName", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                if (edit != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = edit) { Text("Edit", color = Amber) }
+                if (edit != null || host != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (host != null) TextButton(onClick = host) { Text("Host", color = Cyan, fontWeight = FontWeight.Bold) }
+                    if (edit != null) TextButton(onClick = edit) { Text("Edit", color = Amber) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalLiveDialog(model: StudioRackViewModel, suggestedEvent: JSONObject?, close: () -> Unit) {
+    val state by model.localLive.collectAsState()
+    val peers by model.nearbyLiveSessions.collectAsState()
+    var code by remember(state.role) { mutableStateOf("") }
+    var manualAddress by remember(state.role) { mutableStateOf("") }
+    Dialog(onDismissRequest = close) {
+        Surface(
+            color = Panel,
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0x6642D9FF)),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.WifiTethering, contentDescription = null, tint = Cyan, modifier = Modifier.size(34.dp))
+                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        Text("LOCAL LIVE NETWORK", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Text("Play together without internet", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = close) { Text("Close", color = TextSoft) }
+                }
+                when (state.role) {
+                    LocalLiveRole.HOST -> {
+                        Text("HOSTING", color = Color(0xFF58E99B), fontWeight = FontWeight.Black)
+                        Text(state.sessionName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Session code", color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(state.code, color = Amber, fontSize = 36.sp, fontWeight = FontWeight.Black)
+                        DetailLine("Local address", state.address)
+                        DetailLine("Connected devices", state.peerCount.toString())
+                        Text("Keep this screen awake and connected to the same Wi-Fi or hotspot. Internet access is not required.", color = TextSoft, fontSize = 12.sp)
+                        StudioButton(onClick = model::leaveLocalLive, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Danger) {
+                            Text("Stop Hosting", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    LocalLiveRole.GUEST -> {
+                        Text(if (state.connected) "LOCAL LIVE CONNECTED" else "CONNECTING TO HOST", color = if (state.connected) Color(0xFF58E99B) else Amber, fontWeight = FontWeight.Black)
+                        Text(state.sessionName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        DetailLine("Host", state.address)
+                        state.error?.let { Text(it, color = Color(0xFFFF7A82), fontSize = 12.sp) }
+                        Text("Set-list changes from the host are being written into this device's offline database.", color = TextSoft, fontSize = 12.sp)
+                        StudioButton(onClick = model::leaveLocalLive, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Danger) {
+                            Text("Leave Local Session", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    LocalLiveRole.NONE -> {
+                        suggestedEvent?.takeIf { it.optString("set_list_id").isNotBlank() }?.let { event ->
+                            Text("Host this session", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(event.optString("title", "Scheduled session"), color = TextSoft)
+                            StudioButton(
+                                onClick = { model.hostLocalLive(event.optString("id"), event.optString("title", "Local Live Session")) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("I'm the Host", color = Ink, fontWeight = FontWeight.Black) }
+                        }
+                        Text("Join a nearby host", color = Color.White, fontWeight = FontWeight.Bold)
+                        OutlinedTextField(
+                            value = code,
+                            onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                            label = { Text("Six-digit session code") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        peers.forEach { peer ->
+                            StudioButton(onClick = { model.joinLocalLive(peer, code) }, enabled = code.length == 6, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                                Text("Join ${peer.name.removePrefix("Leviathan - ")}", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (peers.isEmpty()) Text("Looking for Leviathan Live hosts on this Wi-Fi...", color = TextSoft, fontSize = 12.sp)
+                        Text("Manual connection", color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        OutlinedTextField(
+                            value = manualAddress,
+                            onValueChange = { manualAddress = it.trim() },
+                            label = { Text("Host address, including port") },
+                            placeholder = { Text("192.168.1.25:54321") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        StudioButton(
+                            onClick = {
+                                val separator = manualAddress.lastIndexOf(':')
+                                if (separator > 0) {
+                                    val port = manualAddress.substring(separator + 1).toIntOrNull()
+                                    if (port != null) model.joinLocalLive(LocalLivePeer("Manual local session", manualAddress.substring(0, separator), port), code)
+                                }
+                            },
+                            enabled = code.length == 6 && manualAddress.contains(':'),
+                            modifier = Modifier.fillMaxWidth(),
+                            kind = StudioButtonKind.Secondary,
+                        ) { Text("Connect by Address", color = Color.White, fontWeight = FontWeight.Bold) }
+                    }
                 }
             }
         }
@@ -2372,6 +2477,7 @@ private fun GigModeScreen(
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
     val syncState by model.syncState.collectAsState()
+    val localLive by model.localLive.collectAsState()
     val settings = remember(syncState?.performanceSettingsJson) {
         PerformanceSettings.fromJson(syncState?.performanceSettingsJson ?: "{}")
     }
@@ -2401,6 +2507,7 @@ private fun GigModeScreen(
     var liveRevision by remember(eventId) { mutableStateOf("") }
     var liveConnected by remember(eventId) { mutableStateOf(false) }
     var liveUpdating by remember(eventId) { mutableStateOf(false) }
+    var showLocalLive by remember(eventId) { mutableStateOf(false) }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
     var clockTick by remember(eventId) { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(eventId) {
@@ -2481,6 +2588,8 @@ private fun GigModeScreen(
         }
     }
 
+    if (showLocalLive) LocalLiveDialog(model, event) { showLocalLive = false }
+
     if (detailOpen && performanceSongs.isNotEmpty()) {
         PerformanceSongScreen(
             item = performanceSongs[currentSong],
@@ -2522,13 +2631,24 @@ private fun GigModeScreen(
                         val venueName = venues.firstOrNull { it.entityId == event.optString("venue_id") }?.let { recordJson(it).optString("name") }.orEmpty()
                         Text(listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - "), color = TextSoft, fontSize = 11.sp, maxLines = 1)
                         Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString("  "), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        LiveConnectionStatus(liveConnected, liveUpdating)
+                        val localForEvent = localLive.role != LocalLiveRole.NONE && localLive.eventId == eventId
+                        LiveConnectionStatus(
+                            connected = liveConnected || (localForEvent && localLive.connected),
+                            updating = liveUpdating,
+                            label = when {
+                                localForEvent && localLive.role == LocalLiveRole.HOST -> "LOCAL HOST"
+                                localForEvent && localLive.connected -> "LOCAL LIVE"
+                                else -> null
+                            },
+                        )
                     }
                 }
             }
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                GigIconButton(Icons.Rounded.WifiTethering, "Local live network", onClick = { showLocalLive = true }, active = localLive.role != LocalLiveRole.NONE && localLive.eventId == eventId)
+                Spacer(Modifier.width(7.dp))
                 GigIconButton(Icons.Rounded.Edit, "Edit live set list", onClick = { editingLiveSet = true }, enabled = setListRecord != null)
                 Spacer(Modifier.width(7.dp))
                 GigIconButton(Icons.Rounded.ListIcon, "List view", onClick = {}, active = true)
@@ -2563,7 +2683,7 @@ private fun GigModeScreen(
 }
 
 @Composable
-private fun LiveConnectionStatus(connected: Boolean, updating: Boolean) {
+private fun LiveConnectionStatus(connected: Boolean, updating: Boolean, label: String? = null) {
     val liveGreen = Color(0xFF58E99B)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         Box(
@@ -2577,7 +2697,7 @@ private fun LiveConnectionStatus(connected: Boolean, updating: Boolean) {
             if (updating) LiveUpdatingLight()
         }
         Text(
-            if (connected) "LIVE" else "OFFLINE READY",
+            label ?: if (connected) "LIVE" else "OFFLINE READY",
             color = if (connected) liveGreen else TextSoft,
             fontSize = 8.sp,
             fontWeight = FontWeight.Black,

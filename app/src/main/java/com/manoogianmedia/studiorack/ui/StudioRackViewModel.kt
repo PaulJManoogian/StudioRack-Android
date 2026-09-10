@@ -12,6 +12,9 @@ import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SyncConflict
 import com.manoogianmedia.studiorack.data.RepositorySyncHealth
 import com.manoogianmedia.studiorack.data.DataExport
+import com.manoogianmedia.studiorack.data.LocalLiveCoordinator
+import com.manoogianmedia.studiorack.data.LocalLivePeer
+import com.manoogianmedia.studiorack.data.LocalLiveRole
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,10 +25,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.util.UUID
 
-class StudioRackViewModel(private val repository: StudioRackRepository) : ViewModel() {
+class StudioRackViewModel(
+    private val repository: StudioRackRepository,
+    private val localLiveCoordinator: LocalLiveCoordinator,
+) : ViewModel() {
     private val setListSaveMutex = Mutex()
     val events: StateFlow<List<CachedRecord>> = repository.records("studio_event")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -114,6 +121,8 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
     val notificationCount: StateFlow<Int> = repository.notificationCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val syncHealth: StateFlow<RepositorySyncHealth> = repository.syncHealth()
+    val localLive = localLiveCoordinator.state
+    val nearbyLiveSessions = localLiveCoordinator.peers
 
     private val initiallySignedIn = repository.signedIn()
     private val _uiState = MutableStateFlow(StudioRackUiState(initiallySignedIn, starting = initiallySignedIn))
@@ -175,6 +184,37 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
 
     fun refreshNotifications() {
         viewModelScope.launch { runCatching { repository.reconcileNotifications() } }
+    }
+
+    fun hostLocalLive(eventId: String, sessionName: String) {
+        viewModelScope.launch {
+            runCatching {
+                localLiveCoordinator.host(
+                    eventId,
+                    sessionName,
+                    providePacket = { repository.localLivePacket(eventId) },
+                    acceptSetList = { repository.acceptLocalLiveSetList(it) },
+                )
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(message = "Local live session is hosting on this Wi-Fi.", syncError = false)
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(message = it.message ?: "Could not host the local live session.", syncError = true)
+            }
+        }
+    }
+
+    fun joinLocalLive(peer: LocalLivePeer, code: String) {
+        if (code.length != 6) {
+            _uiState.value = _uiState.value.copy(message = "Enter the host's six-digit session code.", syncError = true)
+            return
+        }
+        localLiveCoordinator.join(peer, code) { repository.applyLocalLivePacket(it) }
+        _uiState.value = _uiState.value.copy(message = "Connecting to ${peer.name} on local Wi-Fi.", syncError = false)
+    }
+
+    fun leaveLocalLive() {
+        localLiveCoordinator.stop()
+        _uiState.value = _uiState.value.copy(message = "Local live session closed.", syncError = false)
     }
 
     fun copyShareLink(grantId: String, done: (String?) -> Unit) {
@@ -275,26 +315,14 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         viewModelScope.launch {
             runCatching {
                 setListSaveMutex.withLock {
-                    repository.saveSetList(
-                        draft.id,
-                        JSONObject().put("id", draft.id).put("name", draft.name.trim())
-                            .put("description", draft.description.trim()).put("notes", draft.notes.trim())
-                            .put("print_charts", if (draft.attachmentPrintMode == "none") 0 else 1)
-                            .put("attachment_print_mode", draft.attachmentPrintMode).put("is_favorite", if (draft.favorite) 1 else 0),
-                        draft.sections.mapIndexed { index, section ->
-                            section.id to JSONObject().put("id", section.id).put("set_list_id", draft.id)
-                                .put("name", section.name.trim().ifBlank { "Set ${index + 1}" }).put("position", index).put("notes", section.notes.trim())
-                        },
-                        draft.sections.flatMap { section ->
-                            section.entries.mapIndexed { entryIndex, entry ->
-                                entry.id to JSONObject().put("id", entry.id).put("set_list_id", draft.id)
-                                    .put("section_id", section.id).put("song_id", entry.songId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
-                                    .put("position", entryIndex).put("manual_title", entry.manualTitle.trim())
-                                    .put("entry_notes", entry.notes.trim())
-                                    .put("performance_attachment_id", entry.performanceAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
-                            }
-                        },
-                    )
+                    val payload = setListPayload(draft)
+                    val localState = localLiveCoordinator.state.value
+                    if (liveAutosave && localState.role == LocalLiveRole.GUEST && localState.setListId == draft.id) {
+                        repository.applyLocalLivePacket(localLiveCoordinator.submitSetList(payload))
+                    } else {
+                        repository.acceptLocalLiveSetList(payload)
+                        if (liveAutosave && localState.role == LocalLiveRole.HOST && localState.setListId == draft.id) localLiveCoordinator.hostChanged()
+                    }
                 }
             }.onSuccess {
                 if (!liveAutosave) _uiState.value = _uiState.value.copy(message = "Set list saved offline. Sync is queued.")
@@ -304,6 +332,27 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
                 failed()
             }
         }
+    }
+
+    private fun setListPayload(draft: SetListDraft): JSONObject {
+        val setList = JSONObject().put("id", draft.id).put("name", draft.name.trim())
+            .put("description", draft.description.trim()).put("notes", draft.notes.trim())
+            .put("print_charts", if (draft.attachmentPrintMode == "none") 0 else 1)
+            .put("attachment_print_mode", draft.attachmentPrintMode).put("is_favorite", if (draft.favorite) 1 else 0)
+        val sections = JSONArray()
+        val entries = JSONArray()
+        draft.sections.forEachIndexed { index, section ->
+            sections.put(JSONObject().put("id", section.id).put("set_list_id", draft.id)
+                .put("name", section.name.trim().ifBlank { "Set ${index + 1}" }).put("position", index).put("notes", section.notes.trim()))
+            section.entries.forEachIndexed { entryIndex, entry ->
+                entries.put(JSONObject().put("id", entry.id).put("set_list_id", draft.id)
+                    .put("section_id", section.id).put("song_id", entry.songId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                    .put("position", entryIndex).put("manual_title", entry.manualTitle.trim())
+                    .put("entry_notes", entry.notes.trim())
+                    .put("performance_attachment_id", entry.performanceAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL))
+            }
+        }
+        return JSONObject().put("set_list_id", draft.id).put("set_list", setList).put("sections", sections).put("entries", entries)
     }
 
     fun deleteSetList(id: String, done: () -> Unit) {
@@ -424,7 +473,10 @@ data class SetEntryDraft(
     val performanceAttachmentId: String? = null,
 )
 
-class StudioRackViewModelFactory(private val repository: StudioRackRepository) : ViewModelProvider.Factory {
+class StudioRackViewModelFactory(
+    private val repository: StudioRackRepository,
+    private val localLiveCoordinator: LocalLiveCoordinator,
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = StudioRackViewModel(repository) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = StudioRackViewModel(repository, localLiveCoordinator) as T
 }

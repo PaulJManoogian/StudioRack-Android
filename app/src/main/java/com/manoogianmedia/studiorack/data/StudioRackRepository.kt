@@ -54,6 +54,70 @@ class StudioRackRepository(
 
     suspend fun liveShareStatus(grantId: String): JSONObject = client.liveShareStatus(grantId)
 
+    suspend fun localLivePacket(eventId: String): JSONObject {
+        val event = dao.record("studio_event", eventId) ?: error("The scheduled session is not available on this device.")
+        val eventJson = JSONObject(event.json)
+        val setListId = eventJson.optString("set_list_id")
+        check(setListId.isNotBlank()) { "This session does not have a set list." }
+        val records = mutableListOf(event)
+        dao.record("set_list", setListId)?.let(records::add)
+        val sections = dao.records("set_list_section").filter { JSONObject(it.json).optString("set_list_id") == setListId }
+        val entries = dao.records("set_list_entry").filter { JSONObject(it.json).optString("set_list_id") == setListId }
+        records += sections
+        records += entries
+        val songIds = entries.map { JSONObject(it.json).optString("song_id") }.filter(String::isNotBlank).toSet()
+        val songs = dao.records("song").filter { it.entityId in songIds }
+        records += songs
+        records += dao.records("song_attachment").filter { JSONObject(it.json).optString("song_id") in songIds }
+        eventJson.optString("venue_id").takeIf(String::isNotBlank)?.let { venueId -> dao.record("venue", venueId)?.let(records::add) }
+        return JSONObject()
+            .put("event_id", eventId)
+            .put("set_list_id", setListId)
+            .put("records", JSONArray().apply {
+                records.forEach { record ->
+                    put(JSONObject().put("entity", record.entityType).put("id", record.entityId).put("revision", record.revision).put("data", JSONObject(record.json)))
+                }
+            })
+    }
+
+    suspend fun applyLocalLivePacket(packet: JSONObject) {
+        val rows = packet.optJSONArray("records") ?: JSONArray()
+        val upserts = buildList {
+            for (index in 0 until rows.length()) {
+                val row = rows.getJSONObject(index)
+                add(CachedRecord(row.getString("entity"), row.getString("id"), row.optInt("revision"), row.getJSONObject("data").toString()))
+            }
+        }
+        val setListId = packet.optString("set_list_id")
+        val desiredChildren = upserts.filter { it.entityType in setOf("set_list_section", "set_list_entry") }.mapTo(mutableSetOf()) { it.entityType to it.entityId }
+        val removed = if (setListId.isBlank()) emptyList() else {
+            (dao.records("set_list_section") + dao.records("set_list_entry"))
+                .filter { JSONObject(it.json).optString("set_list_id") == setListId && it.entityType to it.entityId !in desiredChildren }
+                .map { RecordRef(it.entityType, it.entityId) }
+        }
+        dao.applyLocalLivePacket(upserts, removed)
+    }
+
+    suspend fun acceptLocalLiveSetList(payload: JSONObject) {
+        val setListId = payload.getString("set_list_id")
+        val setList = payload.getJSONObject("set_list")
+        val sectionsJson = payload.getJSONArray("sections")
+        val entriesJson = payload.getJSONArray("entries")
+        val sections = buildList {
+            for (index in 0 until sectionsJson.length()) {
+                val row = sectionsJson.getJSONObject(index)
+                add(row.getString("id") to row)
+            }
+        }
+        val entries = buildList {
+            for (index in 0 until entriesJson.length()) {
+                val row = entriesJson.getJSONObject(index)
+                add(row.getString("id") to row)
+            }
+        }
+        saveSetList(setListId, setList, sections, entries)
+    }
+
     suspend fun shareLink(grantId: String): String = client.shareLink(grantId).getString("share_url")
 
     suspend fun emailShare(grantId: String) {

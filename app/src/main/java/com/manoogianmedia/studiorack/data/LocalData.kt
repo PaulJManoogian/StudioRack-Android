@@ -198,6 +198,12 @@ interface StudioRackDao {
     }
 
     @Transaction
+    suspend fun applyLocalLivePacket(upserts: List<CachedRecord>, deletes: List<RecordRef>) {
+        deletes.forEach { deleteRecord(it.entityType, it.entityId) }
+        if (upserts.isNotEmpty()) putRecords(upserts)
+    }
+
+    @Transaction
     suspend fun replaceSnapshot(records: List<CachedRecord>, supporting: List<SupportingRecord>, state: SyncState) {
         clearRecords()
         clearSupporting()

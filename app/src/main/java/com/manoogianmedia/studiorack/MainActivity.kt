@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
         handleNotificationIntent(intent)
         setContent {
             val repository = (application as StudioRackApplication).repository
-            val model: StudioRackViewModel = viewModel(factory = StudioRackViewModelFactory(repository))
+            val model: StudioRackViewModel = viewModel(factory = StudioRackViewModelFactory(repository, (application as StudioRackApplication).localLive))
             StudioRackApp(model, hardwareKeys, notificationRoutes) { gigModeActive = it }
         }
     }

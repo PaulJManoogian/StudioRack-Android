@@ -49,7 +49,7 @@ https://www.manoogianmedia.com/leviathan/api/v1
 
 ## Alpha install
 
-Version 0.13.6 makes Leviathan Live editing an autosaving session: add, edit, reorder, remove, and Undo changes are queued locally and synchronized without a separate Save action. The active edit pencil exits after confirming the latest local state. Touch-first ordering, edge scrolling, stable Chart mode anchoring, and the high-contrast synchronization lamp remain available.
+Version 0.14.0 introduces Local Live networking for internet-free performances. A scheduled session can advertise itself as the Wi-Fi host, nearby Android devices can join with a temporary six-digit code, and the host-authoritative event workspace is written into every joined device's offline database. Set-list edits flow through the host immediately and remain queued there for cloud synchronization when internet service returns. Host and Join controls are available from Sessions and directly inside Leviathan Live.
 
 Download the current Android alpha directly from the Studio Leviathan server:
 
