@@ -79,6 +79,7 @@ internal class LocalExchangeExporter(
                         mapOf(
                             "song_title" to "title", "song_artist" to "artist", "song_tempo" to "tempo",
                             "song_duration_seconds" to "duration_seconds", "song_time_signature" to "time_signature",
+                            "song_key" to "song_key",
                             "song_style" to "style", "song_starts_by" to "starts_by",
                             "song_patch_name" to "patch_name", "song_patch_number" to "patch_number",
                             "song_notes" to "notes",
@@ -202,8 +203,8 @@ internal class LocalExchangeExporter(
 
     private fun flatten(kind: String, records: List<JSONObject>): Pair<List<String>, List<Map<String, String>>> {
         val headers = when (kind) {
-            "songs" -> listOf("title", "artist", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "media_ref", "notes", "favorite")
-            "setlists" -> listOf("set_list", "description", "set", "set_number", "song_number", "song", "artist", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "set_note", "song_note", "set_list_notes", "favorite")
+            "songs" -> listOf("title", "artist", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "media_ref", "notes", "favorite")
+            "setlists" -> listOf("set_list", "description", "set", "set_number", "song_number", "song", "artist", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "set_note", "song_note", "set_list_notes", "favorite")
             "items" -> listOf("display_name", "brand", "category", "type", "location", "usage_status", "quantity", "notes")
             "kits" -> listOf("name", "designation", "location", "members", "notes")
             else -> listOf("title", "type", "status", "date", "start_time", "location", "set_list", "kits", "notes")
@@ -212,7 +213,7 @@ internal class LocalExchangeExporter(
         records.forEach { record ->
             when (kind) {
                 "songs" -> output += mapOf(
-                    "title" to record.text("title"), "artist" to record.text("artist"), "tempo" to record.text("tempo"),
+                    "title" to record.text("title"), "artist" to record.text("artist"), "key" to record.text("song_key"), "tempo" to record.text("tempo"),
                     "duration" to duration(record.opt("duration_seconds")), "time_signature" to record.text("time_signature"),
                     "style" to record.text("style"), "starts_by" to record.text("starts_by"), "patch_name" to record.text("patch_name"),
                     "patch_number" to record.text("patch_number"), "media_ref" to record.text("media_ref"), "notes" to record.text("notes"),
@@ -252,7 +253,7 @@ internal class LocalExchangeExporter(
                     "set_list" to record.text("name"), "description" to record.text("description"), "set" to section.text("name"),
                     "set_number" to if (section.length() > 0) (sectionIndex + 1).toString() else "",
                     "song_number" to if (entry.length() > 0) (entryIndex + 1).toString() else "",
-                    "song" to entry.text("song_title").ifBlank { entry.text("manual_title") }, "artist" to entry.text("song_artist"),
+                    "song" to entry.text("song_title").ifBlank { entry.text("manual_title") }, "artist" to entry.text("song_artist"), "key" to entry.text("song_key"),
                     "tempo" to entry.text("song_tempo"), "duration" to duration(entry.opt("song_duration_seconds")),
                     "time_signature" to entry.text("song_time_signature"), "style" to entry.text("song_style"),
                     "starts_by" to entry.text("song_starts_by"), "patch_name" to entry.text("song_patch_name"),

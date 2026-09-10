@@ -28,6 +28,7 @@ class LocalExchangeExporterTest {
 
             assertEquals("studio-leviathan-songs-2026-09-08.$format", result.filename)
             assertTrue(text.contains("Offline Song"))
+            assertTrue(text.contains("Bb"))
             assertFalse(text.contains("StudioRack", ignoreCase = true))
             if (format != "csv") assertTrue(text.contains("Studio Leviathan"))
         }
@@ -58,13 +59,14 @@ class LocalExchangeExporterTest {
             .bytes.toString(Charsets.UTF_8)
         assertFalse(csv.contains("First Set List"))
         assertTrue(csv.indexOf("First Song") < csv.indexOf("Second Song"))
-        assertTrue(csv.contains("Selected Set List,Road show,Set One,1,1,First Song,Test Artist,120,3:45,4/4,Rock,Guitar"))
+        assertTrue(csv.contains("Selected Set List,Road show,Set One,1,1,First Song,Test Artist,Bb,120,3:45,4/4,Rock,Guitar"))
 
         val json = JSONObject(exporter.export("setlists", "json", listOf("set_b"), store).bytes.toString(Charsets.UTF_8))
         val exported = json.getJSONArray("records").getJSONObject(0)
         assertEquals(1, json.getJSONArray("records").length())
         assertEquals("Set One", exported.getJSONArray("sections").getJSONObject(0).getString("name"))
         assertEquals("First Song", exported.getJSONArray("sections").getJSONObject(0).getJSONArray("entries").getJSONObject(0).getString("song_title"))
+        assertEquals("Bb", exported.getJSONArray("sections").getJSONObject(0).getJSONArray("entries").getJSONObject(0).getString("song_key"))
     }
 
     @Test
@@ -98,6 +100,7 @@ class LocalExchangeExporterTest {
         .put("tempo", 120)
         .put("duration_seconds", 225)
         .put("time_signature", "4/4")
+        .put("song_key", "Bb")
         .put("style", "Rock")
         .put("starts_by", "Guitar")
 

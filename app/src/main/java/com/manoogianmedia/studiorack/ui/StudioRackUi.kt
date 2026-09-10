@@ -784,11 +784,12 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 val songAttachments = attachments.filter { recordJson(it).optString("song_id") == record.entityId }
                 ExpandableRecordCard(
                     song.optString("title", "Untitled song"), song.optString("artist"),
-                    listOf(song.optString("style"), song.optString("tempo"), song.optString("time_signature"), formatDuration(song.optInt("duration_seconds")), if (song.optInt("is_favorite") == 1) "Favorite" else "").filter(String::isNotBlank),
+                    listOf(displaySongKey(song.optString("song_key")), song.optString("style"), song.optString("tempo"), song.optString("time_signature"), formatDuration(song.optInt("duration_seconds")), if (song.optInt("is_favorite") == 1) "Favorite" else "").filter(String::isNotBlank),
                     actionLabel = if (normalizedMediaLink(song.optString("media_ref")) != null) "Listen" else null,
                     action = normalizedMediaLink(song.optString("media_ref"))?.let { link -> { openMediaLink(context, link) } },
                 ) {
                     DetailLine("Starts", song.optString("starts_by"))
+                    DetailLine("Key", displaySongKey(song.optString("song_key")))
                     DetailLine("Patch", listOf(song.optString("patch_name"), song.optString("patch_number")).filter(String::isNotBlank).joinToString(" / "))
                     DetailLine("Notes", song.optString("notes"))
                     normalizedMediaLink(song.optString("media_ref"))?.let { link ->
@@ -962,7 +963,7 @@ private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean =
                                     Text("${entry.optInt("position")}. ${song?.optString("title")?.ifBlank { entry.optString("manual_title", "Untitled") } ?: entry.optString("manual_title", "Untitled")}", color = Color.White, fontWeight = FontWeight.Bold)
                                     song?.let { value ->
                                         if (value.optString("artist").isNotBlank()) Text(value.optString("artist"), color = TextSoft)
-                                        Text(listOf(value.optString("starts_by"), value.optString("style"), value.optString("tempo"), value.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 12.sp)
+                                        Text(listOf(value.optString("starts_by"), displaySongKey(value.optString("song_key")), value.optString("style"), value.optString("tempo"), value.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 12.sp)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             normalizedMediaLink(value.optString("media_ref"))?.let { media -> StudioButton(onClick = { openMediaLink(context, media) }, kind = StudioButtonKind.Secondary) { Text("Listen", color = Color.White) } }
                                             attachments.filter { supportingJson(it).optString("grant_id") == grantId && supportingJson(it).optString("song_id") == value.optString("id") }.forEach { attachment ->
@@ -2466,6 +2467,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     var tempo by remember { mutableStateOf(original.optString("tempo")) }
     var duration by remember { mutableStateOf(formatDuration(original.optInt("duration_seconds"))) }
     var signature by remember { mutableStateOf(original.optString("time_signature", "4/4")) }
+    var songKey by remember { mutableStateOf(original.optString("song_key")) }
     var starts by remember { mutableStateOf(original.optString("starts_by")) }
     var patchName by remember { mutableStateOf(original.optString("patch_name")) }
     var patchNumber by remember { mutableStateOf(original.optString("patch_number")) }
@@ -2494,6 +2496,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             if (maxWidth < 520.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     StudioField("Style", style) { style = it }
+                    StudioField("Key (C, F#, Bb, Am)", songKey, dictation = false) { songKey = it.take(40) }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Box(Modifier.weight(1f)) { StudioField("Tempo", tempo, dictation = false) { tempo = it.filter(Char::isDigit).take(3) } }
                         Box(Modifier.weight(1f)) { StudioField("Time signature", signature, dictation = false) { signature = it.take(12) } }
@@ -2503,12 +2506,14 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(Modifier.weight(1f)) { StudioField("Style", style) { style = it } }
+                    Box(Modifier.weight(1f)) { StudioField("Key", songKey, dictation = false) { songKey = it.take(40) } }
                     Box(Modifier.weight(1f)) { StudioField("Tempo", tempo, dictation = false) { tempo = it.filter(Char::isDigit).take(3) } }
                     Box(Modifier.weight(1f)) { StudioField("Time signature", signature, dictation = false) { signature = it.take(12) } }
                     Box(Modifier.weight(1f)) { StudioField("Song length", duration, dictation = false) { duration = it.filter { char -> char.isDigit() || char == ':' }.take(8) } }
                 }
             }
         }
+        Text("Key notation: use # for sharp, b for flat; no accidental means natural. Musical symbols are also accepted.", color = TextSoft, fontSize = 10.sp)
         StudioField("Who starts", starts) { starts = it }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("Patch name", patchName) { patchName = it } }
@@ -2546,7 +2551,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             save = {
                 model.saveSong(target.id, JSONObject()
                     .put("title", title.trim()).put("artist", artist.trim()).put("style", style.trim())
-                    .put("tempo", tempo.trim()).put("duration_seconds", parseDuration(duration)).put("time_signature", signature.trim()).put("starts_by", starts.trim())
+                    .put("tempo", tempo.trim()).put("duration_seconds", parseDuration(duration)).put("time_signature", signature.trim()).put("song_key", normalizeSongKey(songKey)).put("starts_by", starts.trim())
                     .put("patch_name", patchName.trim()).put("patch_number", patchNumber.trim())
                     .put("media_ref", media.trim()).put("notes", notes.trim()).put("is_favorite", if (favorite) 1 else 0), newAttachments, close)
             },
@@ -3206,7 +3211,7 @@ private fun GigSongCues(song: JSONObject?) {
         listOf(song?.optString("starts_by"), song?.optString("style")).filterNotNull().filter(String::isNotBlank).forEach {
             Text(it, color = Color.White, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
         }
-        listOf(song?.optString("tempo"), song?.optString("time_signature"), formatDuration(song?.optInt("duration_seconds") ?: 0)).filterNotNull().filter(String::isNotBlank).forEach { GigValueChip(it) }
+        listOf(displaySongKey(song?.optString("song_key").orEmpty()), song?.optString("tempo"), song?.optString("time_signature"), formatDuration(song?.optInt("duration_seconds") ?: 0)).filterNotNull().filter(String::isNotBlank).forEach { GigValueChip(it) }
     }
 }
 
@@ -3333,6 +3338,7 @@ private fun PerformanceSongScreen(
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GigDetail("Starts", item.song?.optString("starts_by").orEmpty())
+            GigDetail("Key", displaySongKey(item.song?.optString("song_key").orEmpty()))
             GigDetail("Tempo", item.song?.optString("tempo").orEmpty())
             GigDetail("Time", item.song?.optString("time_signature").orEmpty())
             GigDetail("Length", formatDuration(item.song?.optInt("duration_seconds") ?: 0))
@@ -3439,7 +3445,18 @@ private fun GigDetail(label: String, value: String) {
 }
 
 private fun gigSongTitle(item: GigSong) = item.song?.optString("title")?.takeIf(String::isNotBlank) ?: item.entry.optString("manual_title", "Untitled")
-private fun gigSongCue(item: GigSong) = listOf(item.song?.optString("starts_by"), item.song?.optString("tempo"), item.song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
+private fun gigSongCue(item: GigSong) = listOf(item.song?.optString("starts_by"), displaySongKey(item.song?.optString("song_key").orEmpty()).takeIf(String::isNotBlank)?.let { "Key $it" }, item.song?.optString("tempo"), item.song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
+
+private fun normalizeSongKey(value: String): String = value
+    .replace('♯', '#').replace('♭', 'b').replace("♮", "")
+    .trim().replace(Regex("\\s+"), " ").take(40)
+
+private fun displaySongKey(value: String): String {
+    val clean = normalizeSongKey(value)
+    val match = Regex("^([A-Ga-g])([#b]?)(.*)$").matchEntire(clean) ?: return clean
+    val accidental = when (match.groupValues[2]) { "#" -> "♯"; "b" -> "♭"; else -> "" }
+    return match.groupValues[1].uppercase() + accidental + match.groupValues[3]
+}
 
 private fun parseDuration(value: String): Int {
     val parts = value.trim().split(':').mapNotNull(String::toIntOrNull)
@@ -3515,7 +3532,7 @@ internal fun mediaIntent(link: String): Intent? = normalizedMediaLink(link)?.let
 private fun SongDetailFallback(item: GigSong) {
     Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(item.song?.optString("artist").orEmpty(), color = Cyan, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text(listOf("Starts: ${item.song?.optString("starts_by").orEmpty()}", "Tempo: ${item.song?.optString("tempo").orEmpty()}", "Time: ${item.song?.optString("time_signature").orEmpty()}", "Style: ${item.song?.optString("style").orEmpty()}").joinToString("  |  "), color = Color.White)
+        Text(listOf("Starts: ${item.song?.optString("starts_by").orEmpty()}", "Key: ${displaySongKey(item.song?.optString("song_key").orEmpty())}", "Tempo: ${item.song?.optString("tempo").orEmpty()}", "Time: ${item.song?.optString("time_signature").orEmpty()}", "Style: ${item.song?.optString("style").orEmpty()}").joinToString("  |  "), color = Color.White)
         val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
         if (patch.isNotBlank()) Text("Patch: $patch", color = Amber)
         item.song?.optString("notes")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft) }
