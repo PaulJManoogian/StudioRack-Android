@@ -286,6 +286,30 @@ class StudioRackRepository(
         syncNow()
     }
 
+    suspend fun saveContact(contactId: String, data: JSONObject, methods: List<JSONObject>) {
+        val currentContact = dao.record("contact", contactId)
+        val existingMethods = dao.records("contact_method").filter { JSONObject(it.json).optString("contact_id") == contactId }
+        val existingById = existingMethods.associateBy { it.entityId }
+        val desired = methods.mapIndexedNotNull { index, source ->
+            val value = source.optString("value").trim()
+            if (value.isBlank()) return@mapIndexedNotNull null
+            val id = source.optString("id").ifBlank { "cm_${UUID.randomUUID().toString().replace("-", "")}" }
+            id to JSONObject(source.toString()).put("id", id).put("contact_id", contactId).put("position", index)
+        }
+        val desiredIds = desired.mapTo(mutableSetOf()) { it.first }
+        val removed = existingMethods.filter { it.entityId !in desiredIds }
+        var sequence = System.currentTimeMillis()
+        val root = CachedRecord("contact", contactId, currentContact?.revision ?: 0, data.toString())
+        dao.applyLocalBundle(
+            upserts = listOf(root) + desired.map { (id, json) -> CachedRecord("contact_method", id, existingById[id]?.revision ?: 0, json.toString()) },
+            deletes = removed.map { RecordRef(it.entityType, it.entityId) },
+            mutations = listOf(mutation("contact", contactId, "upsert", currentContact?.revision ?: 0, data.toString(), sequence++)) +
+                desired.map { (id, json) -> mutation("contact_method", id, "upsert", existingById[id]?.revision ?: 0, json.toString(), sequence++) } +
+                removed.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) },
+        )
+        syncNow()
+    }
+
     suspend fun deleteSetList(setListId: String) {
         val children = (dao.records("set_list_entry") + dao.records("set_list_section"))
             .filter { JSONObject(it.json).optString("set_list_id") == setListId }

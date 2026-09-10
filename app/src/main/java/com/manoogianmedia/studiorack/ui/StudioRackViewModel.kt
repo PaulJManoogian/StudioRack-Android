@@ -54,6 +54,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val contacts: StateFlow<List<CachedRecord>> = repository.records("contact")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val contactMethods: StateFlow<List<CachedRecord>> = repository.records("contact_method")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val ensembles: StateFlow<List<CachedRecord>> = repository.records("ensemble")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val venueContacts: StateFlow<List<CachedRecord>> = repository.records("venue_contact")
@@ -274,7 +276,7 @@ class StudioRackViewModel(
 
     fun deleteEvent(id: String, done: () -> Unit) = deleteRecord("studio_event", id, done)
 
-    fun saveDirectoryRecord(entityType: String, id: String?, data: JSONObject, imageUri: String? = null, imageName: String = "", imageMimeType: String = "", done: () -> Unit) {
+    fun saveDirectoryRecord(entityType: String, id: String?, data: JSONObject, imageUri: String? = null, imageName: String = "", imageMimeType: String = "", contactMethods: List<JSONObject> = emptyList(), done: () -> Unit) {
         val prefix = when (entityType) { "venue" -> "venue"; "contact" -> "contact"; else -> "ensemble" }
         val recordId = id ?: "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
         viewModelScope.launch {
@@ -282,7 +284,8 @@ class StudioRackViewModel(
                 if (entityType in setOf("venue", "contact") && !imageUri.isNullOrBlank()) {
                     data.put("image_url", repository.uploadDirectoryImage(imageUri, imageName, imageMimeType))
                 }
-                repository.save(entityType, recordId, data)
+                if (entityType == "contact") repository.saveContact(recordId, data, contactMethods)
+                else repository.save(entityType, recordId, data)
             }.onSuccess {
                 _uiState.value = _uiState.value.copy(message = "${prefix.replaceFirstChar(Char::uppercase)} saved. Synchronization is queued.")
                 done()
