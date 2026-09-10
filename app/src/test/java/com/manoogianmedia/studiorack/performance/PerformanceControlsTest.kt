@@ -45,6 +45,7 @@ class PerformanceControlsTest {
             metronomeKey = "ArrowLeft",
             muteKey = "ArrowRight",
             showClock = false,
+            attachmentPreferences = listOf("lyrics", "chart", "guitar_tab", "sheet_music", "other"),
         )
         val encoded = expected.toJson(pendingSync = true)
         assertEquals(1, encoded.getInt("_mobile_pending"))

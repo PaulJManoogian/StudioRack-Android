@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.json.JSONArray
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -36,6 +37,7 @@ data class PerformanceSettings(
     val showClock: Boolean = true,
     val showElapsed: Boolean = true,
     val showSetRemaining: Boolean = true,
+    val attachmentPreferences: List<String> = listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
 ) {
     fun toJson(pendingSync: Boolean = false): JSONObject = JSONObject()
         .put("gig_metronome_autostart", if (metronomeAutostart) 1 else 0)
@@ -53,6 +55,7 @@ data class PerformanceSettings(
         .put("gig_show_clock", if (showClock) 1 else 0)
         .put("gig_show_elapsed", if (showElapsed) 1 else 0)
         .put("gig_show_set_remaining", if (showSetRemaining) 1 else 0)
+        .put("gig_attachment_preferences", JSONArray(attachmentPreferences))
         .put("_mobile_pending", if (pendingSync) 1 else 0)
 
     companion object {
@@ -74,6 +77,9 @@ data class PerformanceSettings(
                 showClock = json.optInt("gig_show_clock", 1) == 1,
                 showElapsed = json.optInt("gig_show_elapsed", 1) == 1,
                 showSetRemaining = json.optInt("gig_show_set_remaining", 1) == 1,
+                attachmentPreferences = json.optJSONArray("gig_attachment_preferences")?.let { values ->
+                    (0 until values.length()).mapNotNull { index -> values.optString(index).takeIf(String::isNotBlank) }
+                }?.takeIf(List<String>::isNotEmpty) ?: listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
             )
         }
     }

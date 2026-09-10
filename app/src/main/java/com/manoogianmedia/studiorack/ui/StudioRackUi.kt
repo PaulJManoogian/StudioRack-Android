@@ -62,6 +62,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -681,6 +683,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     val reportState by model.reportState.collectAsState()
     val online = rememberNetworkConnected()
     var query by remember { mutableStateOf("") }
+    var sessionTab by remember { mutableStateOf("Schedule") }
     var type by remember { mutableStateOf("All") }
     var editingEvent by remember { mutableStateOf<EditorTarget?>(null) }
     var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
@@ -695,28 +698,33 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     }.sortedBy { it.optString("event_date") + it.optString("start_time") }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SectionHeading("SESSIONS", "Schedule") }
-        item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
-        item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = Color.White, fontWeight = FontWeight.Bold) } }
-        item { DictationTextField(query, { query = it }, "Find scheduled work") }
-        item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
-        item {
-            StudioButton(
-                onClick = { exportTarget = ExportTarget("events", "Visible scheduled items", rows.map { it.optString("id") }) },
-                enabled = rows.isNotEmpty() && !reportState.busy,
-                modifier = Modifier.fillMaxWidth(),
-                kind = StudioButtonKind.Secondary,
-            ) { Text("Export visible scheduled items (${rows.size})", color = Color.White, fontWeight = FontWeight.Bold) }
-        }
-        if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
-        items(rows, key = { it.getString("id") }) { event ->
-            EventCard(
-                event,
-                eventPacketReadiness(event, entries, attachments, cachedAttachments),
-                open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) },
-                edit = { editingEvent = EditorTarget(event.optString("id"), event) },
-                host = if (event.optString("set_list_id").isNotBlank()) ({ localLiveEvent = event; showLocalLive = true }) else null,
-            )
+        item { SectionHeading("SESSIONS", if (sessionTab == "Schedule") "Schedule" else "Leviathan Live") }
+        item { ChoiceStrip(listOf("Schedule", "Leviathan Live"), sessionTab) { sessionTab = it } }
+        if (sessionTab == "Leviathan Live") {
+            item { LeviathanLiveSettingsPanel(model) }
+        } else {
+            item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
+            item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = Color.White, fontWeight = FontWeight.Bold) } }
+            item { DictationTextField(query, { query = it }, "Find scheduled work") }
+            item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
+            item {
+                StudioButton(
+                    onClick = { exportTarget = ExportTarget("events", "Visible scheduled items", rows.map { it.optString("id") }) },
+                    enabled = rows.isNotEmpty() && !reportState.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text("Export visible scheduled items (${rows.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+            }
+            if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
+            items(rows, key = { it.getString("id") }) { event ->
+                EventCard(
+                    event,
+                    eventPacketReadiness(event, entries, attachments, cachedAttachments),
+                    open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) },
+                    edit = { editingEvent = EditorTarget(event.optString("id"), event) },
+                    host = if (event.optString("set_list_id").isNotBlank()) ({ localLiveEvent = event; showLocalLive = true }) else null,
+                )
+            }
         }
     }
     editingEvent?.let { target -> EventEditor(target, model, close = { editingEvent = null }) }
@@ -2071,24 +2079,31 @@ private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(mode
 private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model: StudioRackViewModel, uiState: StudioRackUiState) {
     item {
         val state by model.syncState.collectAsState(); val account = runCatching { JSONObject(state?.accountJson ?: "{}") }.getOrDefault(JSONObject())
-        var tab by remember { mutableStateOf("Leviathan Live") }
-        val loadedSettings = remember(state?.performanceSettingsJson) {
-            PerformanceSettings.fromJson(state?.performanceSettingsJson ?: "{}")
-        }
-        var settings by remember(state?.performanceSettingsJson) { mutableStateOf(loadedSettings) }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Settings", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            ChoiceStrip(listOf("Leviathan Live", "Account & Device"), tab) { tab = it }
-            if (tab == "Account & Device") {
-                InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
-                StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
-                Text("Changes made on the web are copied here automatically when the device reconnects.", color = TextSoft, fontSize = 12.sp)
-            } else {
-                Text("Display", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            Text("Account and Device", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
+            StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
+            Text("Leviathan Live settings are managed from Sessions > Leviathan Live.", color = TextSoft, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
+    val state by model.syncState.collectAsState()
+    val loadedSettings = remember(state?.performanceSettingsJson) {
+        PerformanceSettings.fromJson(state?.performanceSettingsJson ?: "{}")
+    }
+    var settings by remember(state?.performanceSettingsJson) { mutableStateOf(loadedSettings) }
+    var section by remember { mutableStateOf("Live Settings") }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ChoiceStrip(listOf("Live Settings", "Performance Material", "Page Turner"), section) { section = it }
+        when (section) {
+            "Live Settings" -> {
+                Text("Leviathan Live Settings", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 SettingToggle("Show clock", settings.showClock) { settings = settings.copy(showClock = it) }
                 SettingToggle("Show elapsed set time", settings.showElapsed) { settings = settings.copy(showElapsed = it) }
                 SettingToggle("Show estimated time remaining", settings.showSetRemaining) { settings = settings.copy(showSetRemaining = it) }
-
                 Text("Metronome", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 SettingToggle("Auto-start when the song changes", settings.metronomeAutostart) { settings = settings.copy(metronomeAutostart = it) }
                 SettingToggle("Start muted", settings.metronomeMuted) { settings = settings.copy(metronomeMuted = it) }
@@ -2098,7 +2113,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
                 LabeledChoice("Sound", listOf("Tone", "Clave", "Woodblock", "Cowbell"), settings.metronomeSound.replaceFirstChar(Char::uppercase)) {
                     settings = settings.copy(metronomeSound = it.lowercase())
                 }
-
+            }
+            "Performance Material" -> {
+                Text("Performance Material", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("When a song has no explicit live default, Leviathan Live checks these attachment types in order.", color = TextSoft, fontSize = 13.sp)
+                settings.attachmentPreferences.take(5).forEachIndexed { index, preference ->
+                    AttachmentPreferenceChoice(index + 1, preference) { selected ->
+                        settings = settings.copy(
+                            attachmentPreferences = settings.attachmentPreferences.toMutableList().apply { this[index] = selected }
+                        )
+                    }
+                }
+            }
+            else -> {
                 Text("Bluetooth Page Turner", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 Text("Supports keyboard-mode pedals including AirTurn and Donner devices.", color = TextSoft, fontSize = 13.sp)
                 SettingToggle("Enable pedal controls", settings.pedalEnabled) { settings = settings.copy(pedalEnabled = it) }
@@ -2113,10 +2140,33 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
                 PedalKeyChoice("Next Song", settings.nextKey) { settings = settings.copy(nextKey = it) }
                 PedalKeyChoice("Metronome Start / Stop", settings.metronomeKey) { settings = settings.copy(metronomeKey = it) }
                 PedalKeyChoice("Metronome Mute / Unmute", settings.muteKey) { settings = settings.copy(muteKey = it) }
-                StudioButton(onClick = { model.savePerformanceSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Save Leviathan Live Settings", color = Ink, fontWeight = FontWeight.Black)
+            }
+        }
+        StudioButton(onClick = { model.savePerformanceSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Save Leviathan Live Settings", color = Ink, fontWeight = FontWeight.Black)
+        }
+        Text("Settings take effect on this device immediately and synchronize when connected.", color = TextSoft, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun AttachmentPreferenceChoice(priority: Int, selected: String, choose: (String) -> Unit) {
+    val options = linkedMapOf(
+        "chart" to "Chart", "drum_chart" to "Drum Chart", "sheet_music" to "Sheet Music",
+        "lyrics" to "Lyrics", "tab" to "Tab", "guitar_tab" to "Guitar Tab", "bass_tab" to "Bass Tab",
+        "keyboard_part" to "Keyboard Part", "reference" to "Reference", "other" to "Other",
+    )
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("Priority $priority", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Box(Modifier.fillMaxWidth()) {
+            StudioButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                Text(options[selected] ?: selected.humanize(), color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (value, label) ->
+                    DropdownMenuItem(text = { Text(label) }, onClick = { choose(value); expanded = false })
                 }
-                Text("Settings take effect on this device immediately and synchronize when connected.", color = TextSoft, fontSize = 12.sp)
             }
         }
     }
@@ -2991,11 +3041,11 @@ private fun GigModeScreen(
     val entryRows = remember(entries, setListId) { entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") } }
     val attachmentsBySong = remember(attachments) { attachments.map(::recordJson).groupBy { it.optString("song_id") } }
     val cacheById = remember(cachedAttachments) { cachedAttachments.associateBy(CachedAttachment::attachmentId) }
-    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, cacheById) {
+    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, cacheById, settings.attachmentPreferences) {
         sectionRows.flatMap { section ->
             entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
                 val song = songMap[entry.optString("song_id")]
-                val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
+                val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty(), settings.attachmentPreferences)
                 GigSong(section.optString("name", "Set"), entry, song, attachment, attachment?.optString("id")?.let(cacheById::get))
             }
         }
@@ -3183,7 +3233,7 @@ private fun GigModeScreen(
             }
             itemsIndexed(entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }) { entryIndex, entry ->
                 val song = songMap[entry.optString("song_id")]
-                val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
+                val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty(), settings.attachmentPreferences)
                 val cached = attachment?.optString("id")?.let(cacheById::get)
                 val gigSong = performanceSongs.firstOrNull { it.entry.optString("id") == entry.optString("id") }
                 Column {
@@ -3804,11 +3854,18 @@ private fun eventPacketReadiness(
     return PacketReadiness(selectedIds.count { cacheById[it]?.status == "ready" }, selectedIds.size)
 }
 
-private fun selectPerformanceAttachment(entry: JSONObject, attachments: List<JSONObject>): JSONObject? {
+private fun selectPerformanceAttachment(
+    entry: JSONObject,
+    attachments: List<JSONObject>,
+    preferences: List<String> = listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
+): JSONObject? {
     if (attachments.isEmpty()) return null
     val overrideId = entry.optString("performance_attachment_id")
     if (overrideId.isNotBlank()) attachments.firstOrNull { it.optString("id") == overrideId }?.let { return it }
     return attachments.firstOrNull { it.optInt("is_gig_default") == 1 }
+        ?: preferences.firstNotNullOfOrNull { preferred ->
+            attachments.filter { it.optString("attachment_type") == preferred }.minByOrNull { it.optInt("position", Int.MAX_VALUE) }
+        }
         ?: attachments.minByOrNull { it.optInt("position", Int.MAX_VALUE) }
 }
 
