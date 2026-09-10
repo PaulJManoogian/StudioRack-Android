@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -2929,9 +2930,12 @@ private fun GigModeScreen(
         }
     }
     val performanceSongs = rawPerformanceSongs.map { item ->
-        val groupId = item.entry.optString("performance_group_id")
-        val members = rawPerformanceSongs.filter { groupId.isNotBlank() && it.entry.optString("performance_group_id") == groupId }
+        val performanceGroup = item.entry.performanceGroupOrNull()
+        val members = if (performanceGroup == null) emptyList() else rawPerformanceSongs.filter {
+            it.entry.performanceGroupOrNull()?.id == performanceGroup.id
+        }
         item.copy(
+            performanceGroup = performanceGroup,
             performanceGroupPosition = members.indexOfFirst { it.entry.optString("id") == item.entry.optString("id") }.takeIf { it >= 0 }?.plus(1) ?: 0,
             performanceGroupCount = members.size,
         )
@@ -3103,19 +3107,23 @@ private fun GigModeScreen(
                     if (sectionSeconds > 0) Text("${formatDuration(sectionSeconds)} estimated music time", color = TextSoft, fontSize = 11.sp)
                 }
             }
-            items(entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }) { entry ->
+            itemsIndexed(entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }) { entryIndex, entry ->
                 val song = songMap[entry.optString("song_id")]
                 val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty())
                 val cached = attachment?.optString("id")?.let(cacheById::get)
                 val gigSong = performanceSongs.firstOrNull { it.entry.optString("id") == entry.optString("id") }
                 Column {
-                    if (gigSong?.performanceGroupPosition == 1) {
-                        Row(Modifier.fillMaxWidth().padding(start = 18.dp, top = 10.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${entry.optString("performance_group_type").replaceFirstChar(Char::uppercase)}:", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
-                            Text(entry.optString("performance_group_name"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    if (gigSong?.performanceGroupPosition == 1 && gigSong.performanceGroup != null) {
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val tablet = maxWidth >= 600.dp
+                            Row(Modifier.fillMaxWidth().padding(start = 18.dp, top = 14.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("${gigSong.performanceGroup.type.replaceFirstChar(Char::uppercase)}:", color = Amber, fontSize = if (tablet) 18.sp else 14.sp, fontWeight = FontWeight.Black)
+                                Text(gigSong.performanceGroup.name, color = Color.White, fontSize = if (tablet) 24.sp else 19.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
-                    SongRow(entry, song, attachment, cached, modifier = if (gigSong?.performanceGroupCount ?: 0 > 0) Modifier.padding(start = 22.dp) else Modifier) {
+                    val grouped = gigSong?.performanceGroup != null
+                    SongRow(entry, song, attachment, cached, displayPosition = entryIndex + 1, grouped = grouped, modifier = if (grouped) Modifier.padding(start = 32.dp) else Modifier) {
                         currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
                         currentEntryId = performanceSongs[currentSong].entry.optString("id")
                         detailOpen = true
@@ -3180,13 +3188,14 @@ private fun LiveUpdatingLight() {
 }
 
 @Composable
-private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, modifier: Modifier = Modifier, openAttachment: () -> Unit) {
+private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, displayPosition: Int, grouped: Boolean, modifier: Modifier = Modifier, openAttachment: () -> Unit) {
     val context = LocalContext.current
     val availableOffline = cached?.status == "ready" && cached.localPath != null
     val mediaLink = normalizedMediaLink(song?.optString("media_ref").orEmpty())
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xE8202635)),
         shape = RoundedCornerShape(6.dp),
+        border = if (grouped) BorderStroke(1.dp, Amber.copy(alpha = .42f)) else null,
         modifier = modifier.fillMaxWidth().clickable(onClick = openAttachment),
     ) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -3194,11 +3203,11 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
                 val compact = maxWidth < 650.dp
                 Column {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text((entry.optInt("position") + 1).toString(), color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
+                        Text(displayPosition.toString(), color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
                         Text(song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.optString("manual_title", "Untitled"), color = Amber, fontFamily = FontFamily.Serif, fontSize = 27.sp, modifier = Modifier.weight(1f))
-                        if (!compact) GigSongCues(song)
+                        if (!compact) GigSongCues(song, compact = false)
                     }
-                    if (compact) Row(Modifier.fillMaxWidth().padding(top = 7.dp), horizontalArrangement = Arrangement.End) { GigSongCues(song) }
+                    if (compact) GigSongCues(song, compact = true)
                 }
             }
             Text(song?.optString("artist").orEmpty(), color = TextSoft, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
@@ -3222,13 +3231,31 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun GigSongCues(song: JSONObject?) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        listOf(song?.optString("starts_by"), song?.optString("style")).filterNotNull().filter(String::isNotBlank).forEach {
-            Text(it, color = Color.White, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+private fun GigSongCues(song: JSONObject?, compact: Boolean) {
+    val cues = listOf(song?.optString("starts_by"), song?.optString("style")).filterNotNull().filter(String::isNotBlank)
+    val facts = listOf(displaySongKey(song?.optString("song_key").orEmpty()), song?.optString("tempo"), song?.optString("time_signature"), formatDuration(song?.optInt("duration_seconds") ?: 0)).filterNotNull().filter(String::isNotBlank)
+    if (compact) {
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.End) {
+            if (cues.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    cues.forEach { Text(it, color = Color.White, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
+                }
+            }
+            FlowRow(
+                Modifier.fillMaxWidth().padding(top = if (cues.isEmpty()) 0.dp else 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                facts.forEach { GigValueChip(it) }
+            }
         }
-        listOf(displaySongKey(song?.optString("song_key").orEmpty()), song?.optString("tempo"), song?.optString("time_signature"), formatDuration(song?.optInt("duration_seconds") ?: 0)).filterNotNull().filter(String::isNotBlank).forEach { GigValueChip(it) }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            cues.forEach { Text(it, color = Color.White, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
+            facts.forEach { GigValueChip(it) }
+        }
     }
 }
 
@@ -3301,7 +3328,7 @@ private fun PerformanceSongScreen(
             GigIconButton(Icons.Rounded.Close, "Return to set list", close)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(item.sectionName, color = Color.White, fontWeight = FontWeight.Bold)
-                if (item.performanceGroupCount > 0) Text("${item.entry.optString("performance_group_type").replaceFirstChar(Char::uppercase)}: ${item.entry.optString("performance_group_name")}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                item.performanceGroup?.let { group -> Text("${group.type.replaceFirstChar(Char::uppercase)}: ${group.name}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black) }
                 Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -3571,6 +3598,7 @@ private data class GigSong(
     val song: JSONObject?,
     val attachment: JSONObject?,
     val cache: CachedAttachment?,
+    val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
 )

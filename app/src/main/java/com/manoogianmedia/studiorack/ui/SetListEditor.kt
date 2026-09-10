@@ -510,15 +510,16 @@ private fun setListDraft(original: CachedRecord?, allSections: List<CachedRecord
         val section = JSONObject(sectionRecord.json)
         val entries = allEntries.filter { JSONObject(it.json).optString("section_id") == sectionRecord.entityId }.sortedBy { JSONObject(it.json).optInt("position") }.map { entryRecord ->
             val entry = JSONObject(entryRecord.json)
+            val performanceGroup = entry.performanceGroupOrNull()
             SetEntryDraft(
                 entryRecord.entityId,
                 entry.optString("song_id").takeIf(String::isNotBlank),
                 entry.optString("manual_title"),
                 entry.optString("entry_notes"),
                 entry.optString("performance_attachment_id").takeIf(String::isNotBlank),
-                entry.optString("performance_group_id").takeIf(String::isNotBlank),
-                entry.optString("performance_group_type"),
-                entry.optString("performance_group_name"),
+                performanceGroup?.id,
+                performanceGroup?.type.orEmpty(),
+                performanceGroup?.name.orEmpty(),
             )
         }
         SetSectionDraft(sectionRecord.entityId, section.optString("name"), section.optString("notes"), entries)
