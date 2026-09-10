@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,9 +36,11 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -88,9 +91,10 @@ internal fun SetListEditor(
     songs: List<CachedRecord>,
     attachments: List<CachedRecord>,
     model: StudioRackViewModel,
+    liveAutosave: Boolean = false,
     close: () -> Unit,
 ) {
-    var draft by remember(original?.entityId, allSections, allEntries) {
+    var draft by remember(original?.entityId, liveAutosave) {
         mutableStateOf(setListDraft(original, allSections, allEntries))
     }
     var pickingSection by remember { mutableStateOf<String?>(null) }
@@ -102,10 +106,39 @@ internal fun SetListEditor(
     var listBounds by remember { mutableStateOf(Rect.Zero) }
     val dragEdgeSize = with(LocalDensity.current) { 76.dp.toPx() }
     val maximumEdgeScroll = with(LocalDensity.current) { 22.dp.toPx() }
+    var autosavePrimed by remember(original?.entityId) { mutableStateOf(false) }
+    var autosaveState by remember(original?.entityId) { mutableStateOf("Saved") }
     val songRows = songs.associate { it.entityId to JSONObject(it.json) }
     val attachmentsBySong = attachments.groupBy { JSONObject(it.json).optString("song_id") }
     val estimatedSeconds = draft.sections.sumOf { section ->
         section.entries.sumOf { entry -> entry.songId?.let { songRows[it]?.optInt("duration_seconds") } ?: 0 }
+    }
+    fun validDraft(value: SetListDraft) = value.name.isNotBlank() && value.sections.all { section ->
+        section.entries.all { it.songId != null || it.manualTitle.isNotBlank() }
+    }
+    fun finishEditing() {
+        if (liveAutosave && validDraft(currentDraft)) {
+            autosaveState = "Saving"
+            model.saveSetList(currentDraft, { autosaveState = "Saved"; close() }, liveAutosave = true) { autosaveState = "Retry needed" }
+        } else close()
+    }
+
+    LaunchedEffect(draft, liveAutosave) {
+        if (!liveAutosave) return@LaunchedEffect
+        if (!autosavePrimed) {
+            autosavePrimed = true
+            return@LaunchedEffect
+        }
+        autosaveState = "Unsaved"
+        delay(360)
+        val snapshot = draft
+        if (!validDraft(snapshot)) return@LaunchedEffect
+        autosaveState = "Saving"
+        model.saveSetList(snapshot, {
+            if (currentDraft == snapshot) autosaveState = "Saved"
+        }, liveAutosave = true) {
+            if (currentDraft == snapshot) autosaveState = "Retry needed"
+        }
     }
 
     Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = EditorInk) {
@@ -116,10 +149,20 @@ internal fun SetListEditor(
         ) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = close, border = BorderStroke(1.dp, EditorAmber)) { Text("Back", color = EditorAmber) }
+                    if (liveAutosave) {
+                        Surface(
+                            color = EditorAmber,
+                            contentColor = EditorInk,
+                            shape = CircleShape,
+                            modifier = Modifier.size(48.dp).clickable(onClick = ::finishEditing),
+                        ) { Icon(Icons.Rounded.Edit, contentDescription = "Finish live editing", modifier = Modifier.padding(12.dp)) }
+                    } else {
+                        OutlinedButton(onClick = close, border = BorderStroke(1.dp, EditorAmber)) { Text("Back", color = EditorAmber) }
+                    }
                     Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                        Text("SET LIST BUILDER", color = EditorAmber, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                        Text(if (original == null) "Create Set List" else "Edit Set List", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                        Text(if (liveAutosave) "LEVIATHAN LIVE" else "SET LIST BUILDER", color = EditorAmber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        Text(if (liveAutosave) "Edit Live Set" else if (original == null) "Create Set List" else "Edit Set List", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                        if (liveAutosave) Text("$autosaveState - changes sync automatically", color = when (autosaveState) { "Saved" -> Color(0xFF58E99B); "Retry needed" -> Color(0xFFFF7A82); else -> EditorAmber }, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -347,13 +390,15 @@ internal fun SetListEditor(
                 ) { Text("Add Set", color = EditorAmber, fontWeight = FontWeight.Bold) }
             }
             item {
-                StudioButton(
-                    onClick = { model.saveSetList(draft, close) }, enabled = draft.name.isNotBlank() && draft.sections.all { section -> section.entries.all { it.songId != null || it.manualTitle.isNotBlank() } },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Save Set List", color = EditorInk, fontWeight = FontWeight.Black) }
-                if (original != null) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = { model.deleteSetList(draft.id, close) }, border = BorderStroke(1.dp, Color(0xFFFF7A82)), modifier = Modifier.fillMaxWidth()) { Text("Delete Set List", color = Color(0xFFFF7A82)) }
+                if (!liveAutosave) {
+                    StudioButton(
+                        onClick = { model.saveSetList(draft, close) }, enabled = validDraft(draft),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Save Set List", color = EditorInk, fontWeight = FontWeight.Black) }
+                    if (original != null) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(onClick = { model.deleteSetList(draft.id, close) }, border = BorderStroke(1.dp, Color(0xFFFF7A82)), modifier = Modifier.fillMaxWidth()) { Text("Delete Set List", color = Color(0xFFFF7A82)) }
+                    }
                 }
                 Spacer(Modifier.height(24.dp))
             }

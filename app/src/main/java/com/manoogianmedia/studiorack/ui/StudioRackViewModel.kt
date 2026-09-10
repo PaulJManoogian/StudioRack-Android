@@ -19,11 +19,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
 class StudioRackViewModel(private val repository: StudioRackRepository) : ViewModel() {
+    private val setListSaveMutex = Mutex()
     val events: StateFlow<List<CachedRecord>> = repository.records("studio_event")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val songs: StateFlow<List<CachedRecord>> = repository.records("song")
@@ -268,33 +271,38 @@ class StudioRackViewModel(private val repository: StudioRackRepository) : ViewMo
         "set_list", record.entityId, JSONObject(record.json).put("name", name.trim()), done,
     )
 
-    fun saveSetList(draft: SetListDraft, done: () -> Unit) {
+    fun saveSetList(draft: SetListDraft, done: () -> Unit, liveAutosave: Boolean = false, failed: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching {
-                repository.saveSetList(
-                    draft.id,
-                    JSONObject().put("id", draft.id).put("name", draft.name.trim())
-                        .put("description", draft.description.trim()).put("notes", draft.notes.trim())
-                        .put("print_charts", if (draft.attachmentPrintMode == "none") 0 else 1)
-                        .put("attachment_print_mode", draft.attachmentPrintMode).put("is_favorite", if (draft.favorite) 1 else 0),
-                    draft.sections.mapIndexed { index, section ->
-                        section.id to JSONObject().put("id", section.id).put("set_list_id", draft.id)
-                            .put("name", section.name.trim().ifBlank { "Set ${index + 1}" }).put("position", index).put("notes", section.notes.trim())
-                    },
-                    draft.sections.flatMap { section ->
-                        section.entries.mapIndexed { entryIndex, entry ->
-                            entry.id to JSONObject().put("id", entry.id).put("set_list_id", draft.id)
-                                .put("section_id", section.id).put("song_id", entry.songId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
-                                .put("position", entryIndex).put("manual_title", entry.manualTitle.trim())
-                                .put("entry_notes", entry.notes.trim())
-                                .put("performance_attachment_id", entry.performanceAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
-                        }
-                    },
-                )
+                setListSaveMutex.withLock {
+                    repository.saveSetList(
+                        draft.id,
+                        JSONObject().put("id", draft.id).put("name", draft.name.trim())
+                            .put("description", draft.description.trim()).put("notes", draft.notes.trim())
+                            .put("print_charts", if (draft.attachmentPrintMode == "none") 0 else 1)
+                            .put("attachment_print_mode", draft.attachmentPrintMode).put("is_favorite", if (draft.favorite) 1 else 0),
+                        draft.sections.mapIndexed { index, section ->
+                            section.id to JSONObject().put("id", section.id).put("set_list_id", draft.id)
+                                .put("name", section.name.trim().ifBlank { "Set ${index + 1}" }).put("position", index).put("notes", section.notes.trim())
+                        },
+                        draft.sections.flatMap { section ->
+                            section.entries.mapIndexed { entryIndex, entry ->
+                                entry.id to JSONObject().put("id", entry.id).put("set_list_id", draft.id)
+                                    .put("section_id", section.id).put("song_id", entry.songId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                                    .put("position", entryIndex).put("manual_title", entry.manualTitle.trim())
+                                    .put("entry_notes", entry.notes.trim())
+                                    .put("performance_attachment_id", entry.performanceAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                            }
+                        },
+                    )
+                }
             }.onSuccess {
-                _uiState.value = _uiState.value.copy(message = "Set list saved offline. Sync is queued.")
+                if (!liveAutosave) _uiState.value = _uiState.value.copy(message = "Set list saved offline. Sync is queued.")
                 done()
-            }.onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save set list.") }
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save set list.")
+                failed()
+            }
         }
     }
 
