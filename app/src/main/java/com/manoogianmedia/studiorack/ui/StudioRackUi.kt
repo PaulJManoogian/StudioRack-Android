@@ -1,6 +1,7 @@
 package com.manoogianmedia.studiorack.ui
 
 import android.Manifest
+import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
@@ -17,6 +18,7 @@ import android.os.ParcelFileDescriptor
 import android.os.Build
 import android.content.pm.PackageManager
 import android.provider.OpenableColumns
+import android.provider.ContactsContract
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -1291,6 +1293,22 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
             selectedImageMime = context.contentResolver.getType(uri).orEmpty()
         }
     }
+    val contactPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                readPickedContact(context, uri)?.let { imported ->
+                    name = imported.name.ifBlank { name }
+                    phone = imported.phone.ifBlank { phone }
+                    email = imported.email.ifBlank { email }
+                    imported.photoUri?.let { photo ->
+                        selectedImageUri = photo
+                        selectedImageName = "${imported.name.ifBlank { "contact" }}-photo.jpg"
+                        selectedImageMime = context.contentResolver.getType(photo).orEmpty().ifBlank { "image/jpeg" }
+                    }
+                }
+            }
+        }
+    }
     var loadIn by remember { mutableStateOf(original.optString("load_in_notes")) }
     var parking by remember { mutableStateOf(original.optString("parking_notes")) }
     var notes by remember { mutableStateOf(original.optString("notes")) }
@@ -1315,6 +1333,10 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
                 StudioField("Parking Notes", parking, singleLine = false) { parking = it }
             }
             "contact" -> {
+                StudioButton(
+                    onClick = { contactPicker.launch(Intent(Intent.ACTION_PICK, ContactsContract.Contacts.CONTENT_URI)) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Import From Device Contacts", color = Ink, fontWeight = FontWeight.Black) }
                 StudioField("Organization", organization) { organization = it }; StudioField("Title / Role", title) { title = it }
                 StudioField("Email", email) { email = it }; StudioField("Phone", phone) { phone = it }
                 if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current contact photo", Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop)
@@ -1341,6 +1363,44 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
         }, delete = target.id?.let { id -> { model.deleteDirectoryRecord(entityType, id, close) } })
     }
 }
+
+private data class ImportedDeviceContact(val name: String, val phone: String, val email: String, val photoUri: Uri?)
+
+private fun readPickedContact(context: Context, contactUri: Uri): ImportedDeviceContact? = runCatching {
+    var name = ""
+    var photoUri: Uri? = null
+    context.contentResolver.query(
+        contactUri,
+        arrayOf(ContactsContract.Contacts.DISPLAY_NAME, ContactsContract.Contacts.PHOTO_URI),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            name = cursor.getString(0).orEmpty()
+            photoUri = cursor.getString(1)?.takeIf(String::isNotBlank)?.let(Uri::parse)
+        }
+    }
+    var phone = ""
+    var email = ""
+    val entityUri = Uri.withAppendedPath(contactUri, ContactsContract.Contacts.Entity.CONTENT_DIRECTORY)
+    context.contentResolver.query(
+        entityUri,
+        arrayOf(ContactsContract.Contacts.Entity.DATA1, ContactsContract.Contacts.Entity.MIMETYPE, ContactsContract.Contacts.Entity.IS_PRIMARY),
+        null,
+        null,
+        "${ContactsContract.Contacts.Entity.IS_PRIMARY} DESC",
+    )?.use { cursor ->
+        while (cursor.moveToNext()) {
+            val value = cursor.getString(0).orEmpty()
+            when (cursor.getString(1)) {
+                ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE -> if (phone.isBlank()) phone = value
+                ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE -> if (email.isBlank()) email = value
+            }
+        }
+    }
+    ImportedDeviceContact(name, phone, email, photoUri)
+}.getOrNull()
 
 @Composable
 private fun DirectoryRelationshipsDialog(parentType: String, parent: CachedRecord, contacts: List<CachedRecord>, relationships: List<CachedRecord>, model: StudioRackViewModel, close: () -> Unit) {
