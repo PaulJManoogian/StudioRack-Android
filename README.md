@@ -49,7 +49,7 @@ https://www.manoogianmedia.com/leviathan/api/v1
 
 ## Alpha install
 
-Version 0.13.3 refines touch-first set-list editing with a lifted row that follows the user's thumb while neighboring songs make room. Holding the row near the top or bottom edge now continuously scrolls long set lists. Swipe either direction still removes a song with undo support. The same editor is used from the library and inside Leviathan Live, while Chart mode remains anchored to the active set-list entry as live changes arrive.
+Version 0.13.4 keeps the Leviathan Live connection label stable while a separate pulse light shows active synchronization. Touch-first set-list editing includes a lifted row that follows the user's thumb, edge scrolling for long lists, bidirectional swipe removal, and undo support. The same editor is used from the library and inside Leviathan Live, while Chart mode remains anchored to the active set-list entry as live changes arrive.
 
 Download the current Android alpha directly from the Studio Leviathan server:
 

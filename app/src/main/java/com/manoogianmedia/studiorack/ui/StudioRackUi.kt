@@ -52,6 +52,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -80,6 +81,11 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -2515,12 +2521,7 @@ private fun GigModeScreen(
                         val venueName = venues.firstOrNull { it.entityId == event.optString("venue_id") }?.let { recordJson(it).optString("name") }.orEmpty()
                         Text(listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - "), color = TextSoft, fontSize = 11.sp, maxLines = 1)
                         Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString("  "), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            when { liveUpdating -> "UPDATING"; liveConnected -> "LIVE"; else -> "OFFLINE READY" },
-                            color = when { liveUpdating -> Cyan; liveConnected -> Color(0xFF58E99B); else -> TextSoft },
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Black,
-                        )
+                        LiveConnectionStatus(liveConnected, liveUpdating)
                     }
                 }
             }
@@ -2558,6 +2559,48 @@ private fun GigModeScreen(
         }
         item { Spacer(Modifier.height(40.dp)) }
     }
+}
+
+@Composable
+private fun LiveConnectionStatus(connected: Boolean, updating: Boolean) {
+    val liveGreen = Color(0xFF58E99B)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (connected) .72f else .3f }.background(if (connected) liveGreen else TextSoft, CircleShape))
+            if (updating) LiveUpdatingLight()
+        }
+        Text(
+            if (connected) "LIVE" else "OFFLINE READY",
+            color = if (connected) liveGreen else TextSoft,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Black,
+        )
+    }
+}
+
+@Composable
+private fun LiveUpdatingLight() {
+    val pulse = rememberInfiniteTransition(label = "live refresh pulse")
+    val pulseAmount by pulse.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 520),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "live refresh light",
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                val activeScale = .82f + (pulseAmount * .32f)
+                scaleX = activeScale
+                scaleY = activeScale
+                alpha = .42f + (pulseAmount * .58f)
+            }
+            .background(Cyan, CircleShape),
+    )
 }
 
 @Composable
