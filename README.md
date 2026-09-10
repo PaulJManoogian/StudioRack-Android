@@ -49,7 +49,7 @@ https://www.manoogianmedia.com/leviathan/api/v1
 
 ## Alpha install
 
-Version 0.13.4 keeps the Leviathan Live connection label stable while a separate pulse light shows active synchronization. Touch-first set-list editing includes a lifted row that follows the user's thumb, edge scrolling for long lists, bidirectional swipe removal, and undo support. The same editor is used from the library and inside Leviathan Live, while Chart mode remains anchored to the active set-list entry as live changes arrive.
+Version 0.13.5 keeps the Leviathan Live connection label stable while a high-contrast, accessible activity lamp blinks on and off during synchronization. Touch-first set-list editing includes a lifted row that follows the user's thumb, edge scrolling for long lists, bidirectional swipe removal, and undo support. The same editor is used from the library and inside Leviathan Live, while Chart mode remains anchored to the active set-list entry as live changes arrive.
 
 Download the current Android alpha directly from the Studio Leviathan server:
 

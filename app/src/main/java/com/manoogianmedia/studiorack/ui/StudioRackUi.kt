@@ -81,11 +81,10 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -109,6 +108,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -2565,8 +2566,14 @@ private fun GigModeScreen(
 private fun LiveConnectionStatus(connected: Boolean, updating: Boolean) {
     val liveGreen = Color(0xFF58E99B)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (connected) .72f else .3f }.background(if (connected) liveGreen else TextSoft, CircleShape))
+        Box(
+            Modifier
+                .size(14.dp)
+                .semantics { stateDescription = if (updating) "Synchronizing" else "Idle" }
+                .background(Color(0xFF07090F), CircleShape)
+                .border(1.dp, if (connected) liveGreen else TextSoft, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
             if (updating) LiveUpdatingLight()
         }
         Text(
@@ -2581,25 +2588,29 @@ private fun LiveConnectionStatus(connected: Boolean, updating: Boolean) {
 @Composable
 private fun LiveUpdatingLight() {
     val pulse = rememberInfiniteTransition(label = "live refresh pulse")
-    val pulseAmount by pulse.animateFloat(
+    val lampOn by pulse.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 520),
-            repeatMode = RepeatMode.Reverse,
+            animation = keyframes {
+                durationMillis = 640
+                0f at 0
+                0f at 285
+                1f at 286
+                1f at 615
+                0f at 616
+            },
         ),
         label = "live refresh light",
     )
     Box(
         Modifier
-            .fillMaxSize()
+            .size(10.dp)
             .graphicsLayer {
-                val activeScale = .82f + (pulseAmount * .32f)
-                scaleX = activeScale
-                scaleY = activeScale
-                alpha = .42f + (pulseAmount * .58f)
+                alpha = lampOn
             }
-            .background(Cyan, CircleShape),
+            .background(Color(0xFFFFC24B), CircleShape)
+            .border(1.dp, Color.White, CircleShape),
     )
 }
 
