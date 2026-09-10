@@ -1167,6 +1167,15 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
                 "ensemble" -> ensembleContacts.count { recordJson(it).optString("ensemble_id") == record.entityId }
                 else -> 0
             }
+            val relationshipRows = when (entityType) {
+                "venue" -> venueContacts.filter { recordJson(it).optString("venue_id") == record.entityId }
+                "ensemble" -> ensembleContacts.filter { recordJson(it).optString("ensemble_id") == record.entityId }
+                else -> emptyList()
+            }
+            val linkedContacts = relationshipRows.mapNotNull { relation ->
+                val contactId = recordJson(relation).optString("contact_id")
+                contacts.firstOrNull { it.entityId == contactId }?.let { it to recordJson(relation).optString("relationship_role") }
+            }
             ExpandableRecordCard(
                 title = title,
                 subtitle = detail,
@@ -1184,6 +1193,18 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
                         DetailLine("Phone", data.optString("phone")); DetailLine("Email", data.optString("email")); DetailLine("Private notes", data.optString("notes"))
                     }
                     else -> { DetailLine("Type", data.optString("ensemble_type").humanize()); DetailLine("Website", data.optString("website")); DetailLine("Private notes", data.optString("notes")) }
+                }
+                if (linkedContacts.isNotEmpty()) {
+                    if (entityType == "ensemble") {
+                        val phones = linkedContacts.map { recordJson(it.first).optString("phone") }.filter(String::isNotBlank).distinct()
+                        val emails = linkedContacts.map { recordJson(it.first).optString("email") }.filter(String::isNotBlank).distinct()
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (phones.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "smsto", phones) }) { Text("Text Group", color = Ink, fontWeight = FontWeight.Bold) }
+                            if (emails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", emails) }, kind = StudioButtonKind.Secondary) { Text("Email Group", color = Color.White, fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                    Text(if (entityType == "ensemble") "MEMBERS" else "VENUE CONTACTS", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    linkedContacts.forEach { (contact, role) -> DirectoryContactRow(recordJson(contact), role, context) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     data.optString("phone").takeIf(String::isNotBlank)?.let { phone ->
@@ -1207,6 +1228,39 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
             if (parentType == "venue") venueContacts else ensembleContacts,
             model,
         ) { managing = null }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun DirectoryContactRow(contact: JSONObject, relationshipRole: String, context: Context) {
+    var expanded by remember(contact.optString("id"), contact.optString("display_name")) { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        contact.optString("image_url").takeIf(String::isNotBlank)?.let { imageUrl ->
+            CachedNetworkImage(imageUrl, contact.optString("display_name"), Modifier.size(42.dp).clip(CircleShape), ContentScale.Crop)
+            Spacer(Modifier.width(9.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(contact.optString("display_name", "Contact"), color = Color.White, fontWeight = FontWeight.Bold)
+            val role = relationshipRole.ifBlank { contact.optString("job_title") }
+            if (role.isNotBlank()) Text(role, color = TextSoft, fontSize = 12.sp)
+        }
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        contact.optString("phone").takeIf(String::isNotBlank)?.let { phone ->
+            StudioButton(onClick = { openContactLink(context, "tel", phone) }) { Text("Call", color = Ink, fontWeight = FontWeight.Bold) }
+            StudioButton(onClick = { openContactLink(context, "smsto", phone) }, kind = StudioButtonKind.Secondary) { Text("Text", color = Color.White) }
+        }
+        contact.optString("email").takeIf(String::isNotBlank)?.let { email ->
+            StudioButton(onClick = { openContactLink(context, "mailto", email) }, kind = StudioButtonKind.Secondary) { Text("Email", color = Color.White) }
+        }
+        StudioButton(onClick = { expanded = !expanded }, kind = StudioButtonKind.Secondary) { Text(if (expanded) "Close Profile" else "Profile", color = Color.White) }
+    }
+    if (expanded) {
+        DetailLine("Organization", contact.optString("organization_name"))
+        DetailLine("Phone", contact.optString("phone"))
+        DetailLine("Email", contact.optString("email"))
+        DetailLine("Notes", contact.optString("notes"))
     }
 }
 
@@ -3119,6 +3173,23 @@ private fun openContactLink(context: Context, scheme: String, value: String) {
         Toast.makeText(context, "No application is available for this action.", Toast.LENGTH_LONG).show()
     } catch (_: SecurityException) {
         Toast.makeText(context, "This action is not available on this device.", Toast.LENGTH_LONG).show()
+    }
+}
+
+private fun openGroupContactLink(context: Context, scheme: String, values: List<String>) {
+    val recipients = values.map(String::trim).filter(String::isNotBlank).distinct()
+    if (recipients.isEmpty()) return
+    val uri = if (scheme == "mailto") {
+        Uri.parse("mailto:?bcc=${Uri.encode(recipients.joinToString(","))}")
+    } else {
+        Uri.parse("smsto:${recipients.joinToString(";") { Uri.encode(it) }}")
+    }
+    try {
+        context.startActivity(Intent(Intent.ACTION_SENDTO, uri))
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "No application is available for this group message.", Toast.LENGTH_LONG).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, "Group messaging is not available on this device.", Toast.LENGTH_LONG).show()
     }
 }
 
