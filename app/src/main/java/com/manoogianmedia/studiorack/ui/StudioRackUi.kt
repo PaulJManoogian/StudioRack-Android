@@ -3368,9 +3368,18 @@ private fun PerformanceSongScreen(
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
             GigTimeStrip(settings, elapsedSeconds, setRemainingSeconds, item.sectionName)
         }
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"), color = Color.White, fontFamily = FontFamily.Serif, fontSize = 34.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            Text(item.song?.optString("artist").orEmpty(), color = TextSoft, fontFamily = FontFamily.Serif, fontSize = 21.sp)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val tablet = maxWidth >= 600.dp
+            Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
+                    color = Color.White,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = if (tablet) 56.sp else 42.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Text(item.song?.optString("artist").orEmpty(), color = TextSoft, fontFamily = FontFamily.Serif, fontSize = if (tablet) 28.sp else 23.sp)
+            }
         }
         Box(
             Modifier.fillMaxWidth().height(5.dp).padding(top = 2.dp),
@@ -3381,15 +3390,24 @@ private fun PerformanceSongScreen(
                 color = if (metronomeState.downbeat) Cyan else Amber,
             ) {}
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GigDetail("Starts", item.song?.optString("starts_by").orEmpty())
-            GigDetail("Key", displaySongKey(item.song?.optString("song_key").orEmpty()))
-            GigDetail("Tempo", item.song?.optString("tempo").orEmpty())
-            GigDetail("Time", item.song?.optString("time_signature").orEmpty())
-            GigDetail("Length", formatDuration(item.song?.optInt("duration_seconds") ?: 0))
-            GigDetail("Style", item.song?.optString("style").orEmpty())
-            val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
-            GigDetail("Patch", patch)
+        val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val tablet = maxWidth >= 600.dp
+            val primarySize = if (tablet) 34.sp else 25.sp
+            val secondarySize = if (tablet) 27.sp else 20.sp
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth()) {
+                    GigDetail("Starts", item.song?.optString("starts_by").orEmpty(), Modifier.weight(1f), primarySize)
+                    GigDetail("Key", displaySongKey(item.song?.optString("song_key").orEmpty()), Modifier.weight(1f), primarySize)
+                    GigDetail("Tempo", item.song?.optString("tempo").orEmpty(), Modifier.weight(1f), primarySize)
+                    GigDetail("Time Signature", item.song?.optString("time_signature").orEmpty(), Modifier.weight(1f), primarySize)
+                }
+                Row(Modifier.fillMaxWidth()) {
+                    GigDetail("Length", formatDuration(item.song?.optInt("duration_seconds") ?: 0), Modifier.weight(1f), secondarySize)
+                    GigDetail("Style", item.song?.optString("style").orEmpty(), Modifier.weight(1f), secondarySize)
+                    GigDetail("Patch", patch, Modifier.weight(1f), secondarySize)
+                }
+            }
         }
         val entryNote = item.entry.optString("entry_notes")
         val songNote = item.song?.optString("notes").orEmpty()
@@ -3482,10 +3500,10 @@ private fun GigPill(label: String, active: Boolean = false, onClick: (() -> Unit
 }
 
 @Composable
-private fun GigDetail(label: String, value: String) {
-    Column(Modifier.width(118.dp).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun GigDetail(label: String, value: String, modifier: Modifier = Modifier, valueSize: androidx.compose.ui.unit.TextUnit = 20.sp) {
+    Column(modifier.padding(horizontal = 3.dp, vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label.uppercase(), color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
-        Text(value.ifBlank { "Not set" }, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 20.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(value.ifBlank { "Not set" }, color = Color.White, fontFamily = FontFamily.Serif, fontSize = valueSize, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -3575,13 +3593,28 @@ internal fun mediaIntent(link: String): Intent? = normalizedMediaLink(link)?.let
 
 @Composable
 private fun SongDetailFallback(item: GigSong) {
-    Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(item.song?.optString("artist").orEmpty(), color = Cyan, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text(listOf("Starts: ${item.song?.optString("starts_by").orEmpty()}", "Key: ${displaySongKey(item.song?.optString("song_key").orEmpty())}", "Tempo: ${item.song?.optString("tempo").orEmpty()}", "Time: ${item.song?.optString("time_signature").orEmpty()}", "Style: ${item.song?.optString("style").orEmpty()}").joinToString("  |  "), color = Color.White)
-        val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
-        if (patch.isNotBlank()) Text("Patch: $patch", color = Amber)
-        item.song?.optString("notes")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft) }
-        if (item.attachment != null && item.cache?.status != "ready") Text("${attachmentLabel(item.attachment)} is not available offline.", color = TextSoft)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val tablet = maxWidth >= 600.dp
+        Column(
+            Modifier.fillMaxWidth().heightIn(min = if (tablet) 360.dp else 250.dp).padding(horizontal = 20.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                item.song?.optString("title")?.takeIf(String::isNotBlank) ?: item.entry.optString("manual_title", "Untitled"),
+                color = Color.White,
+                fontFamily = FontFamily.Serif,
+                fontSize = if (tablet) 56.sp else 42.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Text(
+                if (item.attachment != null && item.cache?.status != "ready") "${attachmentLabel(item.attachment)} is not available offline." else "No performance attachment is available for this song.",
+                color = TextSoft,
+                fontSize = if (tablet) 18.sp else 14.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
     }
 }
 
