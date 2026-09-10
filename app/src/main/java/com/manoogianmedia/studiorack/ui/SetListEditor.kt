@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.rememberScrollState
+import androidx.activity.compose.BackHandler
 import com.manoogianmedia.studiorack.data.CachedRecord
 import org.json.JSONObject
 import java.util.UUID
@@ -117,11 +118,14 @@ internal fun SetListEditor(
         section.entries.all { it.songId != null || it.manualTitle.isNotBlank() }
     }
     fun finishEditing() {
-        if (liveAutosave && validDraft(currentDraft)) {
-            autosaveState = "Saving"
-            model.saveSetList(currentDraft, { autosaveState = "Saved"; close() }, liveAutosave = true) { autosaveState = "Retry needed" }
-        } else close()
+        val finalDraft = currentDraft
+        close()
+        if (liveAutosave && validDraft(finalDraft)) {
+            model.saveSetList(finalDraft, {}, liveAutosave = true)
+        }
     }
+
+    BackHandler(enabled = liveAutosave, onBack = ::finishEditing)
 
     LaunchedEffect(draft, liveAutosave) {
         if (!liveAutosave) return@LaunchedEffect
@@ -151,10 +155,11 @@ internal fun SetListEditor(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     if (liveAutosave) {
                         Surface(
+                            onClick = ::finishEditing,
                             color = EditorAmber,
                             contentColor = EditorInk,
                             shape = CircleShape,
-                            modifier = Modifier.size(48.dp).clickable(onClick = ::finishEditing),
+                            modifier = Modifier.size(48.dp),
                         ) { Icon(Icons.Rounded.Edit, contentDescription = "Finish live editing", modifier = Modifier.padding(12.dp)) }
                     } else {
                         OutlinedButton(onClick = close, border = BorderStroke(1.dp, EditorAmber)) { Text("Back", color = EditorAmber) }

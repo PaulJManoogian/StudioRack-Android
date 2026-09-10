@@ -2581,7 +2581,7 @@ private fun GigModeScreen(
 
     if (editingLiveSet && setListRecord != null) {
         Dialog(
-            onDismissRequest = {},
+            onDismissRequest = { editingLiveSet = false },
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
             SetListEditor(setListRecord, sections, entries, songs, attachments, model, liveAutosave = true) { editingLiveSet = false }
