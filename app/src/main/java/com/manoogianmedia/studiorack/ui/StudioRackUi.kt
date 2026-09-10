@@ -1260,6 +1260,11 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
                         )
                     }
                 }
+                if (entityType != "contact") {
+                    Spacer(Modifier.height(6.dp))
+                    Surface(Modifier.fillMaxWidth().height(1.dp), color = Color(0xFF4A5265)) {}
+                    Text(if (entityType == "ensemble") "GROUP CONTROLS" else "VENUE CONTROLS", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (entityType == "contact" && recordMethods.isNotEmpty()) recordMethods.forEach { method ->
                         val methodData = recordJson(method); val value = methodData.optString("value"); val methodLabel = methodData.optString("label", "Other")
@@ -1299,46 +1304,57 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
 @OptIn(ExperimentalLayoutApi::class)
 private fun DirectoryContactRow(contact: JSONObject, relationshipRole: String, context: Context, methods: List<JSONObject> = emptyList()) {
     var expanded by remember(contact.optString("id"), contact.optString("display_name")) { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-        contact.optString("image_url").takeIf(String::isNotBlank)?.let { imageUrl ->
-            CachedNetworkImage(imageUrl, contact.optString("display_name"), Modifier.size(42.dp).clip(CircleShape), ContentScale.Crop)
-            Spacer(Modifier.width(9.dp))
-        }
-        Column(Modifier.weight(1f)) {
-            Text(contact.optString("display_name", "Contact"), color = Color.White, fontWeight = FontWeight.Bold)
-            val role = relationshipRole.ifBlank { contact.optString("job_title") }
-            if (role.isNotBlank()) Text(role, color = TextSoft, fontSize = 12.sp)
-        }
-    }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        contact.optString("phone").takeIf(String::isNotBlank)?.let { phone ->
-            StudioButton(onClick = { openContactLink(context, "tel", phone) }) { Text("Call", color = Ink, fontWeight = FontWeight.Bold) }
-            StudioButton(onClick = { openContactLink(context, "smsto", phone) }, kind = StudioButtonKind.Secondary) { Text("Text", color = Color.White) }
-        }
-        contact.optString("email").takeIf(String::isNotBlank)?.let { email ->
-            StudioButton(onClick = { openContactLink(context, "mailto", email) }, kind = StudioButtonKind.Secondary) { Text("Email", color = Color.White) }
-        }
-        StudioButton(onClick = { expanded = !expanded }, kind = StudioButtonKind.Secondary) { Text(if (expanded) "Close Profile" else "Profile", color = Color.White) }
-    }
-    if (expanded) {
-        DetailLine("Organization", contact.optString("organization_name"))
-        if (methods.isEmpty()) {
-            DetailLine("Phone", contact.optString("phone"))
-            DetailLine("Email", contact.optString("email"))
-        } else methods.sortedWith(compareByDescending<JSONObject> { it.optInt("is_primary") }.thenBy { it.optInt("position") }).forEach { method ->
-            DetailLine(method.optString("label", method.optString("method_type").humanize()), method.optString("value"))
-        }
-        if (methods.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            methods.forEach { method ->
-                val value = method.optString("value"); val label = method.optString("label", "Other")
-                if (method.optString("method_type") == "email") StudioButton(onClick = { openContactLink(context, "mailto", value) }, kind = StudioButtonKind.Secondary) { Text("Email $label", color = Color.White) }
-                else {
-                    StudioButton(onClick = { openContactLink(context, "tel", value) }, kind = StudioButtonKind.Secondary) { Text("Call $label", color = Color.White) }
-                    StudioButton(onClick = { openContactLink(context, "smsto", value) }, kind = StudioButtonKind.Secondary) { Text("Text $label", color = Color.White) }
+    val displayName = contact.optString("display_name", "Contact")
+    Surface(
+        modifier = Modifier.fillMaxWidth(), color = Color(0xFF171C29),
+        shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFF343B4D)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val photoModifier = Modifier.size(48.dp).clip(CircleShape).background(Color(0xFF2B3242))
+                if (contact.optString("image_url").isNotBlank()) {
+                    CachedNetworkImage(contact.optString("image_url"), displayName, photoModifier, ContentScale.Crop, fallbackText = displayName.take(1).uppercase())
+                } else Box(photoModifier, contentAlignment = Alignment.Center) {
+                    Text(displayName.take(1).uppercase(), color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                }
+                Spacer(Modifier.width(11.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(displayName, color = Color.White, fontWeight = FontWeight.Bold)
+                    val role = relationshipRole.ifBlank { contact.optString("job_title") }
+                    if (role.isNotBlank()) Text(role, color = TextSoft, fontSize = 12.sp)
                 }
             }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                contact.optString("phone").takeIf(String::isNotBlank)?.let { phone ->
+                    StudioButton(onClick = { openContactLink(context, "tel", phone) }) { Text("Call", color = Ink, fontWeight = FontWeight.Bold) }
+                    StudioButton(onClick = { openContactLink(context, "smsto", phone) }, kind = StudioButtonKind.Secondary) { Text("Text", color = Color.White) }
+                }
+                contact.optString("email").takeIf(String::isNotBlank)?.let { email ->
+                    StudioButton(onClick = { openContactLink(context, "mailto", email) }, kind = StudioButtonKind.Secondary) { Text("Email", color = Color.White) }
+                }
+                StudioButton(onClick = { expanded = !expanded }, kind = StudioButtonKind.Secondary) { Text(if (expanded) "Close Profile" else "Profile", color = Color.White) }
+            }
+            if (expanded) {
+                DetailLine("Organization", contact.optString("organization_name"))
+                if (methods.isEmpty()) {
+                    DetailLine("Phone", contact.optString("phone"))
+                    DetailLine("Email", contact.optString("email"))
+                } else methods.sortedWith(compareByDescending<JSONObject> { it.optInt("is_primary") }.thenBy { it.optInt("position") }).forEach { method ->
+                    DetailLine(method.optString("label", method.optString("method_type").humanize()), method.optString("value"))
+                }
+                if (methods.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    methods.forEach { method ->
+                        val value = method.optString("value"); val label = method.optString("label", "Other")
+                        if (method.optString("method_type") == "email") StudioButton(onClick = { openContactLink(context, "mailto", value) }, kind = StudioButtonKind.Secondary) { Text("Email $label", color = Color.White) }
+                        else {
+                            StudioButton(onClick = { openContactLink(context, "tel", value) }, kind = StudioButtonKind.Secondary) { Text("Call $label", color = Color.White) }
+                            StudioButton(onClick = { openContactLink(context, "smsto", value) }, kind = StudioButtonKind.Secondary) { Text("Text $label", color = Color.White) }
+                        }
+                    }
+                }
+                DetailLine("Notes", contact.optString("notes"))
+            }
         }
-        DetailLine("Notes", contact.optString("notes"))
     }
 }
 
@@ -2312,6 +2328,7 @@ private fun CachedNetworkImage(
     scale: Float = 1f,
     positionX: Int = 50,
     positionY: Int = 50,
+    fallbackText: String = "SR",
 ) {
     val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(initialValue = null, imageUrl) {
@@ -2331,7 +2348,7 @@ private fun CachedNetworkImage(
                 ),
             )
         } else {
-            Text("SR", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+            Text(fallbackText, color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
         }
     }
 }
