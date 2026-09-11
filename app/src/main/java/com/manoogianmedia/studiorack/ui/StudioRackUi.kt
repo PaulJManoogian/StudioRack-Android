@@ -157,6 +157,7 @@ import java.text.DateFormat
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
 import java.time.temporal.ChronoUnit
 import java.util.Date
 
@@ -3369,9 +3370,17 @@ private fun GigModeScreen(
             .sumOf { it.song?.optInt("duration_seconds") ?: 0 }
     }
 
-    LaunchedEffect(currentSong, performanceSongs) {
+    val performanceAttachmentKeys = remember(performanceSongs) {
+        performanceSongs.map { item ->
+            item.cache?.let { "${it.attachmentId}:${it.sha256}:${it.revision}" }.orEmpty()
+        }
+    }
+    LaunchedEffect(currentSong, detailOpen, performanceAttachmentKeys) {
+        // Give the selected chart first access to rendering resources. Neighbor
+        // preloads are useful, but they must never delay a performer's tap.
+        if (detailOpen) delay(PERFORMANCE_NEIGHBOR_PRELOAD_DELAY_MS)
         withContext(Dispatchers.IO) {
-            listOf(currentSong, currentSong + 1, currentSong - 1)
+            (if (detailOpen) listOf(currentSong + 1, currentSong - 1) else listOf(currentSong, currentSong + 1))
                 .distinct()
                 .mapNotNull(performanceSongs::getOrNull)
                 .forEach(::preloadPerformanceAttachment)
@@ -4106,10 +4115,10 @@ private data class GigSong(
 private data class PacketReadiness(val ready: Int, val total: Int)
 private data class AttachmentRender(val bitmap: Bitmap? = null, val complete: Boolean = false, val pageCount: Int = 1)
 
-private val performanceAttachmentCache = object : LruCache<String, AttachmentRender>(64 * 1024 * 1024) {
+private val performanceAttachmentCache = object : LruCache<String, AttachmentRender>(performanceAttachmentCacheBytes(Runtime.getRuntime().maxMemory())) {
     override fun sizeOf(key: String, value: AttachmentRender): Int = value.bitmap?.allocationByteCount ?: 1
 }
-private val performanceAttachmentRenderLock = Any()
+private val performanceAttachmentRenderLocks = ConcurrentHashMap<String, Any>()
 
 private fun performanceAttachmentCacheKey(path: String, version: String, page: Int) = "$path#$version#$page"
 
@@ -4128,7 +4137,8 @@ private fun loadPerformanceAttachment(path: String, version: String, isPdf: Bool
     if (path.isBlank()) return AttachmentRender(complete = true)
     val key = performanceAttachmentCacheKey(path, version, page)
     performanceAttachmentCache.get(key)?.let { return it }
-    return synchronized(performanceAttachmentRenderLock) {
+    val renderLock = performanceAttachmentRenderLocks.getOrPut(key) { Any() }
+    return synchronized(renderLock) {
         performanceAttachmentCache.get(key) ?: run {
             val rendered = if (isPdf) renderPdfAttachment(path, page) else AttachmentRender(decodeAttachmentImage(path), complete = true)
             if (rendered.bitmap != null) performanceAttachmentCache.put(key, rendered)
@@ -4137,12 +4147,16 @@ private fun loadPerformanceAttachment(path: String, version: String, isPdf: Bool
     }
 }
 
+internal fun clearPerformanceAttachmentMemoryCache() {
+    performanceAttachmentCache.evictAll()
+}
+
 private fun renderPdfAttachment(path: String, pageIndex: Int): AttachmentRender = runCatching {
     ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
         PdfRenderer(descriptor).use { renderer ->
             val count = renderer.pageCount.coerceAtLeast(1)
             renderer.openPage(pageIndex.coerceIn(0, count - 1)).use { page ->
-                val width = 1800
+                val width = performanceAttachmentRenderWidth(Runtime.getRuntime().maxMemory())
                 val height = (width.toFloat() / page.width * page.height).toInt().coerceAtLeast(1)
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 bitmap.eraseColor(android.graphics.Color.WHITE)
@@ -4207,7 +4221,7 @@ private fun renderPdfPage(path: String, pageIndex: Int): Bitmap? = runCatching {
     ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
         PdfRenderer(descriptor).use { renderer ->
             renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1)).use { page ->
-                val width = 1800
+                val width = performanceAttachmentRenderWidth(Runtime.getRuntime().maxMemory())
                 val height = (width.toFloat() / page.width * page.height).toInt().coerceAtLeast(1)
                 Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
                     bitmap.eraseColor(android.graphics.Color.WHITE)
@@ -4221,7 +4235,26 @@ private fun renderPdfPage(path: String, pageIndex: Int): Bitmap? = runCatching {
 private fun decodeAttachmentImage(path: String): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(path, bounds)
-    var sample = 1
-    while (bounds.outWidth / sample > 2400 || bounds.outHeight / sample > 3200) sample *= 2
+    val width = performanceAttachmentRenderWidth(Runtime.getRuntime().maxMemory())
+    val sample = performanceAttachmentSampleSize(bounds.outWidth, bounds.outHeight, width, width * 2)
     return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
 }
+
+internal fun performanceAttachmentRenderWidth(maxMemoryBytes: Long): Int = when {
+    maxMemoryBytes <= 256L * 1024 * 1024 -> 1080
+    maxMemoryBytes <= 384L * 1024 * 1024 -> 1280
+    else -> 1440
+}
+
+internal fun performanceAttachmentCacheBytes(maxMemoryBytes: Long): Int =
+    (maxMemoryBytes / 10L).coerceIn(12L * 1024 * 1024, 32L * 1024 * 1024).toInt()
+
+internal fun performanceAttachmentSampleSize(sourceWidth: Int, sourceHeight: Int, targetWidth: Int, targetHeight: Int): Int {
+    if (sourceWidth <= 0 || sourceHeight <= 0) return 1
+    var sample = 1
+    while (sourceWidth / (sample * 2) >= targetWidth && sourceHeight / (sample * 2) >= targetHeight) sample *= 2
+    while (sourceWidth / sample > targetWidth * 2 || sourceHeight / sample > targetHeight * 2) sample *= 2
+    return sample.coerceAtLeast(1)
+}
+
+private const val PERFORMANCE_NEIGHBOR_PRELOAD_DELAY_MS = 350L
