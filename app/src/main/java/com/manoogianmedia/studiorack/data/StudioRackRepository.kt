@@ -160,9 +160,8 @@ class StudioRackRepository(
         val existingAttachmentCount = dao.records("song_attachment").count { JSONObject(it.json).optString("song_id") == songId }
         newAttachments.forEachIndexed { index, input ->
             val attachmentId = "att_${UUID.randomUUID().toString().replace("-", "")}"
-            val extension = attachmentExtension(input.displayName)
-            val destination = File(attachmentDirectory(), attachmentId + extension)
-            withContext(Dispatchers.IO) {
+            val destination = if (input.sourceType == "text") null else File(attachmentDirectory(), attachmentId + attachmentExtension(input.displayName))
+            if (destination != null) withContext(Dispatchers.IO) {
                 context.contentResolver.openInputStream(Uri.parse(input.uri))?.use { source ->
                     destination.outputStream().use(source::copyTo)
                 } ?: error("The selected attachment could not be opened.")
@@ -173,7 +172,10 @@ class StudioRackRepository(
                 .put("attachment_type", input.attachmentType)
                 .put("display_name", input.displayName.substringBeforeLast('.').ifBlank { input.attachmentType })
                 .put("instrument_role", "")
-                .put("file_ref", "pending-upload://$attachmentId")
+                .put("file_ref", if (input.sourceType == "text") "text://chordpro" else "pending-upload://$attachmentId")
+                .put("source_type", input.sourceType)
+                .put("content_format", if (input.sourceType == "text") "chordpro" else "")
+                .put("content_text", input.contentText)
                 .put("is_gig_default", if (existingAttachmentCount == 0 && index == 0) 1 else 0)
                 .put("include_in_print", 1)
                 .put("position", existingAttachmentCount + index + 1)
@@ -186,15 +188,23 @@ class StudioRackRepository(
                 fileRef = attachment.getString("file_ref"),
                 displayName = attachment.getString("display_name"),
                 attachmentType = input.attachmentType,
-                localPath = destination.absolutePath,
-                mimeType = input.mimeType.ifBlank { attachmentMime(input.displayName).orEmpty() },
-                sha256 = sha256(destination),
-                byteCount = destination.length(),
+                localPath = destination?.absolutePath,
+                mimeType = if (input.sourceType == "text") "text/plain" else input.mimeType.ifBlank { attachmentMime(input.displayName).orEmpty() },
+                sha256 = destination?.let(::sha256),
+                byteCount = destination?.length(),
                 status = "ready",
                 cachedAt = System.currentTimeMillis(),
             )
         }
         dao.queueSongBundle(records, mutations, cached)
+        syncNow()
+    }
+
+    suspend fun saveSongAttachment(attachmentId: String, data: JSONObject) {
+        val current = dao.record("song_attachment", attachmentId) ?: error("Performance material was not found.")
+        dao.putRecords(listOf(current.copy(json = data.put("id", attachmentId).toString())))
+        dao.removePendingForEntity("song_attachment", attachmentId)
+        dao.putPending(mutation("song_attachment", attachmentId, "upsert", current.revision, data.toString(), System.currentTimeMillis()))
         syncNow()
     }
 
@@ -572,6 +582,11 @@ class StudioRackRepository(
             val data = JSONObject(record.json)
             val fileRef = data.optString("file_ref")
             val current = existing[record.entityId]
+            if (data.optString("source_type") == "text") {
+                current?.localPath?.let { runCatching { File(it).delete() } }
+                dao.putCachedAttachment(record.toManifest(data, status = "ready", mimeType = "text/plain", cachedAt = System.currentTimeMillis()))
+                return@forEach
+            }
             if (fileRef.isBlank()) {
                 current?.localPath?.let { runCatching { File(it).delete() } }
                 dao.putCachedAttachment(record.toManifest(data, status = "unavailable"))
@@ -722,6 +737,8 @@ data class SongAttachmentInput(
     val displayName: String,
     val attachmentType: String,
     val mimeType: String,
+    val sourceType: String = "file",
+    val contentText: String = "",
 )
 
 data class RepositorySyncHealth(

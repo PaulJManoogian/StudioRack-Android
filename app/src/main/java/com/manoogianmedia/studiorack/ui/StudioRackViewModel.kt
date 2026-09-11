@@ -282,6 +282,16 @@ class StudioRackViewModel(
         }
     }
 
+    fun saveSongAttachment(id: String, data: JSONObject) {
+        viewModelScope.launch {
+            runCatching { repository.saveSongAttachment(id, data) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Performance material saved. Synchronization is queued.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save performance material.", syncError = true) }
+        }
+    }
+
+    fun deleteSongAttachment(id: String) = deleteRecord("song_attachment", id) {}
+
     fun deleteSong(id: String, done: () -> Unit) = deleteRecord("song", id, done)
 
     fun saveEvent(id: String?, data: JSONObject, ensembleIds: Set<String>, contactIds: Set<String>, done: () -> Unit) {

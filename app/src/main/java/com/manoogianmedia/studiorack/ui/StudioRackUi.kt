@@ -120,6 +120,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -2597,6 +2601,9 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     var favorite by remember { mutableStateOf(original.optInt("is_favorite") == 1) }
     var attachmentType by remember { mutableStateOf("Chart") }
     var newAttachments by remember(target.id) { mutableStateOf(emptyList<SongAttachmentInput>()) }
+    var writingLyrics by remember(target.id) { mutableStateOf(false) }
+    var lyricsName by remember(target.id) { mutableStateOf("Lyrics") }
+    var lyricsDraft by remember(target.id) { mutableStateOf(TextFieldValue("")) }
     var preview by remember { mutableStateOf<CachedAttachment?>(null) }
     val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -2651,14 +2658,46 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
         ) { Text("Add $attachmentType File", color = Color.White, fontWeight = FontWeight.Bold) }
+        StudioButton(
+            onClick = { writingLyrics = !writingLyrics },
+            modifier = Modifier.fillMaxWidth(),
+            kind = StudioButtonKind.Secondary,
+        ) { Text(if (writingLyrics) "Close Lyrics Editor" else "Write Lyrics / ChordPro", color = Color.White, fontWeight = FontWeight.Bold) }
+        if (writingLyrics) {
+            StudioField("Material name", lyricsName, dictation = false) { lyricsName = it }
+            ChordProEditor(lyricsDraft) { lyricsDraft = it }
+            StudioButton(
+                onClick = {
+                    if (lyricsDraft.text.isNotBlank()) {
+                        newAttachments = newAttachments + SongAttachmentInput(
+                            uri = "",
+                            displayName = lyricsName.ifBlank { "Lyrics" },
+                            attachmentType = "lyrics",
+                            mimeType = "text/plain",
+                            sourceType = "text",
+                            contentText = lyricsDraft.text,
+                        )
+                        lyricsDraft = TextFieldValue("")
+                        lyricsName = "Lyrics"
+                        writingLyrics = false
+                    }
+                },
+                enabled = lyricsDraft.text.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Add Written Lyrics", color = Ink, fontWeight = FontWeight.Black) }
+        }
         existingAttachments.forEach { record ->
             val attachment = recordJson(record)
             val cached = cacheById[record.entityId]
-            AttachmentEditorRow(
-                label = attachmentLabel(attachment),
-                detail = if (cached?.status == "ready") "Available offline" else "Will download when connected",
-                view = cached?.takeIf { it.status == "ready" && !it.localPath.isNullOrBlank() }?.let { { preview = it } },
-            )
+            if (attachment.optString("source_type") == "text") {
+                TextMaterialEditor(record, model)
+            } else {
+                AttachmentEditorRow(
+                    label = attachmentLabel(attachment),
+                    detail = if (cached?.status == "ready") "Available offline" else "Will download when connected",
+                    view = cached?.takeIf { it.status == "ready" && !it.localPath.isNullOrBlank() }?.let { { preview = it } },
+                )
+            }
         }
         newAttachments.forEachIndexed { index, attachment ->
             AttachmentEditorRow(
@@ -2680,6 +2719,78 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
         )
     }
     preview?.let { AttachmentPreviewDialog(it) { preview = null } }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun ChordProEditor(value: TextFieldValue, onValueChange: (TextFieldValue) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Lyrics / ChordPro", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf(
+                "Verse" to ("{start_of_verse}\n" to "\n{end_of_verse}"),
+                "Chorus" to ("{start_of_chorus}\n" to "\n{end_of_chorus}"),
+                "Bridge" to ("{start_of_bridge}\n" to "\n{end_of_bridge}"),
+                "Chord" to ("[" to "]"), "Bold" to ("**" to "**"), "Italic" to ("*" to "*"),
+            ).forEach { (label, markers) ->
+                TextButton(onClick = { onValueChange(wrapTextSelection(value, markers.first, markers.second)) }) {
+                    Text(label, color = Cyan, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp),
+            placeholder = { Text("{start_of_verse}\nLyrics with optional [C]chords...\n{end_of_verse}") },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace, color = Color.White),
+        )
+    }
+}
+
+private fun wrapTextSelection(value: TextFieldValue, prefix: String, suffix: String): TextFieldValue {
+    val start = value.selection.min.coerceIn(0, value.text.length)
+    val end = value.selection.max.coerceIn(start, value.text.length)
+    val replacement = prefix + value.text.substring(start, end) + suffix
+    val updated = value.text.replaceRange(start, end, replacement)
+    return TextFieldValue(updated, androidx.compose.ui.text.TextRange(start + prefix.length, start + prefix.length + end - start))
+}
+
+@Composable
+private fun TextMaterialEditor(record: CachedRecord, model: StudioRackViewModel) {
+    val original = recordJson(record)
+    var expanded by remember(record.entityId) { mutableStateOf(false) }
+    var name by remember(record.json) { mutableStateOf(original.optString("display_name", "Lyrics")) }
+    var content by remember(record.json) { mutableStateOf(TextFieldValue(original.optString("content_text"))) }
+    Surface(color = Panel, border = BorderStroke(1.dp, Amber.copy(alpha = .28f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(name.ifBlank { "Lyrics" }, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Written ChordPro material - available offline", color = TextSoft, fontSize = 11.sp)
+                }
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Close" else "Edit", color = Cyan, fontWeight = FontWeight.Bold) }
+            }
+            if (expanded) {
+                StudioField("Material name", name, dictation = false) { name = it }
+                ChordProEditor(content) { content = it }
+                StudioButton(
+                    onClick = {
+                        model.saveSongAttachment(record.entityId, JSONObject(original.toString())
+                            .put("display_name", name.trim()).put("source_type", "text")
+                            .put("content_format", "chordpro").put("content_text", content.text)
+                            .put("file_ref", "text://chordpro"))
+                        expanded = false
+                    },
+                    enabled = content.text.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Save Lyrics", color = Ink, fontWeight = FontWeight.Black) }
+                TextButton(onClick = { model.deleteSongAttachment(record.entityId) }) {
+                    Text("Delete Lyrics Material", color = Color(0xFFFF6B6B), fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -3552,7 +3663,9 @@ private fun PerformanceSongScreen(
             Modifier.fillMaxWidth().heightIn(min = 320.dp)
         }
         Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {
+            val textMaterial = item.attachment?.takeIf { it.optString("source_type") == "text" }?.optString("content_text").orEmpty()
             when {
+                textMaterial.isNotBlank() -> ChordProDocument(textMaterial)
                 !rendered.complete -> CircularProgressIndicator()
                 renderedBitmap == null -> SongDetailFallback(item)
                 else -> Image(
@@ -3564,6 +3677,57 @@ private fun PerformanceSongScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ChordProDocument(source: String) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val tablet = maxWidth >= 600.dp
+        Column(Modifier.fillMaxWidth().padding(horizontal = if (tablet) 34.dp else 12.dp, vertical = 18.dp)) {
+            source.replace("\r\n", "\n").lines().forEach { rawLine ->
+                val line = rawLine.trimEnd()
+                val directive = Regex("^\\{([^}:]+)(?::\\s*(.*))?}$").matchEntire(line.trim())
+                val name = directive?.groupValues?.getOrNull(1)?.lowercase().orEmpty()
+                val argument = directive?.groupValues?.getOrNull(2).orEmpty()
+                when {
+                    name.startsWith("end_of_") || name in setOf("eov", "eoc", "eob", "eot") -> Unit
+                    name in setOf("start_of_verse", "sov", "start_of_chorus", "soc", "start_of_bridge", "sob", "start_of_tab", "sot") -> {
+                        val label = argument.ifBlank { name.substringAfter("start_of_").ifBlank { when (name) { "sov" -> "verse"; "soc" -> "chorus"; "sob" -> "bridge"; else -> "tab" } }.humanize() }
+                        Text(label.uppercase(), color = Amber, fontSize = if (tablet) 18.sp else 14.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
+                    }
+                    name in setOf("comment", "c") -> Text(argument, color = Cyan, fontStyle = FontStyle.Italic, fontSize = if (tablet) 19.sp else 15.sp)
+                    directive != null -> Unit
+                    line.isBlank() -> Spacer(Modifier.height(if (tablet) 14.dp else 9.dp))
+                    else -> Text(chordProLine(line), color = Color.White, fontFamily = FontFamily.Serif, fontSize = if (tablet) 27.sp else 20.sp, lineHeight = if (tablet) 36.sp else 28.sp)
+                }
+            }
+        }
+    }
+}
+
+private fun chordProLine(line: String) = buildAnnotatedString {
+    var cursor = 0
+    Regex("\\[([^]]+)]|\\*\\*([^*]+)\\*\\*|\\*([^*]+)\\*").findAll(line).forEach { match ->
+        append(line.substring(cursor, match.range.first))
+        when {
+            match.groupValues[1].isNotEmpty() -> {
+                pushStyle(SpanStyle(color = Cyan, fontWeight = FontWeight.Black, fontFamily = StudioFont))
+                append(match.groupValues[1])
+                append(" ")
+            }
+            match.groupValues[2].isNotEmpty() -> {
+                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                append(match.groupValues[2])
+            }
+            else -> {
+                pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
+                append(match.groupValues[3])
+            }
+        }
+        pop()
+        cursor = match.range.last + 1
+    }
+    append(line.substring(cursor))
 }
 
 @Composable
