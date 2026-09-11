@@ -752,6 +752,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
 @OptIn(ExperimentalLayoutApi::class)
 private fun LibraryScreen(model: StudioRackViewModel) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val songs by model.songs.collectAsState()
     val setLists by model.setLists.collectAsState()
     val sections by model.sections.collectAsState()
@@ -769,6 +770,10 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     var creatingSetList by remember { mutableStateOf(false) }
     var renamingSetList by remember { mutableStateOf<CachedRecord?>(null) }
     var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
+    var durationBusy by remember { mutableStateOf(false) }
+    var durationResult by remember { mutableStateOf<JSONObject?>(null) }
+    var durationMessage by remember { mutableStateOf("") }
+    var appliedDurationSongs by remember { mutableStateOf(emptySet<String>()) }
     val filteredSongs = songs
         .filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
         .filter { favoriteScope == "All" || recordJson(it).optInt("is_favorite") == 1 }
@@ -797,6 +802,53 @@ private fun LibraryScreen(model: StudioRackViewModel) {
             }
         }
         if (tab == "Songs") {
+            item {
+                Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Crew: Fill Missing Song Lengths", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Checks only songs without a length. Existing lengths are never changed.", color = TextSoft, fontSize = 11.sp)
+                        StudioButton(onClick = {
+                            durationBusy = true; durationMessage = "Crew is checking missing song lengths..."; appliedDurationSongs = emptySet()
+                            scope.launch {
+                                runCatching { model.fillMissingSongLengths() }
+                                    .onSuccess { durationResult = it; durationMessage = "Finished checking missing lengths." }
+                                    .onFailure { durationMessage = it.message ?: "Crew could not check song lengths." }
+                                durationBusy = false
+                            }
+                        }, enabled = online && !durationBusy, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (durationBusy) "Crew is checking..." else "Fill Missing Song Lengths", color = Ink, fontWeight = FontWeight.Black)
+                        }
+                        if (!online) Text("Connect to search LRCLIB and MusicBrainz.", color = Amber, fontSize = 11.sp)
+                        if (durationMessage.isNotBlank()) Text(durationMessage, color = TextSoft, fontSize = 12.sp)
+                        durationResult?.let { payload ->
+                            val updated = payload.optJSONArray("updated").jsonObjects()
+                            val review = payload.optJSONArray("review").jsonObjects()
+                            val unmatched = payload.optJSONArray("unmatched").jsonObjects()
+                            Text("Filled ${updated.size}. Review ${review.size}. No match ${unmatched.size}.", color = Color.White, fontWeight = FontWeight.Bold)
+                            updated.forEach { item -> Text("${item.optString("title")} - ${item.optString("duration_label")} (${item.optString("source")})", color = TextSoft, fontSize = 11.sp) }
+                            review.forEach { song ->
+                                Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                                    Text(listOf(song.optString("title"), song.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = Color.White, fontWeight = FontWeight.Bold)
+                                    if (song.optString("song_id") in appliedDurationSongs) Text("Duration saved.", color = Cyan, fontWeight = FontWeight.Bold)
+                                    else song.optJSONArray("candidates").jsonObjects().forEach { candidate ->
+                                        StudioButton(onClick = {
+                                            durationBusy = true
+                                            scope.launch {
+                                                runCatching { model.applySongDuration(song.optString("song_id"), candidate) }
+                                                    .onSuccess { appliedDurationSongs = appliedDurationSongs + song.optString("song_id"); durationMessage = "Saved ${song.optString("title")} at ${candidate.optString("duration_label")}." }
+                                                    .onFailure { durationMessage = it.message ?: "The duration could not be saved." }
+                                                durationBusy = false
+                                            }
+                                        }, enabled = !durationBusy, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                                            Text("Use ${candidate.optString("duration_label")} from ${candidate.optString("source")}", color = Color.White, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             item {
                 StudioButton(
                     onClick = { exportTarget = ExportTarget("songs", "Visible songs", filteredSongs.map { it.entityId }) },
@@ -2615,6 +2667,10 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     var style by remember { mutableStateOf(original.optString("style")) }
     var tempo by remember { mutableStateOf(original.optString("tempo")) }
     var duration by remember { mutableStateOf(formatDuration(original.optInt("duration_seconds"))) }
+    var durationSource by remember { mutableStateOf(original.optString("duration_source")) }
+    var durationSourceId by remember { mutableStateOf(original.optString("duration_source_id")) }
+    var durationSourceUri by remember { mutableStateOf(original.optString("duration_source_uri")) }
+    var durationCheckedUtc by remember { mutableStateOf(original.optString("duration_last_checked_utc")) }
     var signature by remember { mutableStateOf(original.optString("time_signature", "4/4")) }
     var songKey by remember { mutableStateOf(original.optString("song_key")) }
     var starts by remember { mutableStateOf(original.optString("starts_by")) }
@@ -2734,7 +2790,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                         Box(Modifier.weight(1f)) { StudioField("Tempo", tempo, dictation = false) { tempo = it.filter(Char::isDigit).take(3) } }
                         Box(Modifier.weight(1f)) { StudioField("Time signature", signature, dictation = false) { signature = it.take(12) } }
                     }
-                    StudioField("Song length", duration, dictation = false) { duration = it.filter { char -> char.isDigit() || char == ':' }.take(8) }
+                    StudioField("Song length", duration, dictation = false) { duration = it.filter { char -> char.isDigit() || char == ':' }.take(8); durationSource = ""; durationSourceId = ""; durationSourceUri = ""; durationCheckedUtc = "" }
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2742,7 +2798,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                     Box(Modifier.weight(1f)) { StudioField("Key", songKey, dictation = false) { songKey = it.take(40) } }
                     Box(Modifier.weight(1f)) { StudioField("Tempo", tempo, dictation = false) { tempo = it.filter(Char::isDigit).take(3) } }
                     Box(Modifier.weight(1f)) { StudioField("Time signature", signature, dictation = false) { signature = it.take(12) } }
-                    Box(Modifier.weight(1f)) { StudioField("Song length", duration, dictation = false) { duration = it.filter { char -> char.isDigit() || char == ':' }.take(8) } }
+                    Box(Modifier.weight(1f)) { StudioField("Song length", duration, dictation = false) { duration = it.filter { char -> char.isDigit() || char == ':' }.take(8); durationSource = ""; durationSourceId = ""; durationSourceUri = ""; durationCheckedUtc = "" } }
                 }
             }
         }
@@ -2796,6 +2852,18 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                                 TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Collapse Preview" else "Preview Lyrics", color = Cyan) }
                             }
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (item.optInt("duration_seconds") > 0 && duration.isBlank()) {
+                                    StudioButton(onClick = {
+                                        if (duration.isBlank()) {
+                                            duration = item.optString("duration_label")
+                                            durationSource = item.optString("source")
+                                            durationSourceId = item.optString("source_id")
+                                            durationSourceUri = item.optString("source_uri")
+                                            durationCheckedUtc = item.optString("retrieved_utc")
+                                            lyricsMessage = "Duration ${item.optString("duration_label")} added. Review and save the song."
+                                        }
+                                    }, kind = StudioButtonKind.Secondary) { Text("Use Duration: ${item.optString("duration_label")}", color = Color.White, fontWeight = FontWeight.Bold) }
+                                }
                                 if (item.optString("plain_lyrics").isNotBlank()) {
                                     StudioButton(onClick = { queueLyrics(item, "plain", item.optString("plain_lyrics")) }, kind = StudioButtonKind.Secondary) { Text("Plain", color = Color.White, fontWeight = FontWeight.Bold) }
                                     StudioButton(onClick = { queueLyrics(item, "chordpro", item.optString("chordpro")) }, kind = StudioButtonKind.Secondary) { Text("ChordPro", color = Color.White, fontWeight = FontWeight.Bold) }
@@ -2879,7 +2947,9 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                     .put("album", album.trim()).put("release_year", releaseYear.toIntOrNull()).put("genre", genre.trim())
                     .put("metadata_source", metadataSource).put("metadata_source_id", metadataSourceId).put("metadata_source_uri", metadataSourceUri)
                     .put("metadata_last_checked_utc", metadataCheckedUtc).put("danceability", danceability.takeIf { it >= 0 }).put("acousticness", acousticness.takeIf { it >= 0 }).put("artist_mbid", artistMbid)
-                    .put("tempo", tempo.trim()).put("duration_seconds", parseDuration(duration)).put("time_signature", signature.trim()).put("song_key", normalizeSongKey(songKey)).put("starts_by", starts.trim())
+                    .put("tempo", tempo.trim()).put("duration_seconds", parseDuration(duration))
+                    .put("duration_source", durationSource).put("duration_source_id", durationSourceId).put("duration_source_uri", durationSourceUri).put("duration_last_checked_utc", durationCheckedUtc)
+                    .put("time_signature", signature.trim()).put("song_key", normalizeSongKey(songKey)).put("starts_by", starts.trim())
                     .put("patch_name", patchName.trim()).put("patch_number", patchNumber.trim())
                     .put("media_ref", media.trim()).put("notes", notes.trim()).put("is_favorite", if (favorite) 1 else 0), newAttachments, close)
             },

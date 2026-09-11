@@ -200,6 +200,11 @@ class StudioRackViewModel(
     suspend fun structureSongLyrics(title: String, artist: String, album: String, lyrics: String): JSONObject =
         repository.structureSongLyrics(title, artist, album, lyrics)
 
+    suspend fun fillMissingSongLengths(): JSONObject = repository.fillMissingSongLengths()
+
+    suspend fun applySongDuration(songId: String, candidate: JSONObject): JSONObject =
+        repository.applySongDuration(songId, candidate)
+
     suspend fun refreshLiveEvent(eventId: String, knownRevision: String): LiveRefreshResult = runCatching {
         val status = repository.liveEventStatus(eventId)
         val revision = status.optString("revision")

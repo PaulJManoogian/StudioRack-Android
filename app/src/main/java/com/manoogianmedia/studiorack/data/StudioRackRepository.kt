@@ -57,6 +57,18 @@ class StudioRackRepository(
     suspend fun structureSongLyrics(title: String, artist: String, album: String, lyrics: String): JSONObject =
         client.structureSongLyrics(title, artist, album, lyrics)
 
+    suspend fun fillMissingSongLengths(): JSONObject {
+        val result = client.fillMissingSongLengths()
+        sync()
+        return result
+    }
+
+    suspend fun applySongDuration(songId: String, candidate: JSONObject): JSONObject {
+        val result = client.applySongDuration(songId, candidate)
+        sync()
+        return result
+    }
+
     suspend fun liveEventStatus(eventId: String): JSONObject = client.liveEventStatus(eventId)
 
     suspend fun liveShareStatus(grantId: String): JSONObject = client.liveShareStatus(grantId)

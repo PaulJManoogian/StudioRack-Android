@@ -79,6 +79,12 @@ class SyncClient(
             JSONObject().put("title", title).put("artist", artist).put("album", album).put("lyrics", lyrics),
         )
 
+    suspend fun fillMissingSongLengths(): JSONObject =
+        request("/song-durations/fill-missing", "POST", JSONObject())
+
+    suspend fun applySongDuration(songId: String, candidate: JSONObject): JSONObject =
+        request("/songs/${URLEncoder.encode(songId, Charsets.UTF_8.name())}/duration", "POST", candidate)
+
     suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport = withContext(Dispatchers.IO) {
         val connection = URL(exchangeUrl(baseUrl, kind, format, ids)).openConnection() as HttpURLConnection
         try {
