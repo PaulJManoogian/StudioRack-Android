@@ -93,10 +93,11 @@ internal fun SetListEditor(
     attachments: List<CachedRecord>,
     model: StudioRackViewModel,
     liveAutosave: Boolean = false,
+    copyMode: Boolean = false,
     close: () -> Unit,
 ) {
-    var draft by remember(original?.entityId, liveAutosave) {
-        mutableStateOf(setListDraft(original, allSections, allEntries))
+    var draft by remember(original?.entityId, liveAutosave, copyMode) {
+        mutableStateOf(setListDraft(original, allSections, allEntries, copyMode))
     }
     var pickingSection by remember { mutableStateOf<String?>(null) }
     var removedEntry by remember { mutableStateOf<RemovedSetEntry?>(null) }
@@ -166,7 +167,7 @@ internal fun SetListEditor(
                     }
                     Column(Modifier.weight(1f).padding(start = 14.dp)) {
                         Text(if (liveAutosave) "LEVIATHAN LIVE" else "SET LIST BUILDER", color = EditorAmber, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                        Text(if (liveAutosave) "Edit Live Set" else if (original == null) "Create Set List" else "Edit Set List", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                        Text(if (liveAutosave) "Edit Live Set" else if (copyMode) "Copy Set List" else if (original == null) "Create Set List" else "Edit Set List", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                         if (liveAutosave) Text("$autosaveState - changes sync automatically", color = when (autosaveState) { "Saved" -> Color(0xFF58E99B); "Retry needed" -> Color(0xFFFF7A82); else -> EditorAmber }, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -503,28 +504,31 @@ private fun SongPicker(section: SetSectionDraft, songs: List<CachedRecord>, clos
     }
 }
 
-private fun setListDraft(original: CachedRecord?, allSections: List<CachedRecord>, allEntries: List<CachedRecord>): SetListDraft {
-    val id = original?.entityId ?: newId("setlist")
+private fun setListDraft(original: CachedRecord?, allSections: List<CachedRecord>, allEntries: List<CachedRecord>, copyMode: Boolean = false): SetListDraft {
+    val sourceId = original?.entityId
+    val id = if (copyMode || sourceId == null) newId("setlist") else sourceId
     val root = original?.let { JSONObject(it.json) } ?: JSONObject()
-    val sections = allSections.filter { JSONObject(it.json).optString("set_list_id") == id }.sortedBy { JSONObject(it.json).optInt("position") }.map { sectionRecord ->
+    val copiedGroups = mutableMapOf<String, String>()
+    val sections = allSections.filter { JSONObject(it.json).optString("set_list_id") == sourceId }.sortedBy { JSONObject(it.json).optInt("position") }.map { sectionRecord ->
         val section = JSONObject(sectionRecord.json)
         val entries = allEntries.filter { JSONObject(it.json).optString("section_id") == sectionRecord.entityId }.sortedBy { JSONObject(it.json).optInt("position") }.map { entryRecord ->
             val entry = JSONObject(entryRecord.json)
             val performanceGroup = entry.performanceGroupOrNull()
             SetEntryDraft(
-                entryRecord.entityId,
+                if (copyMode) newId("sle") else entryRecord.entityId,
                 entry.optString("song_id").takeIf(String::isNotBlank),
                 entry.optString("manual_title"),
                 entry.optString("entry_notes"),
                 entry.optString("performance_attachment_id").takeIf(String::isNotBlank),
-                performanceGroup?.id,
+                performanceGroup?.id?.let { if (copyMode) copiedGroups.getOrPut(it) { newId("grp") } else it },
                 performanceGroup?.type.orEmpty(),
                 performanceGroup?.name.orEmpty(),
             )
         }
-        SetSectionDraft(sectionRecord.entityId, section.optString("name"), section.optString("notes"), entries)
+        SetSectionDraft(if (copyMode) newId("sls") else sectionRecord.entityId, section.optString("name"), section.optString("notes"), entries)
     }
-    return SetListDraft(id, root.optString("name"), root.optString("description"), root.optString("notes"), root.optString("attachment_print_mode", "none"), root.optInt("is_favorite") == 1, sections)
+    val name = root.optString("name") + if (copyMode) " - Copy" else ""
+    return SetListDraft(id, name, root.optString("description"), root.optString("notes"), root.optString("attachment_print_mode", "none"), !copyMode && root.optInt("is_favorite") == 1, sections)
 }
 
 private fun SetListDraft.updateSection(id: String, transform: (SetSectionDraft) -> SetSectionDraft) = copy(sections = sections.map { if (it.id == id) transform(it) else it })

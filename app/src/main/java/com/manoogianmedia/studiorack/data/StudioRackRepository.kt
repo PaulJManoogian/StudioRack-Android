@@ -256,12 +256,16 @@ class StudioRackRepository(
         syncNow()
     }
 
-    suspend fun saveEvent(eventId: String, event: JSONObject, ensembleIds: Set<String>, contactIds: Set<String>) {
-        val relationTypes = setOf("studio_event_ensemble", "studio_event_contact")
+    suspend fun saveEvent(eventId: String, event: JSONObject, kitIds: Set<String>, ensembleIds: Set<String>, contactIds: Set<String>) {
+        val relationTypes = setOf("studio_event_kit", "studio_event_ensemble", "studio_event_contact")
         val existingRelations = relationTypes.flatMap { dao.records(it) }
             .filter { JSONObject(it.json).optString("event_id") == eventId }
         val desired = buildList {
             add(Triple("studio_event", eventId, event))
+            kitIds.forEach { kitId ->
+                add(Triple("studio_event_kit", "$eventId|$kitId", JSONObject()
+                    .put("event_id", eventId).put("kit_id", kitId)))
+            }
             ensembleIds.forEach { ensembleId ->
                 add(Triple("studio_event_ensemble", "$eventId|$ensembleId", JSONObject()
                     .put("event_id", eventId).put("ensemble_id", ensembleId).put("relationship_role", "performer")))

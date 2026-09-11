@@ -67,6 +67,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val eventContacts: StateFlow<List<CachedRecord>> = repository.records("studio_event_contact")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventKits: StateFlow<List<CachedRecord>> = repository.records("studio_event_kit")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val cachedAttachments: StateFlow<List<CachedAttachment>> = repository.cachedAttachments()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val items: StateFlow<List<SupportingRecord>> = repository.supporting("item")
@@ -303,10 +305,10 @@ class StudioRackViewModel(
 
     fun deleteSong(id: String, done: () -> Unit) = deleteRecord("song", id, done)
 
-    fun saveEvent(id: String?, data: JSONObject, ensembleIds: Set<String>, contactIds: Set<String>, done: () -> Unit) {
+    fun saveEvent(id: String?, data: JSONObject, kitIds: Set<String>, ensembleIds: Set<String>, contactIds: Set<String>, done: () -> Unit) {
         val eventId = id ?: "event_${UUID.randomUUID().toString().replace("-", "")}"
         viewModelScope.launch {
-            runCatching { repository.saveEvent(eventId, data, ensembleIds, contactIds) }
+            runCatching { repository.saveEvent(eventId, data, kitIds, ensembleIds, contactIds) }
                 .onSuccess { _uiState.value = _uiState.value.copy(message = "Scheduled item saved. Synchronization is queued."); done() }
                 .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save the scheduled item.") }
         }

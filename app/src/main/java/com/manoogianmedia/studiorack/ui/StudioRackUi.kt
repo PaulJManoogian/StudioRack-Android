@@ -731,6 +731,12 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
                     eventPacketReadiness(event, entries, attachments, cachedAttachments),
                     open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) },
                     edit = { editingEvent = EditorTarget(event.optString("id"), event) },
+                    copy = {
+                        editingEvent = EditorTarget(null, JSONObject(event.toString())
+                            .put("_copy_source_id", event.optString("id"))
+                            .put("event_status", "scheduled").put("event_date", "").put("start_time", "")
+                            .put("end_date", "").put("end_time", ""))
+                    },
                     host = if (event.optString("set_list_id").isNotBlank()) ({ localLiveEvent = event; showLocalLive = true }) else null,
                 )
             }
@@ -759,6 +765,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     var sort by remember { mutableStateOf("A-Z") }
     var editingSong by remember { mutableStateOf<EditorTarget?>(null) }
     var editingSetList by remember { mutableStateOf<CachedRecord?>(null) }
+    var copyingSetList by remember { mutableStateOf<CachedRecord?>(null) }
     var creatingSetList by remember { mutableStateOf(false) }
     var renamingSetList by remember { mutableStateOf<CachedRecord?>(null) }
     var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
@@ -849,10 +856,11 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                             DetailLine((entryJson.optInt("position") + 1).toString(), songNames[entryJson.optString("song_id")].orEmpty().ifBlank { entryJson.optString("manual_title") })
                         }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { editingSetList = record }) { Text("Edit Set List", color = Amber) }
                         TextButton(onClick = { exportTarget = ExportTarget("setlists", row.optString("name", "Set List"), listOf(record.entityId)) }) { Text("Export", color = Amber) }
                         TextButton(onClick = { renamingSetList = record }) { Text("Rename", color = Amber) }
+                        TextButton(onClick = { copyingSetList = record }) { Text("Copy", color = Amber) }
                     }
                 }
             }
@@ -869,9 +877,9 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 save = { model.renameSetList(record, name) { renamingSetList = null } }, delete = null)
         }
     }
-    if (creatingSetList || editingSetList != null) {
-        Dialog(onDismissRequest = { creatingSetList = false; editingSetList = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            SetListEditor(editingSetList, sections, entries, songs, attachments, model) { creatingSetList = false; editingSetList = null }
+    if (creatingSetList || editingSetList != null || copyingSetList != null) {
+        Dialog(onDismissRequest = { creatingSetList = false; editingSetList = null; copyingSetList = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            SetListEditor(editingSetList ?: copyingSetList, sections, entries, songs, attachments, model, copyMode = copyingSetList != null) { creatingSetList = false; editingSetList = null; copyingSetList = null }
         }
     }
     exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
@@ -3015,6 +3023,8 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
     val venues by model.venues.collectAsState()
     val contacts by model.contacts.collectAsState()
     val ensembles by model.ensembles.collectAsState()
+    val kits by model.kits.collectAsState()
+    val eventKits by model.eventKits.collectAsState()
     val eventContacts by model.eventContacts.collectAsState()
     val eventEnsembles by model.eventEnsembles.collectAsState()
     var title by remember { mutableStateOf(original.optString("title")) }
@@ -3031,13 +3041,16 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
     var reminder by remember { mutableStateOf(original.optInt("reminder_enabled", 1) == 1) }
     var lead by remember { mutableStateOf(original.optString("reminder_lead_value", "2")) }
     var unit by remember { mutableStateOf(original.optString("reminder_lead_unit", "days")) }
-    var selectedEnsembles by remember(target.id, eventEnsembles) { mutableStateOf(eventEnsembles.filter { recordJson(it).optString("event_id") == target.id }.mapTo(mutableSetOf()) { recordJson(it).optString("ensemble_id") }) }
-    var selectedContacts by remember(target.id, eventContacts) { mutableStateOf(eventContacts.filter { recordJson(it).optString("event_id") == target.id }.mapTo(mutableSetOf()) { recordJson(it).optString("contact_id") }) }
+    val relationshipSourceId = original.optString("_copy_source_id").ifBlank { target.id.orEmpty() }
+    var selectedKits by remember(relationshipSourceId, eventKits) { mutableStateOf(eventKits.filter { recordJson(it).optString("event_id") == relationshipSourceId }.mapTo(mutableSetOf()) { recordJson(it).optString("kit_id") }) }
+    var selectedEnsembles by remember(relationshipSourceId, eventEnsembles) { mutableStateOf(eventEnsembles.filter { recordJson(it).optString("event_id") == relationshipSourceId }.mapTo(mutableSetOf()) { recordJson(it).optString("ensemble_id") }) }
+    var selectedContacts by remember(relationshipSourceId, eventContacts) { mutableStateOf(eventContacts.filter { recordJson(it).optString("event_id") == relationshipSourceId }.mapTo(mutableSetOf()) { recordJson(it).optString("contact_id") }) }
+    var kitQuery by remember(relationshipSourceId) { mutableStateOf("") }
     var venueQuery by remember(target.id) { mutableStateOf("") }
     var setListQuery by remember(target.id) { mutableStateOf("") }
     var ensembleQuery by remember(target.id) { mutableStateOf("") }
     var contactQuery by remember(target.id) { mutableStateOf("") }
-    EditorDialog(if (target.id == null) "Add Scheduled Event" else "Edit Scheduled Event", close) {
+    EditorDialog(if (original.optString("_copy_source_id").isNotBlank()) "Copy Scheduled Event" else if (target.id == null) "Add Scheduled Event" else "Edit Scheduled Event", close) {
         StudioField("Name", title) { title = it }
         Text("Type", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("performance", "rehearsal", "studio_session", "other"), type) { type = it }
         Text("Status", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("scheduled", "ended"), status) { status = it }
@@ -3061,6 +3074,17 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
         val visibleSetLists = setLists.filter { recordJson(it).optString("name").contains(setListQuery, ignoreCase = true) }
         ChoiceStrip(listOf("None") + visibleSetLists.map { recordJson(it).optString("name") }, setLists.firstOrNull { it.entityId == setListId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
             setListId = setLists.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
+        }
+        if (kits.isNotEmpty()) {
+            Text("Kits / Gear To Take", color = TextSoft, fontWeight = FontWeight.Bold)
+            StudioField("Find a kit", kitQuery) { kitQuery = it }
+            kits.filter { supportingJson(it).optString("name").contains(kitQuery, ignoreCase = true) }.forEach { kit ->
+                val checked = kit.entityId in selectedKits
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked, { enabled -> selectedKits = selectedKits.toMutableSet().apply { if (enabled) add(kit.entityId) else remove(kit.entityId) } })
+                    Text(supportingJson(kit).optString("name"), color = Color.White)
+                }
+            }
         }
         StudioField("Notes", notes, singleLine = false) { notes = it }
         if (ensembles.isNotEmpty()) {
@@ -3103,7 +3127,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
                     .put("venue_id", venueId.ifBlank { JSONObject.NULL }).put("location", location.trim())
                     .put("set_list_id", setListId.ifBlank { JSONObject.NULL }).put("notes", notes.trim())
                     .put("reminder_enabled", if (reminder) 1 else 0).put("reminder_lead_value", lead.toIntOrNull() ?: 2)
-                    .put("reminder_lead_unit", unit), selectedEnsembles, selectedContacts, close)
+                    .put("reminder_lead_unit", unit), selectedKits, selectedEnsembles, selectedContacts, close)
             },
             delete = target.id?.let { id -> { model.deleteEvent(id, close) } },
         )
@@ -3153,7 +3177,8 @@ private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Uni
 }
 
 @Composable
-private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit, edit: (() -> Unit)? = null, host: (() -> Unit)? = null) {
+@OptIn(ExperimentalLayoutApi::class)
+private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit, edit: (() -> Unit)? = null, copy: (() -> Unit)? = null, host: (() -> Unit)? = null) {
     val liveModeName = stringResource(R.string.live_mode_name)
     Card(
         Modifier.fillMaxWidth().clickable(onClick = open),
@@ -3177,8 +3202,9 @@ private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () ->
                     )
                 }
                 if (event.optString("set_list_id").isNotBlank()) Text("Open $liveModeName", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                if (edit != null || host != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (edit != null || copy != null || host != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     if (host != null) TextButton(onClick = host) { Text("Host", color = Cyan, fontWeight = FontWeight.Bold) }
+                    if (copy != null) TextButton(onClick = copy) { Text("Copy", color = Cyan) }
                     if (edit != null) TextButton(onClick = edit) { Text("Edit", color = Amber) }
                 }
             }
