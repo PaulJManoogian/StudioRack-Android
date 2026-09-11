@@ -2581,6 +2581,7 @@ private fun studioAddress(account: JSONObject): String = listOf(
 
 private data class EditorTarget(val id: String?, val data: JSONObject)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: () -> Unit) {
     val context = LocalContext.current
@@ -2621,6 +2622,9 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     var metadataResults by remember { mutableStateOf(emptyList<JSONObject>()) }
     var metadataMessage by remember { mutableStateOf("") }
     var metadataBusy by remember { mutableStateOf(false) }
+    var lyricsResults by remember { mutableStateOf(emptyList<JSONObject>()) }
+    var lyricsMessage by remember { mutableStateOf("") }
+    var lyricsBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -2634,6 +2638,24 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                 mimeType = context.contentResolver.getType(uri).orEmpty(),
             )
         }
+    }
+    fun queueLyrics(item: JSONObject, format: String, content: String, message: String = "Lyrics added. Review the material and save the song.") {
+        newAttachments = newAttachments + SongAttachmentInput(
+            uri = "",
+            displayName = "${item.optString("title").ifBlank { title.ifBlank { "Song" } }} Lyrics",
+            attachmentType = "lyrics",
+            mimeType = "text/plain",
+            sourceType = "text",
+            contentText = content,
+            contentFormat = format,
+            sourceProvider = item.optString("source"),
+            sourceRecordId = item.optString("source_id"),
+            sourceUri = item.optString("source_uri"),
+            sourceRetrievedUtc = item.optString("retrieved_utc"),
+            sourceAttribution = item.optString("attribution"),
+        )
+        lyricsResults = emptyList()
+        lyricsMessage = message
     }
     EditorDialog(if (target.id == null) "Add Song" else "Edit Song", close) {
         StudioField("Song title", title) { title = it }
@@ -2725,6 +2747,66 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(favorite, { favorite = it }); Text("Favorite", color = Color.White) }
         Text("Attachments", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
         Text("Add charts, lyrics, tablature, or sheet music now. Files are copied to this device immediately and uploaded on the next sync.", color = TextSoft, fontSize = 11.sp)
+        Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Find Lyrics", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Search LRCLIB, preview the matches, then import plain, synchronized, or ChordPro lyrics.", color = TextSoft, fontSize = 11.sp)
+                StudioButton(
+                    onClick = {
+                        if (title.isBlank()) lyricsMessage = "Enter a song title first."
+                        else {
+                            lyricsBusy = true
+                            lyricsMessage = "Looking for matching lyrics..."
+                            scope.launch {
+                                runCatching { model.searchSongLyrics(title.trim(), artist.trim(), album.trim()) }
+                                    .onSuccess { payload ->
+                                        val rows = payload.optJSONArray("results") ?: JSONArray()
+                                        lyricsResults = (0 until rows.length()).map { rows.getJSONObject(it) }
+                                        lyricsMessage = if (lyricsResults.isEmpty()) "No matching lyrics were found." else "Choose the correct version."
+                                    }
+                                    .onFailure { lyricsMessage = it.message ?: "The lyrics search failed." }
+                                lyricsBusy = false
+                            }
+                        }
+                    },
+                    enabled = !lyricsBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text(if (lyricsBusy) "Searching..." else "Search LRCLIB", color = Color.White, fontWeight = FontWeight.Bold) }
+                TextButton(onClick = { uriHandler.openUri("https://lrclib.net") }) { Text("Lyrics provided by LRCLIB", color = TextSoft, fontSize = 11.sp) }
+                if (lyricsMessage.isNotBlank()) Text(lyricsMessage, color = TextSoft, fontSize = 12.sp)
+                lyricsResults.forEach { item ->
+                    var expanded by remember(item.optString("source_id")) { mutableStateOf(false) }
+                    Surface(color = PanelRaised, border = BorderStroke(1.dp, Amber.copy(alpha = .25f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(listOf(item.optString("title"), item.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(listOf(item.optString("album"), item.optString("duration_label"), if (item.optBoolean("instrumental")) "Instrumental" else "").filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 11.sp)
+                            if (item.optString("plain_lyrics").isNotBlank()) {
+                                Text(item.optString("plain_lyrics"), color = Color.White, fontSize = 12.sp, maxLines = if (expanded) Int.MAX_VALUE else 5)
+                                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Collapse Preview" else "Preview Lyrics", color = Cyan) }
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (item.optString("plain_lyrics").isNotBlank()) {
+                                    StudioButton(onClick = { queueLyrics(item, "plain", item.optString("plain_lyrics")) }, kind = StudioButtonKind.Secondary) { Text("Plain", color = Color.White, fontWeight = FontWeight.Bold) }
+                                    StudioButton(onClick = { queueLyrics(item, "chordpro", item.optString("chordpro")) }, kind = StudioButtonKind.Secondary) { Text("ChordPro", color = Color.White, fontWeight = FontWeight.Bold) }
+                                    StudioButton(onClick = {
+                                        lyricsBusy = true
+                                        lyricsMessage = "Crew is identifying song sections..."
+                                        scope.launch {
+                                            runCatching { model.structureSongLyrics(item.optString("title"), item.optString("artist"), item.optString("album"), item.optString("plain_lyrics")) }
+                                                .onSuccess { payload -> queueLyrics(item, "chordpro", payload.optString("content"), payload.optString("message")) }
+                                                .onFailure { lyricsMessage = it.message ?: "Crew could not structure these lyrics." }
+                                            lyricsBusy = false
+                                        }
+                                    }, enabled = !lyricsBusy) { Text("Crew Structure", color = Ink, fontWeight = FontWeight.Black) }
+                                }
+                                if (item.optString("synced_lyrics").isNotBlank()) StudioButton(onClick = { queueLyrics(item, "lrc", item.optString("synced_lyrics")) }, kind = StudioButtonKind.Secondary) { Text("Synced", color = Color.White, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         ChoiceStrip(listOf("Chart", "Lyrics", "Tab", "Sheet Music", "Other"), attachmentType) { attachmentType = it }
         StudioButton(
             onClick = { attachmentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
@@ -2835,6 +2917,7 @@ private fun wrapTextSelection(value: TextFieldValue, prefix: String, suffix: Str
 @Composable
 private fun TextMaterialEditor(record: CachedRecord, model: StudioRackViewModel) {
     val original = recordJson(record)
+    val format = original.optString("content_format", "chordpro").ifBlank { "chordpro" }
     var expanded by remember(record.entityId) { mutableStateOf(false) }
     var name by remember(record.json) { mutableStateOf(original.optString("display_name", "Lyrics")) }
     var content by remember(record.json) { mutableStateOf(TextFieldValue(original.optString("content_text"))) }
@@ -2843,7 +2926,8 @@ private fun TextMaterialEditor(record: CachedRecord, model: StudioRackViewModel)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(name.ifBlank { "Lyrics" }, color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("Written ChordPro material - available offline", color = TextSoft, fontSize = 11.sp)
+                    Text("${format.uppercase()} material - available offline", color = TextSoft, fontSize = 11.sp)
+                    original.optString("source_attribution").takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft, fontSize = 10.sp) }
                 }
                 TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Close" else "Edit", color = Cyan, fontWeight = FontWeight.Bold) }
             }
@@ -2854,7 +2938,7 @@ private fun TextMaterialEditor(record: CachedRecord, model: StudioRackViewModel)
                     onClick = {
                         model.saveSongAttachment(record.entityId, JSONObject(original.toString())
                             .put("display_name", name.trim()).put("source_type", "text")
-                            .put("content_format", "chordpro").put("content_text", content.text)
+                            .put("content_format", format).put("content_text", content.text)
                             .put("file_ref", "text://chordpro"))
                         expanded = false
                     },
@@ -3761,13 +3845,13 @@ private fun ChordProDocument(source: String) {
         val tablet = maxWidth >= 600.dp
         Column(Modifier.fillMaxWidth().padding(horizontal = if (tablet) 34.dp else 12.dp, vertical = 18.dp)) {
             source.replace("\r\n", "\n").lines().forEach { rawLine ->
-                val line = rawLine.trimEnd()
+                val line = rawLine.replace(Regex("^(?:\\[[0-9:.]+])+\\s*"), "").trimEnd()
                 val directive = Regex("^\\{([^}:]+)(?::\\s*(.*))?}$").matchEntire(line.trim())
                 val name = directive?.groupValues?.getOrNull(1)?.lowercase().orEmpty()
                 val argument = directive?.groupValues?.getOrNull(2).orEmpty()
                 when {
                     name.startsWith("end_of_") || name in setOf("eov", "eoc", "eob", "eot") -> Unit
-                    name in setOf("start_of_verse", "sov", "start_of_chorus", "soc", "start_of_bridge", "sob", "start_of_tab", "sot") -> {
+                    name in setOf("start_of_verse", "sov", "start_of_chorus", "soc", "start_of_bridge", "sob", "start_of_prechorus", "start_of_intro", "start_of_outro", "start_of_tab", "sot") -> {
                         val label = argument.ifBlank { name.substringAfter("start_of_").ifBlank { when (name) { "sov" -> "verse"; "soc" -> "chorus"; "sob" -> "bridge"; else -> "tab" } }.humanize() }
                         Text(label.uppercase(), color = Amber, fontSize = if (tablet) 18.sp else 14.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
                     }

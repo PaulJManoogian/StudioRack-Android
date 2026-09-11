@@ -65,6 +65,20 @@ class SyncClient(
             "/song-metadata/search?title=${URLEncoder.encode(title, Charsets.UTF_8.name())}&artist=${URLEncoder.encode(artist, Charsets.UTF_8.name())}"
         )
 
+    suspend fun searchSongLyrics(title: String, artist: String, album: String): JSONObject =
+        request(
+            "/song-lyrics/search?title=${URLEncoder.encode(title, Charsets.UTF_8.name())}" +
+                "&artist=${URLEncoder.encode(artist, Charsets.UTF_8.name())}" +
+                "&album=${URLEncoder.encode(album, Charsets.UTF_8.name())}"
+        )
+
+    suspend fun structureSongLyrics(title: String, artist: String, album: String, lyrics: String): JSONObject =
+        request(
+            "/song-lyrics/structure",
+            "POST",
+            JSONObject().put("title", title).put("artist", artist).put("album", album).put("lyrics", lyrics),
+        )
+
     suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport = withContext(Dispatchers.IO) {
         val connection = URL(exchangeUrl(baseUrl, kind, format, ids)).openConnection() as HttpURLConnection
         try {

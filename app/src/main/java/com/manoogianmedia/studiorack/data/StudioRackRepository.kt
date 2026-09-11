@@ -52,6 +52,11 @@ class StudioRackRepository(
 
     suspend fun searchSongMetadata(title: String, artist: String): JSONObject = client.searchSongMetadata(title, artist)
 
+    suspend fun searchSongLyrics(title: String, artist: String, album: String): JSONObject = client.searchSongLyrics(title, artist, album)
+
+    suspend fun structureSongLyrics(title: String, artist: String, album: String, lyrics: String): JSONObject =
+        client.structureSongLyrics(title, artist, album, lyrics)
+
     suspend fun liveEventStatus(eventId: String): JSONObject = client.liveEventStatus(eventId)
 
     suspend fun liveShareStatus(grantId: String): JSONObject = client.liveShareStatus(grantId)
@@ -176,8 +181,13 @@ class StudioRackRepository(
                 .put("instrument_role", "")
                 .put("file_ref", if (input.sourceType == "text") "text://chordpro" else "pending-upload://$attachmentId")
                 .put("source_type", input.sourceType)
-                .put("content_format", if (input.sourceType == "text") "chordpro" else "")
+                .put("content_format", if (input.sourceType == "text") input.contentFormat else "")
                 .put("content_text", input.contentText)
+                .put("source_provider", input.sourceProvider)
+                .put("source_record_id", input.sourceRecordId)
+                .put("source_uri", input.sourceUri)
+                .put("source_retrieved_utc", input.sourceRetrievedUtc)
+                .put("source_attribution", input.sourceAttribution)
                 .put("is_gig_default", if (existingAttachmentCount == 0 && index == 0) 1 else 0)
                 .put("include_in_print", 1)
                 .put("position", existingAttachmentCount + index + 1)
@@ -741,6 +751,12 @@ data class SongAttachmentInput(
     val mimeType: String,
     val sourceType: String = "file",
     val contentText: String = "",
+    val contentFormat: String = "chordpro",
+    val sourceProvider: String = "",
+    val sourceRecordId: String = "",
+    val sourceUri: String = "",
+    val sourceRetrievedUtc: String = "",
+    val sourceAttribution: String = "",
 )
 
 data class RepositorySyncHealth(
