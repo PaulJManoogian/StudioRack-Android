@@ -15,6 +15,7 @@ import android.net.NetworkCapabilities
 import android.net.Network
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.os.Build
 import android.content.pm.PackageManager
 import android.provider.OpenableColumns
@@ -3852,26 +3853,65 @@ private fun PerformanceSongScreen(
 private fun ChordProDocument(source: String) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val tablet = maxWidth >= 600.dp
-        Column(Modifier.fillMaxWidth().padding(horizontal = if (tablet) 34.dp else 12.dp, vertical = 18.dp)) {
-            source.replace("\r\n", "\n").lines().forEach { rawLine ->
-                val line = rawLine.replace(Regex("^(?:\\[[0-9:.]+])+\\s*"), "").trimEnd()
-                val directive = parseChordProDirective(line)
-                val name = directive?.first.orEmpty()
-                val argument = directive?.second.orEmpty()
-                when {
-                    name.startsWith("end_of_") || name in setOf("eov", "eoc", "eob", "eot") -> Unit
-                    name in setOf("start_of_verse", "sov", "start_of_chorus", "soc", "start_of_bridge", "sob", "start_of_prechorus", "start_of_intro", "start_of_outro", "start_of_tab", "sot") -> {
-                        val label = argument.ifBlank { name.substringAfter("start_of_").ifBlank { when (name) { "sov" -> "verse"; "soc" -> "chorus"; "sob" -> "bridge"; else -> "tab" } }.humanize() }
-                        Text(label.uppercase(), color = Amber, fontSize = if (tablet) 18.sp else 14.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
-                    }
-                    name in setOf("comment", "c") -> Text(argument, color = Cyan, fontStyle = FontStyle.Italic, fontSize = if (tablet) 19.sp else 15.sp)
-                    directive != null -> Unit
-                    line.isBlank() -> Spacer(Modifier.height(if (tablet) 14.dp else 9.dp))
-                    else -> Text(chordProLine(line), color = Color.White, fontFamily = FontFamily.Serif, fontSize = if (tablet) 27.sp else 20.sp, lineHeight = if (tablet) 36.sp else 28.sp)
+        val document = remember(source, tablet) { buildChordProDocument(source, tablet) }
+        Text(
+            document,
+            color = Color.White,
+            fontFamily = FontFamily.Serif,
+            fontSize = if (tablet) 27.sp else 20.sp,
+            lineHeight = if (tablet) 36.sp else 28.sp,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = if (tablet) 34.dp else 12.dp, vertical = 18.dp),
+        )
+    }
+}
+
+private fun buildChordProDocument(source: String, tablet: Boolean) = buildAnnotatedString {
+    source.replace("\r\n", "\n").lines().forEach { rawLine ->
+        val line = stripLeadingLyricTimestamps(rawLine).trimEnd()
+        val directive = parseChordProDirective(line)
+        val name = directive?.first.orEmpty()
+        val argument = directive?.second.orEmpty()
+        when {
+            name.startsWith("end_of_") || name in CHORDPRO_END_DIRECTIVES -> Unit
+            name in CHORDPRO_SECTION_DIRECTIVES -> {
+                val label = argument.ifBlank {
+                    name.substringAfter("start_of_").ifBlank {
+                        when (name) { "sov" -> "verse"; "soc" -> "chorus"; "sob" -> "bridge"; else -> "tab" }
+                    }.humanize()
                 }
+                if (length > 0) append('\n')
+                pushStyle(SpanStyle(color = Amber, fontSize = if (tablet) 18.sp else 14.sp, fontWeight = FontWeight.Black))
+                append(label.uppercase())
+                pop()
+                append('\n')
+            }
+            name in CHORDPRO_COMMENT_DIRECTIVES -> {
+                pushStyle(SpanStyle(color = Cyan, fontSize = if (tablet) 19.sp else 15.sp, fontStyle = FontStyle.Italic))
+                append(argument)
+                pop()
+                append('\n')
+            }
+            directive != null -> Unit
+            line.isBlank() -> append('\n')
+            else -> {
+                append(chordProLine(line))
+                append('\n')
             }
         }
     }
+}
+
+internal fun stripLeadingLyricTimestamps(value: String): String {
+    var cursor = 0
+    while (cursor < value.length && value[cursor] == '[') {
+        val end = value.indexOf(']', cursor + 1)
+        if (end < 0) break
+        val marker = value.substring(cursor + 1, end)
+        if (marker.isBlank() || marker.any { !it.isDigit() && it != ':' && it != '.' }) break
+        cursor = end + 1
+    }
+    while (cursor < value.length && value[cursor].isWhitespace()) cursor++
+    return value.substring(cursor)
 }
 
 internal fun parseChordProDirective(line: String): Pair<String, String>? {
@@ -3909,6 +3949,10 @@ private fun chordProLine(line: String) = buildAnnotatedString {
     }
     append(line.substring(cursor))
 }
+
+private val CHORDPRO_END_DIRECTIVES = setOf("eov", "eoc", "eob", "eot")
+private val CHORDPRO_SECTION_DIRECTIVES = setOf("start_of_verse", "sov", "start_of_chorus", "soc", "start_of_bridge", "sob", "start_of_prechorus", "start_of_intro", "start_of_outro", "start_of_tab", "sot")
+private val CHORDPRO_COMMENT_DIRECTIVES = setOf("comment", "c")
 
 @Composable
 private fun PerformanceMetronomeControls(mediaLink: String?, context: Context, metronome: NativeMetronome) {
@@ -4141,7 +4185,13 @@ private fun preloadPerformanceAttachment(item: GigSong) {
     if (path.isBlank()) return
     val version = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
     val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
-    loadPerformanceAttachment(path, version, isPdf, 0)
+    val previousPriority = Process.getThreadPriority(Process.myTid())
+    try {
+        Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+        loadPerformanceAttachment(path, version, isPdf, 0)
+    } finally {
+        Process.setThreadPriority(previousPriority)
+    }
 }
 
 private fun loadPerformanceAttachment(path: String, version: String, isPdf: Boolean, page: Int): AttachmentRender {

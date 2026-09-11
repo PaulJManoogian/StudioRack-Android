@@ -12,6 +12,13 @@ class PerformanceAttachmentSizingTest {
     }
 
     @Test
+    fun lyricTimestampsAreRemovedWithoutChangingChordTags() {
+        assertEquals("[C]Sing this line", stripLeadingLyricTimestamps("[00:13.25] [C]Sing this line"))
+        assertEquals("[G]Keep the chord", stripLeadingLyricTimestamps("[G]Keep the chord"))
+        assertEquals("Plain lyric", stripLeadingLyricTimestamps("Plain lyric"))
+    }
+
+    @Test
     fun renderWidthScalesWithAvailableHeap() {
         assertEquals(1080, performanceAttachmentRenderWidth(192L * 1024 * 1024))
         assertEquals(1280, performanceAttachmentRenderWidth(320L * 1024 * 1024))
