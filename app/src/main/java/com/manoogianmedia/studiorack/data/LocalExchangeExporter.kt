@@ -203,7 +203,7 @@ internal class LocalExchangeExporter(
 
     private fun flatten(kind: String, records: List<JSONObject>): Pair<List<String>, List<Map<String, String>>> {
         val headers = when (kind) {
-            "songs" -> listOf("title", "artist", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "media_ref", "notes", "favorite")
+            "songs" -> listOf("title", "artist", "album", "release_year", "genre", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "media_ref", "notes", "favorite")
             "setlists" -> listOf("set_list", "description", "set", "set_number", "song_number", "group_type", "group_name", "song", "artist", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "set_note", "song_note", "set_list_notes", "favorite")
             "items" -> listOf("display_name", "brand", "category", "type", "location", "usage_status", "quantity", "notes")
             "kits" -> listOf("name", "designation", "location", "members", "notes")
@@ -213,7 +213,8 @@ internal class LocalExchangeExporter(
         records.forEach { record ->
             when (kind) {
                 "songs" -> output += mapOf(
-                    "title" to record.text("title"), "artist" to record.text("artist"), "key" to record.text("song_key"), "tempo" to record.text("tempo"),
+                    "title" to record.text("title"), "artist" to record.text("artist"), "album" to record.text("album"),
+                    "release_year" to record.text("release_year"), "genre" to record.text("genre"), "key" to record.text("song_key"), "tempo" to record.text("tempo"),
                     "duration" to duration(record.opt("duration_seconds")), "time_signature" to record.text("time_signature"),
                     "style" to record.text("style"), "starts_by" to record.text("starts_by"), "patch_name" to record.text("patch_name"),
                     "patch_number" to record.text("patch_number"), "media_ref" to record.text("media_ref"), "notes" to record.text("notes"),

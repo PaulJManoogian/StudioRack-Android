@@ -60,6 +60,11 @@ class SyncClient(
     suspend fun runAiReport(question: String): JSONObject =
         request("/reports/ai", "POST", JSONObject().put("question", question))
 
+    suspend fun searchSongMetadata(title: String, artist: String): JSONObject =
+        request(
+            "/song-metadata/search?title=${URLEncoder.encode(title, Charsets.UTF_8.name())}&artist=${URLEncoder.encode(artist, Charsets.UTF_8.name())}"
+        )
+
     suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport = withContext(Dispatchers.IO) {
         val connection = URL(exchangeUrl(baseUrl, kind, format, ids)).openConnection() as HttpURLConnection
         try {

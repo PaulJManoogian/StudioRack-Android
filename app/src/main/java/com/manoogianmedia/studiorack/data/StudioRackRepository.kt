@@ -50,6 +50,8 @@ class StudioRackRepository(
 
     suspend fun runAiReport(question: String): JSONObject = client.runAiReport(question)
 
+    suspend fun searchSongMetadata(title: String, artist: String): JSONObject = client.searchSongMetadata(title, artist)
+
     suspend fun liveEventStatus(eventId: String): JSONObject = client.liveEventStatus(eventId)
 
     suspend fun liveShareStatus(grantId: String): JSONObject = client.liveShareStatus(grantId)

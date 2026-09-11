@@ -101,6 +101,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
@@ -113,6 +114,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.stateDescription
@@ -147,6 +149,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File
@@ -2588,6 +2591,16 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     val cacheById = cachedAttachments.associateBy(CachedAttachment::attachmentId)
     var title by remember { mutableStateOf(original.optString("title")) }
     var artist by remember { mutableStateOf(original.optString("artist")) }
+    var album by remember { mutableStateOf(original.optString("album")) }
+    var releaseYear by remember { mutableStateOf(original.optString("release_year")) }
+    var genre by remember { mutableStateOf(original.optString("genre")) }
+    var metadataSource by remember { mutableStateOf(original.optString("metadata_source")) }
+    var metadataSourceId by remember { mutableStateOf(original.optString("metadata_source_id")) }
+    var metadataSourceUri by remember { mutableStateOf(original.optString("metadata_source_uri")) }
+    var metadataCheckedUtc by remember { mutableStateOf(original.optString("metadata_last_checked_utc")) }
+    var danceability by remember { mutableIntStateOf(if (original.has("danceability") && !original.isNull("danceability")) original.optInt("danceability") else -1) }
+    var acousticness by remember { mutableIntStateOf(if (original.has("acousticness") && !original.isNull("acousticness")) original.optInt("acousticness") else -1) }
+    var artistMbid by remember { mutableStateOf(original.optString("artist_mbid")) }
     var style by remember { mutableStateOf(original.optString("style")) }
     var tempo by remember { mutableStateOf(original.optString("tempo")) }
     var duration by remember { mutableStateOf(formatDuration(original.optInt("duration_seconds"))) }
@@ -2605,6 +2618,11 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     var lyricsName by remember(target.id) { mutableStateOf("Lyrics") }
     var lyricsDraft by remember(target.id) { mutableStateOf(TextFieldValue("")) }
     var preview by remember { mutableStateOf<CachedAttachment?>(null) }
+    var metadataResults by remember { mutableStateOf(emptyList<JSONObject>()) }
+    var metadataMessage by remember { mutableStateOf("") }
+    var metadataBusy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
     val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -2620,6 +2638,61 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     EditorDialog(if (target.id == null) "Add Song" else "Edit Song", close) {
         StudioField("Song title", title) { title = it }
         StudioField("Artist", artist) { artist = it }
+        Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Find Recording Metadata", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Search by title and artist, choose the correct recording, then review the imported values before saving.", color = TextSoft, fontSize = 11.sp)
+                StudioButton(
+                    onClick = {
+                        if (title.isBlank()) {
+                            metadataMessage = "Enter a song title first."
+                        } else {
+                            metadataBusy = true
+                            metadataMessage = "Looking for matching recordings..."
+                            scope.launch {
+                                runCatching { model.searchSongMetadata(title.trim(), artist.trim()) }
+                                    .onSuccess { payload ->
+                                        val rows = payload.optJSONArray("results") ?: JSONArray()
+                                        metadataResults = (0 until rows.length()).map { rows.getJSONObject(it) }
+                                        metadataMessage = if (metadataResults.isEmpty()) "No matching recordings were found." else "Choose the recording you want to use."
+                                    }
+                                    .onFailure { metadataMessage = it.message ?: "The lookup failed." }
+                                metadataBusy = false
+                            }
+                        }
+                    },
+                    enabled = !metadataBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text(if (metadataBusy) "Searching..." else "Search GetSongBPM", color = Color.White, fontWeight = FontWeight.Bold) }
+                TextButton(onClick = { uriHandler.openUri("https://getsongbpm.com") }) {
+                    Text("Song data by GetSongBPM", color = TextSoft, fontSize = 11.sp)
+                }
+                if (metadataMessage.isNotBlank()) Text(metadataMessage, color = if (metadataResults.isEmpty() && !metadataBusy) Amber else TextSoft, fontSize = 12.sp)
+                metadataResults.forEach { item ->
+                    Surface(color = PanelRaised, border = BorderStroke(1.dp, Amber.copy(alpha = .25f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text(listOf(item.optString("title"), item.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(listOf(item.optString("album"), item.optString("release_year"), item.optString("genre"), item.optString("tempo").takeIf(String::isNotBlank)?.let { "$it BPM" }.orEmpty(), item.optString("song_key"), item.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 11.sp)
+                            StudioButton(onClick = {
+                                title = item.optString("title").ifBlank { title }; artist = item.optString("artist").ifBlank { artist }
+                                album = item.optString("album"); releaseYear = item.optString("release_year"); genre = item.optString("genre")
+                                tempo = item.optString("tempo"); signature = item.optString("time_signature").ifBlank { signature }; songKey = item.optString("song_key")
+                                metadataSource = item.optString("source"); metadataSourceId = item.optString("source_id"); metadataSourceUri = item.optString("source_uri")
+                                metadataCheckedUtc = item.optString("checked_utc"); danceability = if (item.isNull("danceability")) -1 else item.optInt("danceability")
+                                acousticness = if (item.isNull("acousticness")) -1 else item.optInt("acousticness"); artistMbid = item.optString("artist_mbid")
+                                metadataResults = emptyList(); metadataMessage = "Recording selected. Review or change any field, then save."
+                            }, modifier = Modifier.fillMaxWidth()) { Text("Use This Recording", color = Ink, fontWeight = FontWeight.Black) }
+                        }
+                    }
+                }
+            }
+        }
+        StudioField("Album", album) { album = it }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { StudioField("Release year", releaseYear, dictation = false) { releaseYear = it.filter(Char::isDigit).take(4) } }
+            Box(Modifier.weight(2f)) { StudioField("Genre", genre) { genre = it } }
+        }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             if (maxWidth < 520.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2711,6 +2784,9 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             save = {
                 model.saveSong(target.id, JSONObject()
                     .put("title", title.trim()).put("artist", artist.trim()).put("style", style.trim())
+                    .put("album", album.trim()).put("release_year", releaseYear.toIntOrNull()).put("genre", genre.trim())
+                    .put("metadata_source", metadataSource).put("metadata_source_id", metadataSourceId).put("metadata_source_uri", metadataSourceUri)
+                    .put("metadata_last_checked_utc", metadataCheckedUtc).put("danceability", danceability.takeIf { it >= 0 }).put("acousticness", acousticness.takeIf { it >= 0 }).put("artist_mbid", artistMbid)
                     .put("tempo", tempo.trim()).put("duration_seconds", parseDuration(duration)).put("time_signature", signature.trim()).put("song_key", normalizeSongKey(songKey)).put("starts_by", starts.trim())
                     .put("patch_name", patchName.trim()).put("patch_number", patchNumber.trim())
                     .put("media_ref", media.trim()).put("notes", notes.trim()).put("is_favorite", if (favorite) 1 else 0), newAttachments, close)

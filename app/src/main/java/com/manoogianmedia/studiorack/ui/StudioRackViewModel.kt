@@ -189,6 +189,9 @@ class StudioRackViewModel(
         }
     }
 
+    suspend fun searchSongMetadata(title: String, artist: String): JSONObject =
+        repository.searchSongMetadata(title, artist)
+
     suspend fun refreshLiveEvent(eventId: String, knownRevision: String): LiveRefreshResult = runCatching {
         val status = repository.liveEventStatus(eventId)
         val revision = status.optString("revision")
