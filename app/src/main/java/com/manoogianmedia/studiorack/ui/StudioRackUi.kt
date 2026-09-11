@@ -3855,9 +3855,9 @@ private fun ChordProDocument(source: String) {
         Column(Modifier.fillMaxWidth().padding(horizontal = if (tablet) 34.dp else 12.dp, vertical = 18.dp)) {
             source.replace("\r\n", "\n").lines().forEach { rawLine ->
                 val line = rawLine.replace(Regex("^(?:\\[[0-9:.]+])+\\s*"), "").trimEnd()
-                val directive = Regex("^\\{([^}:]+)(?::\\s*(.*))?}$").matchEntire(line.trim())
-                val name = directive?.groupValues?.getOrNull(1)?.lowercase().orEmpty()
-                val argument = directive?.groupValues?.getOrNull(2).orEmpty()
+                val directive = parseChordProDirective(line)
+                val name = directive?.first.orEmpty()
+                val argument = directive?.second.orEmpty()
                 when {
                     name.startsWith("end_of_") || name in setOf("eov", "eoc", "eob", "eot") -> Unit
                     name in setOf("start_of_verse", "sov", "start_of_chorus", "soc", "start_of_bridge", "sob", "start_of_prechorus", "start_of_intro", "start_of_outro", "start_of_tab", "sot") -> {
@@ -3872,6 +3872,17 @@ private fun ChordProDocument(source: String) {
             }
         }
     }
+}
+
+internal fun parseChordProDirective(line: String): Pair<String, String>? {
+    val trimmed = line.trim()
+    if (trimmed.length < 3 || trimmed.first() != '{' || trimmed.last() != '}') return null
+    val body = trimmed.substring(1, trimmed.lastIndex)
+    val separator = body.indexOf(':')
+    val name = (if (separator >= 0) body.substring(0, separator) else body).trim().lowercase()
+    if (name.isBlank() || '}' in name) return null
+    val argument = if (separator >= 0) body.substring(separator + 1).trim() else ""
+    return name to argument
 }
 
 private fun chordProLine(line: String) = buildAnnotatedString {

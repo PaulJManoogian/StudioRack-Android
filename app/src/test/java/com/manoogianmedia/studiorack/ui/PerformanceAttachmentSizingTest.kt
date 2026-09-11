@@ -5,6 +5,13 @@ import org.junit.Test
 
 class PerformanceAttachmentSizingTest {
     @Test
+    fun chordProDirectivesDoNotDependOnPlatformRegexBehavior() {
+        assertEquals("start_of_chorus" to "Chorus 2", parseChordProDirective("{start_of_chorus: Chorus 2}"))
+        assertEquals("eoc" to "", parseChordProDirective("  {eoc}  "))
+        assertEquals(null, parseChordProDirective("This is a lyric line"))
+    }
+
+    @Test
     fun renderWidthScalesWithAvailableHeap() {
         assertEquals(1080, performanceAttachmentRenderWidth(192L * 1024 * 1024))
         assertEquals(1280, performanceAttachmentRenderWidth(320L * 1024 * 1024))
