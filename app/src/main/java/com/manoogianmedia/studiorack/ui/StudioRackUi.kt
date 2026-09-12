@@ -410,7 +410,10 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val account = runCatching { JSONObject(state?.accountJson ?: "{}") }.getOrDefault(JSONObject())
     val upcoming = events.map(::recordJson).filter { it.optString("event_status") != "ended" }.sortedBy { it.optString("event_date") + it.optString("start_time") }
     val specRows = specs.map(::supportingJson)
-    val purchaseTotal = specRows.filter { it.optString("key") == "purchase_price" }.sumOf { it.optString("value").toDoubleOrNull() ?: 0.0 }
+    val estimatedStudioValue = specRows
+        .groupBy { it.optString("item_id") }
+        .values
+        .sumOf { itemSpecs -> estimatedItemValue(itemSpecs.associate { it.optString("key") to it.optString("value") }) }
     val maintenanceHistory by model.maintenanceHistory.collectAsState()
     val careRows = maintenanceRows(specRows, items.map(::supportingJson), brands.map(::supportingJson), locations.map(::supportingJson), fieldNotes = maintenanceNotes.map(::recordJson), completions = maintenanceHistory.filter { it.revision == 0 }.map(::recordJson))
     val tracked = careRows.size
@@ -446,7 +449,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
                             }
                         }
                         Text("Estimated Studio Value", color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 14.dp))
-                        Text("$${"%,.2f".format(purchaseTotal)}", color = Cyan, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                        Text("$${"%,.2f".format(estimatedStudioValue)}", color = Cyan, fontSize = 22.sp, fontWeight = FontWeight.Black)
                         Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(state?.lastSyncAt?.let { "Synced ${DateFormat.getDateTimeInstance().format(Date(it))}" } ?: "Not synchronized", color = TextSoft, fontSize = 11.sp)
                             StudioButton(onClick = model::sync, enabled = !uiState.busy) { Text(if (uiState.busy) "Syncing" else "Sync now", color = Ink, fontWeight = FontWeight.Black) }
@@ -2622,7 +2625,7 @@ private fun JSONArray?.jsonObjects(): List<JSONObject> = buildList {
     for (index in 0 until source.length()) source.optJSONObject(index)?.let(::add)
 }
 
-private fun estimatedItemValue(specs: Map<String, String>): Double {
+internal fun estimatedItemValue(specs: Map<String, String>): Double {
     if (specs["curated_artifact"].equals("yes", true)) return 0.0
     val purchase = specs["purchase_price"]?.toDoubleOrNull() ?: return 0.0
     val purchased = parseLocalDate(specs["purchase_date"])
