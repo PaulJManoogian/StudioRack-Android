@@ -4151,6 +4151,7 @@ private fun GigSongCues(song: JSONObject?, compact: Boolean) {
 
 @Composable
 private fun GigTimeStrip(settings: PerformanceSettings, startedAt: Long, remainingSeconds: Int, sectionName: String) {
+    val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
     var now by remember(startedAt) { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(startedAt) {
         while (true) {
@@ -4166,7 +4167,7 @@ private fun GigTimeStrip(settings: PerformanceSettings, startedAt: Long, remaini
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = if (tabletLayout) 12.dp else 7.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -4179,9 +4180,10 @@ private fun GigTimeStrip(settings: PerformanceSettings, startedAt: Long, remaini
 
 @Composable
 private fun GigTimerCell(label: String, value: String) {
+    val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 5.dp)) {
-        Text(label.uppercase(), color = TextSoft, fontSize = 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
-        Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(label.uppercase(), color = TextSoft, fontSize = if (tabletLayout) 14.sp else 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
+        Text(value, color = Color.White, fontSize = if (tabletLayout) 28.sp else 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -4225,9 +4227,9 @@ private fun PerformanceSongScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             GigIconButton(Icons.Rounded.Close, "Return to set list", close)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(item.sectionName, color = Color.White, fontSize = if (tabletLayout) 22.sp else 16.sp, fontWeight = FontWeight.Bold)
-                item.performanceGroup?.let { group -> Text("${group.type.replaceFirstChar(Char::uppercase)}: ${group.name}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = Amber, fontSize = if (tabletLayout) 14.sp else 10.sp, fontWeight = FontWeight.Black) }
-                Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = if (tabletLayout) 12.sp else 9.sp, fontWeight = FontWeight.Black)
+                Text(item.sectionName, color = Color.White, fontSize = if (tabletLayout) 24.sp else 16.sp, fontWeight = FontWeight.Bold)
+                item.performanceGroup?.let { group -> Text("${group.type.replaceFirstChar(Char::uppercase)}: ${group.name}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = Amber, fontSize = if (tabletLayout) 16.sp else 10.sp, fontWeight = FontWeight.Black) }
+                Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = if (tabletLayout) 13.sp else 9.sp, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 PerformanceMetronomeControls(mediaLink, context, metronome)
@@ -4241,13 +4243,13 @@ private fun PerformanceSongScreen(
             GigIconButton(Icons.Rounded.NavigateBefore, "Previous song", previous, position > 0)
             Column(Modifier.weight(1f)) {
                 if (nextItem != null) {
-                    Text("> ${gigSongTitle(nextItem)}", color = Amber, fontSize = if (tabletLayout) 23.sp else 14.sp, lineHeight = if (tabletLayout) 27.sp else 17.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                    Text("> ${gigSongTitle(nextItem)}", color = Amber, fontSize = if (tabletLayout) 28.sp else 14.sp, lineHeight = if (tabletLayout) 32.sp else 17.sp, fontWeight = FontWeight.Black, maxLines = 2)
                     val nextCue = gigSongCue(nextItem)
-                    if (nextCue.isNotBlank()) Text(nextCue, color = TextSoft, fontSize = if (tabletLayout) 16.sp else 11.sp, lineHeight = if (tabletLayout) 20.sp else 14.sp, maxLines = 2)
+                    if (nextCue.isNotBlank()) Text(nextCue, color = TextSoft, fontSize = if (tabletLayout) 27.sp else 11.sp, lineHeight = if (tabletLayout) 31.sp else 14.sp, maxLines = 2)
                 } else {
-                    Text("> END OF SET LIST", color = Amber, fontSize = if (tabletLayout) 21.sp else 12.sp, fontWeight = FontWeight.Black)
+                    Text("> END OF SET LIST", color = Amber, fontSize = if (tabletLayout) 26.sp else 12.sp, fontWeight = FontWeight.Black)
                 }
-                previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = if (tabletLayout) 14.sp else 10.sp, maxLines = 2) }
+                previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = if (tabletLayout) 16.sp else 10.sp, maxLines = 2) }
             }
             GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
         }
