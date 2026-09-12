@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -77,9 +78,11 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.List as ListIcon
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NavigateBefore
@@ -3351,11 +3354,39 @@ private fun EventCard(
                 }
                 if (event.optString("set_list_id").isNotBlank()) Text("Open $liveModeName", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
                 if (edit != null || copy != null || host != null || people != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    if (people != null) TextButton(onClick = people) { Text(if (peopleCount > 0) "People $peopleCount" else "People", color = Color.White, fontWeight = FontWeight.Bold) }
+                    if (people != null) EventToolIconButton(Icons.Rounded.Groups, "People", people, peopleCount)
                     if (host != null) TextButton(onClick = host) { Text("Host", color = Cyan, fontWeight = FontWeight.Bold) }
-                    if (copy != null) TextButton(onClick = copy) { Text("Copy", color = Cyan) }
-                    if (edit != null) TextButton(onClick = edit) { Text("Edit", color = Amber) }
+                    if (copy != null) EventToolIconButton(Icons.Rounded.ContentCopy, "Copy event", copy)
+                    if (edit != null) EventToolIconButton(Icons.Rounded.Edit, "Edit event", edit)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EventToolIconButton(icon: ImageVector, description: String, onClick: () -> Unit, badgeCount: Int = 0) {
+    Box(Modifier.size(width = 54.dp, height = 50.dp)) {
+        Surface(
+            modifier = Modifier.size(44.dp).align(Alignment.BottomStart).clickable(onClick = onClick),
+            color = Color(0xFF303646),
+            contentColor = Color.White,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, Color(0xFF596174)),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = description, modifier = Modifier.size(21.dp))
+            }
+        }
+        if (badgeCount > 0) Surface(
+            modifier = Modifier.widthIn(min = 36.dp).height(22.dp).align(Alignment.TopEnd),
+            color = Amber,
+            contentColor = Ink,
+            shape = RoundedCornerShape(50),
+            border = BorderStroke(2.dp, Ink),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(badgeCount.toString(), fontSize = 10.sp, fontWeight = FontWeight.Black, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 4.dp))
             }
         }
     }
