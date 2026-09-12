@@ -396,6 +396,13 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val productName = stringResource(R.string.app_name)
     val agentName = stringResource(R.string.agent_name)
     val events by model.events.collectAsState()
+    val contacts by model.contacts.collectAsState()
+    val contactMethods by model.contactMethods.collectAsState()
+    val ensembles by model.ensembles.collectAsState()
+    val eventEnsembles by model.eventEnsembles.collectAsState()
+    val eventContacts by model.eventContacts.collectAsState()
+    val ensembleContacts by model.ensembleContacts.collectAsState()
+    val venueContacts by model.venueContacts.collectAsState()
     val items by model.items.collectAsState()
     val kits by model.kits.collectAsState()
     val brands by model.brands.collectAsState()
@@ -418,6 +425,8 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val careRows = maintenanceRows(specRows, items.map(::supportingJson), brands.map(::supportingJson), locations.map(::supportingJson), fieldNotes = maintenanceNotes.map(::recordJson), completions = maintenanceHistory.filter { it.revision == 0 }.map(::recordJson))
     val tracked = careRows.size
     val openBuddy = actions.map(::supportingJson).count { it.optString("status") !in setOf("handled", "cleared") }
+    var peopleEvent by remember { mutableStateOf<JSONObject?>(null) }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Spacer(Modifier.height(18.dp))
@@ -473,7 +482,15 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
         if (upcoming.isEmpty()) item { EmptyCard("No upcoming sessions are stored on this device.") }
         items(upcoming.take(5), key = { it.getString("id") }) { event ->
             val readiness = eventPacketReadiness(event, entries, attachments, cachedAttachments)
-            EventCard(event, readiness, open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) })
+            val eventPeople = resolveEventPeople(event, contacts, ensembles, eventEnsembles, eventContacts, ensembleContacts, venueContacts)
+            val eventGroupNames = resolveEventGroupNames(event, ensembles, eventEnsembles)
+            EventCard(
+                event,
+                readiness,
+                open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) },
+                peopleCount = eventPeople.size,
+                people = if (eventPeople.isNotEmpty() || eventGroupNames.isNotEmpty()) ({ peopleEvent = event }) else null,
+            )
         }
         item { SectionHeading("CARE READINESS", "What needs hands on it?") }
         item { CareSummary(careRows, model) }
@@ -481,6 +498,15 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
         if (actions.isEmpty()) item { EmptyCard("No $agentName actions are stored on this device.") }
         items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action)) }
         item { Spacer(Modifier.height(30.dp)) }
+    }
+    peopleEvent?.let { event ->
+        EventPeopleDialog(
+            event,
+            resolveEventPeople(event, contacts, ensembles, eventEnsembles, eventContacts, ensembleContacts, venueContacts),
+            contactMethods,
+            resolveEventGroupNames(event, ensembles, eventEnsembles),
+        ) { peopleEvent = null }
+    }
     }
 }
 
@@ -689,6 +715,13 @@ private fun KitsScreen(model: StudioRackViewModel) {
 private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit) {
     val events by model.events.collectAsState()
     val venues by model.venues.collectAsState()
+    val contacts by model.contacts.collectAsState()
+    val contactMethods by model.contactMethods.collectAsState()
+    val ensembles by model.ensembles.collectAsState()
+    val eventEnsembles by model.eventEnsembles.collectAsState()
+    val eventContacts by model.eventContacts.collectAsState()
+    val ensembleContacts by model.ensembleContacts.collectAsState()
+    val venueContacts by model.venueContacts.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
@@ -701,6 +734,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
     var localLiveEvent by remember { mutableStateOf<JSONObject?>(null) }
     var showLocalLive by remember { mutableStateOf(false) }
+    var peopleEvent by remember { mutableStateOf<JSONObject?>(null) }
     val venueNames = venues.associate { it.entityId to recordJson(it).optString("name") }
     val rows = events.map(::recordJson).onEach { event ->
         val venueName = venueNames[event.optString("venue_id")].orEmpty()
@@ -729,6 +763,8 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
             }
             if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
             items(rows, key = { it.getString("id") }) { event ->
+                val eventPeople = resolveEventPeople(event, contacts, ensembles, eventEnsembles, eventContacts, ensembleContacts, venueContacts)
+                val eventGroupNames = resolveEventGroupNames(event, ensembles, eventEnsembles)
                 EventCard(
                     event,
                     eventPacketReadiness(event, entries, attachments, cachedAttachments),
@@ -741,6 +777,8 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
                             .put("end_date", "").put("end_time", ""))
                     },
                     host = if (event.optString("set_list_id").isNotBlank()) ({ localLiveEvent = event; showLocalLive = true }) else null,
+                    peopleCount = eventPeople.size,
+                    people = if (eventPeople.isNotEmpty() || eventGroupNames.isNotEmpty()) ({ peopleEvent = event }) else null,
                 )
             }
         }
@@ -748,6 +786,14 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     editingEvent?.let { target -> EventEditor(target, model, close = { editingEvent = null }) }
     exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
     if (showLocalLive) LocalLiveDialog(model, localLiveEvent) { showLocalLive = false }
+    peopleEvent?.let { event ->
+        EventPeopleDialog(
+            event,
+            resolveEventPeople(event, contacts, ensembles, eventEnsembles, eventContacts, ensembleContacts, venueContacts),
+            contactMethods,
+            resolveEventGroupNames(event, ensembles, eventEnsembles),
+        ) { peopleEvent = null }
+    }
     }
 }
 
@@ -3271,7 +3317,16 @@ private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Uni
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () -> Unit, edit: (() -> Unit)? = null, copy: (() -> Unit)? = null, host: (() -> Unit)? = null) {
+private fun EventCard(
+    event: JSONObject,
+    readiness: PacketReadiness,
+    open: () -> Unit,
+    edit: (() -> Unit)? = null,
+    copy: (() -> Unit)? = null,
+    host: (() -> Unit)? = null,
+    peopleCount: Int = 0,
+    people: (() -> Unit)? = null,
+) {
     val liveModeName = stringResource(R.string.live_mode_name)
     Card(
         Modifier.fillMaxWidth().clickable(onClick = open),
@@ -3295,10 +3350,126 @@ private fun EventCard(event: JSONObject, readiness: PacketReadiness, open: () ->
                     )
                 }
                 if (event.optString("set_list_id").isNotBlank()) Text("Open $liveModeName", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                if (edit != null || copy != null || host != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (edit != null || copy != null || host != null || people != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (people != null) TextButton(onClick = people) { Text(if (peopleCount > 0) "People $peopleCount" else "People", color = Color.White, fontWeight = FontWeight.Bold) }
                     if (host != null) TextButton(onClick = host) { Text("Host", color = Cyan, fontWeight = FontWeight.Bold) }
                     if (copy != null) TextButton(onClick = copy) { Text("Copy", color = Cyan) }
                     if (edit != null) TextButton(onClick = edit) { Text("Edit", color = Amber) }
+                }
+            }
+        }
+    }
+}
+
+private data class EventPerson(
+    val id: String,
+    val contact: JSONObject,
+    val roles: List<String>,
+    val contexts: List<String>,
+)
+
+private data class EventPersonAccumulator(
+    val id: String,
+    val contact: JSONObject,
+    val roles: LinkedHashSet<String> = linkedSetOf(),
+    val contexts: LinkedHashSet<String> = linkedSetOf(),
+)
+
+private fun resolveEventPeople(
+    event: JSONObject,
+    contacts: List<CachedRecord>,
+    ensembles: List<CachedRecord>,
+    eventEnsembles: List<CachedRecord>,
+    eventContacts: List<CachedRecord>,
+    ensembleContacts: List<CachedRecord>,
+    venueContacts: List<CachedRecord>,
+): List<EventPerson> {
+    val eventId = event.optString("id")
+    val contactsById = contacts.associateBy(CachedRecord::entityId)
+    val ensembleNames = ensembles.associate { it.entityId to recordJson(it).optString("name", "Band / Group") }
+    val selectedEnsembles = eventEnsembles.map(::recordJson)
+        .filter { it.optString("event_id") == eventId }
+        .mapTo(linkedSetOf()) { it.optString("ensemble_id") }
+    val people = linkedMapOf<String, EventPersonAccumulator>()
+    fun add(contactId: String, role: String, context: String) {
+        val record = contactsById[contactId] ?: return
+        val person = people.getOrPut(contactId) { EventPersonAccumulator(contactId, recordJson(record)) }
+        role.takeIf(String::isNotBlank)?.let(person.roles::add)
+        context.takeIf(String::isNotBlank)?.let(person.contexts::add)
+    }
+    eventContacts.map(::recordJson).filter { it.optString("event_id") == eventId }.forEach {
+        add(it.optString("contact_id"), it.optString("relationship_role", "Participant").ifBlank { "Participant" }, "Event")
+    }
+    ensembleContacts.map(::recordJson).filter { it.optString("ensemble_id") in selectedEnsembles }.forEach {
+        val ensembleId = it.optString("ensemble_id")
+        add(it.optString("contact_id"), it.optString("relationship_role", "Member").ifBlank { "Member" }, ensembleNames[ensembleId].orEmpty())
+    }
+    val venueId = event.optString("venue_id")
+    venueContacts.map(::recordJson).filter { venueId.isNotBlank() && it.optString("venue_id") == venueId }.forEach {
+        add(it.optString("contact_id"), it.optString("relationship_role", "Venue Contact").ifBlank { "Venue Contact" }, "Venue")
+    }
+    return people.values.map { EventPerson(it.id, it.contact, it.roles.toList(), it.contexts.toList()) }
+        .sortedBy { it.contact.optString("display_name").lowercase() }
+}
+
+private fun resolveEventGroupNames(
+    event: JSONObject,
+    ensembles: List<CachedRecord>,
+    eventEnsembles: List<CachedRecord>,
+): List<String> {
+    val eventId = event.optString("id")
+    val names = ensembles.associate { it.entityId to recordJson(it).optString("name") }
+    return eventEnsembles.map(::recordJson)
+        .filter { it.optString("event_id") == eventId }
+        .mapNotNull { names[it.optString("ensemble_id")]?.takeIf(String::isNotBlank) }
+        .distinct()
+        .sortedBy(String::lowercase)
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun EventPeopleDialog(
+    event: JSONObject,
+    people: List<EventPerson>,
+    contactMethods: List<CachedRecord>,
+    groupNames: List<String>,
+    close: () -> Unit,
+) {
+    val context = LocalContext.current
+    val phones = people.map { it.contact.optString("phone") }.filter(String::isNotBlank).distinct()
+    val emails = people.map { it.contact.optString("email") }.filter(String::isNotBlank).distinct()
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxSize().padding(14.dp).statusBarsPadding().navigationBarsPadding(),
+            color = Panel,
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFF343B4D)),
+        ) {
+            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("EVENT ROSTER", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Text(event.optString("title", "Scheduled Event"), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("${people.size} ${if (people.size == 1) "person" else "people"} associated with this event", color = TextSoft, fontSize = 12.sp)
+                        if (groupNames.isNotEmpty()) Text("Bands / Groups: ${groupNames.joinToString(", ")}", color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    StudioButton(onClick = close, kind = StudioButtonKind.Secondary) { Text("Close", color = Color.White) }
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (phones.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "smsto", phones) }) { Text("Text Everyone", color = Ink, fontWeight = FontWeight.Bold) }
+                    if (emails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", emails) }, kind = StudioButtonKind.Secondary) { Text("Email Everyone", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (people.isEmpty()) item { EmptyCard("A band or group is selected, but it has no connected members yet.") }
+                    items(people, key = EventPerson::id) { person ->
+                        val label = (person.roles + person.contexts).filter(String::isNotBlank).joinToString(" / ")
+                        DirectoryContactRow(
+                            person.contact,
+                            label,
+                            context,
+                            contactMethods.filter { recordJson(it).optString("contact_id") == person.id }.map(::recordJson),
+                        )
+                    }
                 }
             }
         }
