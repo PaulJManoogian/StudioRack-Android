@@ -2392,34 +2392,29 @@ private fun SubBrandLockup(kind: SubBrand, modifier: Modifier = Modifier) {
             Text("LEVIATHAN", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(kind.name.uppercase(), color = accent, fontSize = 27.sp, fontWeight = FontWeight.Black)
-                SubBrandSignal(kind, Modifier.width(76.dp).height(24.dp))
+                if (kind == SubBrand.Crew) {
+                    Surface(color = Cyan, contentColor = Ink, shape = RoundedCornerShape(6.dp)) {
+                        Icon(Icons.Rounded.Groups, null, Modifier.size(30.dp).padding(4.dp), tint = Ink)
+                    }
+                } else {
+                    SubBrandSignal(Modifier.width(76.dp).height(24.dp))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SubBrandSignal(kind: SubBrand, modifier: Modifier = Modifier) {
+private fun SubBrandSignal(modifier: Modifier = Modifier) {
     Canvas(modifier) {
-        if (kind == SubBrand.Live) {
-            val points = listOf(
-                Offset(0f, size.height * .58f), Offset(size.width * .18f, size.height * .58f),
-                Offset(size.width * .29f, size.height * .26f), Offset(size.width * .42f, size.height * .82f),
-                Offset(size.width * .57f, size.height * .08f), Offset(size.width * .72f, size.height * .58f),
-                Offset(size.width, size.height * .58f),
-            )
-            points.zipWithNext().forEach { (start, end) -> drawLine(Cyan, start, end, strokeWidth = 4.dp.toPx()) }
-            drawCircle(Cyan, 4.dp.toPx(), points.last())
-        } else {
-            val nodes = listOf(
-                Offset(size.width * .12f, size.height * .68f),
-                Offset(size.width * .50f, size.height * .20f),
-                Offset(size.width * .90f, size.height * .72f),
-            )
-            drawLine(Amber, nodes[0], nodes[1], strokeWidth = 3.dp.toPx())
-            drawLine(Amber, nodes[1], nodes[2], strokeWidth = 3.dp.toPx())
-            nodes.forEach { drawCircle(Cyan, 5.dp.toPx(), it) }
-        }
+        val points = listOf(
+            Offset(0f, size.height * .58f), Offset(size.width * .18f, size.height * .58f),
+            Offset(size.width * .29f, size.height * .26f), Offset(size.width * .42f, size.height * .82f),
+            Offset(size.width * .57f, size.height * .08f), Offset(size.width * .72f, size.height * .58f),
+            Offset(size.width, size.height * .58f),
+        )
+        points.zipWithNext().forEach { (start, end) -> drawLine(Cyan, start, end, strokeWidth = 4.dp.toPx()) }
+        drawCircle(Cyan, 4.dp.toPx(), points.last())
     }
 }
 
@@ -3501,27 +3496,25 @@ private fun SubBrandIconButton(kind: SubBrand, description: String, onClick: () 
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Image(painterResource(R.drawable.brand_logo), description, Modifier.size(38.dp))
-                Surface(
-                    modifier = Modifier.size(19.dp).align(Alignment.BottomEnd),
-                    color = badgeColor,
-                    shape = CircleShape,
-                    border = BorderStroke(2.dp, Ink),
-                ) {
-                    Canvas(Modifier.fillMaxSize().padding(3.dp)) {
-                        if (kind == SubBrand.Live) {
-                            val points = listOf(
-                                Offset(0f, size.height * .58f), Offset(size.width * .22f, size.height * .58f),
-                                Offset(size.width * .36f, size.height * .18f), Offset(size.width * .52f, size.height * .86f),
-                                Offset(size.width * .68f, size.height * .34f), Offset(size.width, size.height * .58f),
-                            )
-                            points.zipWithNext().forEach { (start, end) -> drawLine(Ink, start, end, strokeWidth = 1.7.dp.toPx()) }
-                        } else {
-                            val nodes = listOf(Offset(0f, size.height), Offset(size.width * .48f, 0f), Offset(size.width, size.height))
-                            drawLine(Ink, nodes[0], nodes[1], strokeWidth = 1.5.dp.toPx())
-                            drawLine(Ink, nodes[1], nodes[2], strokeWidth = 1.5.dp.toPx())
-                            nodes.forEach { drawCircle(Ink, 1.7.dp.toPx(), it) }
-                        }
-                    }
+            }
+        }
+        Surface(
+            modifier = Modifier.size(22.dp).align(Alignment.BottomEnd),
+            color = badgeColor,
+            contentColor = Ink,
+            shape = if (kind == SubBrand.Live) CircleShape else RoundedCornerShape(6.dp),
+            border = BorderStroke(2.dp, Ink),
+        ) {
+            if (kind == SubBrand.Crew) {
+                Icon(Icons.Rounded.Groups, null, Modifier.fillMaxSize().padding(3.dp), tint = Ink)
+            } else {
+                Canvas(Modifier.fillMaxSize().padding(3.dp)) {
+                    val points = listOf(
+                        Offset(0f, size.height * .58f), Offset(size.width * .22f, size.height * .58f),
+                        Offset(size.width * .36f, size.height * .18f), Offset(size.width * .52f, size.height * .86f),
+                        Offset(size.width * .68f, size.height * .34f), Offset(size.width, size.height * .58f),
+                    )
+                    points.zipWithNext().forEach { (start, end) -> drawLine(Ink, start, end, strokeWidth = 1.7.dp.toPx()) }
                 }
             }
         }
