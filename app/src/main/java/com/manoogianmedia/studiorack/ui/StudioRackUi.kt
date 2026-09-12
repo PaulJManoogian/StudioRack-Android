@@ -753,7 +753,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
             if (sessionTab == "Leviathan Live") SubBrandSectionHeading(SubBrand.Live)
             else SectionHeading("SESSIONS", "Schedule")
         }
-        item { ChoiceStrip(listOf("Schedule", "Leviathan Live"), sessionTab) { sessionTab = it } }
+        item { SessionChoiceStrip(sessionTab) { sessionTab = it } }
         if (sessionTab == "Leviathan Live") {
             item { LeviathanLiveSettingsPanel(model) }
         } else {
@@ -1002,7 +1002,7 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
     var tab by remember { mutableStateOf("Reports") }
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionHeading(productName.uppercase(), "More") }
-        item { ChoiceStrip(listOf("Reports", "Sharing", "People", agentName, "Reference", "Sync", "Settings"), tab) { tab = it } }
+        item { MoreChoiceStrip(tab, agentName) { tab = it } }
         when (tab) {
             "Reports" -> reportsContent(model)
             "Sharing" -> sharingContent(model)
@@ -2455,6 +2455,44 @@ private fun ChoiceStrip(options: List<String>, selected: String, choose: (String
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun SessionChoiceStrip(selected: String, choose: (String) -> Unit) {
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        StudioButton(
+            onClick = { choose("Schedule") },
+            kind = if (selected == "Schedule") StudioButtonKind.Primary else StudioButtonKind.Secondary,
+        ) { Text("Schedule", color = if (selected == "Schedule") Ink else Color.White, fontWeight = FontWeight.Bold) }
+        SubBrandIconButton(SubBrand.Live, "Leviathan Live", { choose("Leviathan Live") }, selected == "Leviathan Live")
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun MoreChoiceStrip(selected: String, agentName: String, choose: (String) -> Unit) {
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        listOf("Reports", "Sharing", "People").forEach { option ->
+            StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
+                Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+        SubBrandIconButton(SubBrand.Crew, "Leviathan Crew", { choose(agentName) }, selected == agentName)
+        listOf("Reference", "Sync", "Settings").forEach { option ->
+            StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
+                Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ExpandableRecordCard(
     title: String,
     subtitle: String,
@@ -3410,12 +3448,12 @@ private fun EventCard(
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
-                if (event.optString("set_list_id").isNotBlank()) Text("Open $liveModeName", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                if (edit != null || copy != null || host != null || people != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (event.optString("set_list_id").isNotBlank() || edit != null || copy != null || host != null || people != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (event.optString("set_list_id").isNotBlank()) SubBrandIconButton(SubBrand.Live, "Open in $liveModeName", open)
                     if (people != null) EventToolIconButton(Icons.Rounded.Groups, "People", people, peopleCount)
                     if (host != null) TextButton(onClick = host) { Text("Host", color = Cyan, fontWeight = FontWeight.Bold) }
-                    if (copy != null) EventToolIconButton(Icons.Rounded.ContentCopy, "Copy event", copy)
                     if (edit != null) EventToolIconButton(Icons.Rounded.Edit, "Edit event", edit)
+                    if (copy != null) EventToolIconButton(Icons.Rounded.ContentCopy, "Copy event", copy)
                 }
             }
         }
@@ -3445,6 +3483,46 @@ private fun EventToolIconButton(icon: ImageVector, description: String, onClick:
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(badgeCount.toString(), fontSize = 10.sp, fontWeight = FontWeight.Black, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(horizontal = 4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubBrandIconButton(kind: SubBrand, description: String, onClick: () -> Unit, selected: Boolean = false) {
+    val badgeColor = if (kind == SubBrand.Live) Amber else Cyan
+    Box(Modifier.size(width = 54.dp, height = 50.dp)) {
+        Surface(
+            modifier = Modifier.size(44.dp).align(Alignment.BottomStart).clickable(onClick = onClick),
+            color = if (selected) Color(0xFF3A3323) else Color(0xFF303646),
+            contentColor = Color.White,
+            shape = CircleShape,
+            border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) badgeColor else Color(0xFF596174)),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Image(painterResource(R.drawable.brand_logo), description, Modifier.size(31.dp))
+                Surface(
+                    modifier = Modifier.size(19.dp).align(Alignment.BottomEnd),
+                    color = badgeColor,
+                    shape = CircleShape,
+                    border = BorderStroke(2.dp, Ink),
+                ) {
+                    Canvas(Modifier.fillMaxSize().padding(3.dp)) {
+                        if (kind == SubBrand.Live) {
+                            val points = listOf(
+                                Offset(0f, size.height * .58f), Offset(size.width * .22f, size.height * .58f),
+                                Offset(size.width * .36f, size.height * .18f), Offset(size.width * .52f, size.height * .86f),
+                                Offset(size.width * .68f, size.height * .34f), Offset(size.width, size.height * .58f),
+                            )
+                            points.zipWithNext().forEach { (start, end) -> drawLine(Ink, start, end, strokeWidth = 1.7.dp.toPx()) }
+                        } else {
+                            val nodes = listOf(Offset(0f, size.height), Offset(size.width * .48f, 0f), Offset(size.width, size.height))
+                            drawLine(Ink, nodes[0], nodes[1], strokeWidth = 1.5.dp.toPx())
+                            drawLine(Ink, nodes[1], nodes[2], strokeWidth = 1.5.dp.toPx())
+                            nodes.forEach { drawCircle(Ink, 1.7.dp.toPx(), it) }
+                        }
+                    }
+                }
             }
         }
     }
