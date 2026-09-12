@@ -2341,7 +2341,16 @@ private fun LabeledChoice(label: String, options: List<String>, selected: String
 
 @Composable
 private fun PedalKeyChoice(label: String, selected: String, choose: (String) -> Unit) {
-    val keys = linkedMapOf("Left" to "ArrowLeft", "Right" to "ArrowRight", "Up" to "ArrowUp", "Down" to "ArrowDown")
+    val keys = linkedMapOf(
+        "Left" to "ArrowLeft",
+        "Right" to "ArrowRight",
+        "Up" to "ArrowUp",
+        "Down" to "ArrowDown",
+        "Page Up" to "PageUp",
+        "Page Down" to "PageDown",
+        "Space" to "Space",
+        "Enter" to "Enter",
+    )
     LabeledChoice(label, keys.keys.toList(), keys.entries.firstOrNull { it.value == selected }?.key ?: "Left") {
         choose(keys.getValue(it))
     }

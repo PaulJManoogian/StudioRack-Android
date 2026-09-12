@@ -31,6 +31,21 @@ class PerformanceControlsTest {
     }
 
     @Test
+    fun mapsCommonAirTurnKeyboardModesPrecisely() {
+        val settings = PerformanceSettings(
+            previousKey = "PageUp",
+            nextKey = "PageDown",
+            metronomeKey = "Space",
+            muteKey = "Enter",
+        )
+        assertEquals(PedalAction.PREVIOUS, mappedPedalAction(KeyEvent.KEYCODE_PAGE_UP, settings))
+        assertEquals(PedalAction.NEXT, mappedPedalAction(KeyEvent.KEYCODE_PAGE_DOWN, settings))
+        assertEquals(PedalAction.METRONOME, mappedPedalAction(KeyEvent.KEYCODE_SPACE, settings))
+        assertEquals(PedalAction.MUTE, mappedPedalAction(KeyEvent.KEYCODE_ENTER, settings))
+        assertNull(mappedPedalAction(KeyEvent.KEYCODE_TAB, settings))
+    }
+
+    @Test
     fun settingsRoundTripForOfflinePersistence() {
         val expected = PerformanceSettings(
             metronomeAutostart = true,

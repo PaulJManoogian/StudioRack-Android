@@ -94,7 +94,7 @@ fun mappedPedalAction(keyCode: Int, settings: PerformanceSettings): PedalAction?
         settings.metronomeKey to PedalAction.METRONOME,
         settings.muteKey to PedalAction.MUTE,
     )
-    val action = mappings.firstOrNull { keyCodeForName(it.first) == keyCode }?.second ?: return null
+    val action = mappings.firstOrNull { keyCodeMatchesName(keyCode, it.first) }?.second ?: return null
     if (!settings.pedalReverse) return action
     return when (action) {
         PedalAction.PREVIOUS -> PedalAction.NEXT
@@ -108,8 +108,27 @@ internal fun keyCodeForName(name: String): Int = when (name) {
     "ArrowRight" -> KeyEvent.KEYCODE_DPAD_RIGHT
     "ArrowUp" -> KeyEvent.KEYCODE_DPAD_UP
     "ArrowDown" -> KeyEvent.KEYCODE_DPAD_DOWN
+    "PageUp" -> KeyEvent.KEYCODE_PAGE_UP
+    "PageDown" -> KeyEvent.KEYCODE_PAGE_DOWN
+    "Space" -> KeyEvent.KEYCODE_SPACE
+    "Enter" -> KeyEvent.KEYCODE_ENTER
     else -> KeyEvent.KEYCODE_UNKNOWN
 }
+
+private fun keyCodeMatchesName(keyCode: Int, name: String): Boolean =
+    keyCodeForName(name) == keyCode || (name == "Enter" && keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)
+
+fun isSupportedPedalKeyCode(keyCode: Int): Boolean = keyCode in setOf(
+    KeyEvent.KEYCODE_DPAD_LEFT,
+    KeyEvent.KEYCODE_DPAD_RIGHT,
+    KeyEvent.KEYCODE_DPAD_UP,
+    KeyEvent.KEYCODE_DPAD_DOWN,
+    KeyEvent.KEYCODE_PAGE_UP,
+    KeyEvent.KEYCODE_PAGE_DOWN,
+    KeyEvent.KEYCODE_SPACE,
+    KeyEvent.KEYCODE_ENTER,
+    KeyEvent.KEYCODE_NUMPAD_ENTER,
+)
 
 data class MetronomeState(
     val running: Boolean = false,
