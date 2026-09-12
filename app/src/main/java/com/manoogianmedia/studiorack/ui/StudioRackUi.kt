@@ -24,6 +24,7 @@ import android.util.LruCache
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -111,6 +112,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -477,7 +479,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
                 MetricCard("Events", upcoming.size.toString(), Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetricCard("Buddy", openBuddy.toString(), Modifier.weight(1f))
+                MetricCard(agentName, openBuddy.toString(), Modifier.weight(1f))
                 MetricCard("Care", tracked.toString(), Modifier.weight(1f))
             }
         }
@@ -497,7 +499,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
         }
         item { SectionHeading("CARE READINESS", "What needs hands on it?") }
         item { CareSummary(careRows, model) }
-        item { SectionHeading(agentName.uppercase(), "Recent activity") }
+        item { SubBrandSectionHeading(SubBrand.Crew, "Recent activity.") }
         if (actions.isEmpty()) item { EmptyCard("No $agentName actions are stored on this device.") }
         items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action)) }
         item { Spacer(Modifier.height(30.dp)) }
@@ -747,7 +749,10 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     }.sortedBy { it.optString("event_date") + it.optString("start_time") }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SectionHeading("SESSIONS", if (sessionTab == "Schedule") "Schedule" else "Leviathan Live") }
+        item {
+            if (sessionTab == "Leviathan Live") SubBrandSectionHeading(SubBrand.Live)
+            else SectionHeading("SESSIONS", "Schedule")
+        }
         item { ChoiceStrip(listOf("Schedule", "Leviathan Live"), sessionTab) { sessionTab = it } }
         if (sessionTab == "Leviathan Live") {
             item { LeviathanLiveSettingsPanel(model) }
@@ -2187,6 +2192,7 @@ private fun AiReportTab(
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.buddyContent(model: StudioRackViewModel) {
+    item { SubBrandSectionHeading(SubBrand.Crew) }
     item { Text("Available Skills", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
     item {
         val skills by model.buddySkills.collectAsState()
@@ -2241,7 +2247,8 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
         ChoiceStrip(listOf("Live Settings", "Performance Material", "Page Turner"), section) { section = it }
         when (section) {
             "Live Settings" -> {
-                Text("Leviathan Live Settings", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                SubBrandLockup(SubBrand.Live)
+                Text("Settings", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 SettingToggle("Show clock", settings.showClock) { settings = settings.copy(showClock = it) }
                 SettingToggle("Show elapsed set time", settings.showElapsed) { settings = settings.copy(showElapsed = it) }
                 SettingToggle("Show estimated time remaining", settings.showSetRemaining) { settings = settings.copy(showSetRemaining = it) }
@@ -2362,6 +2369,57 @@ private fun SectionHeading(eyebrow: String, title: String, eyebrowColor: Color =
     Column(Modifier.padding(top = 4.dp, bottom = 2.dp)) {
         Text(eyebrow, color = eyebrowColor, fontSize = 11.sp, fontWeight = FontWeight.Black)
         Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+private enum class SubBrand { Live, Crew }
+
+@Composable
+private fun SubBrandSectionHeading(kind: SubBrand, title: String = "") {
+    Column(Modifier.padding(top = 4.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        SubBrandLockup(kind)
+        if (title.isNotBlank()) Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun SubBrandLockup(kind: SubBrand, modifier: Modifier = Modifier) {
+    val accent = if (kind == SubBrand.Live) Amber else Cyan
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Image(painterResource(R.drawable.brand_logo), null, Modifier.size(54.dp))
+        Box(Modifier.width(3.dp).height(46.dp).background(Amber, RoundedCornerShape(2.dp)))
+        Column {
+            Text("LEVIATHAN", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(kind.name.uppercase(), color = accent, fontSize = 27.sp, fontWeight = FontWeight.Black)
+                SubBrandSignal(kind, Modifier.width(76.dp).height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubBrandSignal(kind: SubBrand, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        if (kind == SubBrand.Live) {
+            val points = listOf(
+                Offset(0f, size.height * .58f), Offset(size.width * .18f, size.height * .58f),
+                Offset(size.width * .29f, size.height * .26f), Offset(size.width * .42f, size.height * .82f),
+                Offset(size.width * .57f, size.height * .08f), Offset(size.width * .72f, size.height * .58f),
+                Offset(size.width, size.height * .58f),
+            )
+            points.zipWithNext().forEach { (start, end) -> drawLine(Cyan, start, end, strokeWidth = 4.dp.toPx()) }
+            drawCircle(Cyan, 4.dp.toPx(), points.last())
+        } else {
+            val nodes = listOf(
+                Offset(size.width * .12f, size.height * .68f),
+                Offset(size.width * .50f, size.height * .20f),
+                Offset(size.width * .90f, size.height * .72f),
+            )
+            drawLine(Amber, nodes[0], nodes[1], strokeWidth = 3.dp.toPx())
+            drawLine(Amber, nodes[1], nodes[2], strokeWidth = 3.dp.toPx())
+            nodes.forEach { drawCircle(Cyan, 5.dp.toPx(), it) }
+        }
     }
 }
 
