@@ -3500,7 +3500,7 @@ private fun SubBrandIconButton(kind: SubBrand, description: String, onClick: () 
             border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) badgeColor else Color(0xFF596174)),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Image(painterResource(R.drawable.brand_logo), description, Modifier.size(31.dp))
+                Image(painterResource(R.drawable.brand_logo), description, Modifier.size(38.dp))
                 Surface(
                     modifier = Modifier.size(19.dp).align(Alignment.BottomEnd),
                     color = badgeColor,
