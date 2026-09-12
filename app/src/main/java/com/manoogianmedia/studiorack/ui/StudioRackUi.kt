@@ -22,12 +22,14 @@ import android.provider.OpenableColumns
 import android.provider.ContactsContract
 import android.util.LruCache
 import android.widget.Toast
+import android.view.KeyEvent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -118,6 +120,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -150,6 +156,7 @@ import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
+import com.manoogianmedia.studiorack.performance.isSupportedPedalKeyCode
 import com.manoogianmedia.studiorack.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -212,10 +219,14 @@ fun StudioRackApp(
     ) {
         Surface(Modifier.fillMaxSize(), color = Ink) {
             var selectedEvent by remember { mutableStateOf<String?>(null) }
+            DisposableEffect(selectedEvent) {
+                onGigModeActive(selectedEvent != null)
+                onDispose { onGigModeActive(false) }
+            }
             when {
                 uiState.starting -> StudioRackSplash()
                 !uiState.signedIn -> LoginScreen(model, uiState)
-                selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys, onGigModeActive) { selectedEvent = null }
+                selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys) { selectedEvent = null }
                 else -> MainShell(model, uiState, notificationRoutes) { selectedEvent = it }
             }
         }
@@ -3746,7 +3757,6 @@ private fun GigModeScreen(
     model: StudioRackViewModel,
     eventId: String,
     hardwareKeys: Flow<Int>,
-    onGigModeActive: (Boolean) -> Unit,
     back: () -> Unit,
 ) {
     val venues by model.venues.collectAsState()
@@ -3764,6 +3774,8 @@ private fun GigModeScreen(
     }
     val metronome = remember { NativeMetronome() }
     val listState = rememberLazyListState()
+    val pedalFocusRequester = remember { FocusRequester() }
+    val pedalScope = rememberCoroutineScope()
     val event = remember(events, eventId) { events.firstOrNull { it.entityId == eventId }?.let(::recordJson) ?: JSONObject() }
     val setListId = event.optString("set_list_id")
     val setListRecord = remember(setLists, setListId) { setLists.firstOrNull { it.entityId == setListId } }
@@ -3847,13 +3859,7 @@ private fun GigModeScreen(
         }
     }
 
-    DisposableEffect(settings.pedalEnabled) {
-        onGigModeActive(settings.pedalEnabled)
-        onDispose {
-            onGigModeActive(false)
-            metronome.close()
-        }
-    }
+    DisposableEffect(Unit) { onDispose { metronome.close() } }
     LaunchedEffect(settings.metronomeMuted) { metronome.setMuted(settings.metronomeMuted) }
     LaunchedEffect(currentSong, performanceSongs.size, settings.metronomeMode, settings.metronomeSound) {
         performanceSongs.getOrNull(currentSong)?.song?.let { song ->
@@ -3861,27 +3867,45 @@ private fun GigModeScreen(
             if (settings.metronomeAutostart) metronome.start()
         }
     }
+
+    fun handlePedalKey(keyCode: Int) {
+        when (mappedPedalAction(keyCode, settings)) {
+            PedalAction.METRONOME -> metronome.toggle()
+            PedalAction.MUTE -> metronome.toggleMuted()
+            PedalAction.PREVIOUS, PedalAction.NEXT -> {
+                val action = mappedPedalAction(keyCode, settings) ?: return
+                val direction = if (action == PedalAction.PREVIOUS) -1 else 1
+                if (!detailOpen && settings.pedalMode == "scroll") {
+                    val fraction = when (settings.pedalScrollAmount) { "small" -> 0.2f; "full" -> 0.85f; else -> 0.5f }
+                    pedalScope.launch { listState.scrollBy(listState.layoutInfo.viewportSize.height * fraction * direction) }
+                } else if (performanceSongs.isNotEmpty()) {
+                    currentSong = (currentSong + direction).coerceIn(0, performanceSongs.lastIndex)
+                    currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                    if (!detailOpen) pedalScope.launch { listState.animateScrollToItem(gigListItemIndex(currentSong, performanceSongs)) }
+                }
+            }
+            null -> Unit
+        }
+    }
+
     LaunchedEffect(settings, detailOpen, performanceSongs.size) {
         hardwareKeys.collect { keyCode ->
             if (!settings.pedalEnabled) return@collect
-            when (mappedPedalAction(keyCode, settings)) {
-                PedalAction.METRONOME -> metronome.toggle()
-                PedalAction.MUTE -> metronome.toggleMuted()
-                PedalAction.PREVIOUS, PedalAction.NEXT -> {
-                    val action = mappedPedalAction(keyCode, settings) ?: return@collect
-                    val direction = if (action == PedalAction.PREVIOUS) -1 else 1
-                    if (!detailOpen && settings.pedalMode == "scroll") {
-                        val fraction = when (settings.pedalScrollAmount) { "small" -> 0.2f; "full" -> 0.85f; else -> 0.5f }
-                        listState.scrollBy(listState.layoutInfo.viewportSize.height * fraction * direction)
-                    } else if (performanceSongs.isNotEmpty()) {
-                        currentSong = (currentSong + direction).coerceIn(0, performanceSongs.lastIndex)
-                        currentEntryId = performanceSongs[currentSong].entry.optString("id")
-                        if (!detailOpen) listState.animateScrollToItem(gigListItemIndex(currentSong, performanceSongs))
-                    }
-                }
-                null -> Unit
-            }
+            handlePedalKey(keyCode)
         }
+    }
+
+    val pedalInputModifier = Modifier
+        .focusRequester(pedalFocusRequester)
+        .focusable(settings.pedalEnabled)
+        .onPreviewKeyEvent { keyEvent ->
+            val native = keyEvent.nativeKeyEvent
+            if (!settings.pedalEnabled || !isSupportedPedalKeyCode(native.keyCode)) return@onPreviewKeyEvent false
+            if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) handlePedalKey(native.keyCode)
+            true
+        }
+    LaunchedEffect(detailOpen, settings.pedalEnabled) {
+        if (settings.pedalEnabled) pedalFocusRequester.requestFocus()
     }
 
     if (editingLiveSet && setListRecord != null) {
@@ -3897,6 +3921,7 @@ private fun GigModeScreen(
 
     if (detailOpen && performanceSongs.isNotEmpty()) {
         PerformanceSongScreen(
+            modifier = pedalInputModifier,
             item = performanceSongs[currentSong],
             position = currentSong,
             total = performanceSongs.size,
@@ -3919,7 +3944,7 @@ private fun GigModeScreen(
         return
     }
     LazyColumn(
-        Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).statusBarsPadding().navigationBarsPadding().padding(horizontal = 14.dp),
+        pedalInputModifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).statusBarsPadding().navigationBarsPadding().padding(horizontal = 14.dp),
         state = listState,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -4161,6 +4186,7 @@ private fun GigTimerCell(label: String, value: String) {
 
 @Composable
 private fun PerformanceSongScreen(
+    modifier: Modifier = Modifier,
     item: GigSong,
     position: Int,
     total: Int,
@@ -4186,7 +4212,7 @@ private fun PerformanceSongScreen(
     }
     val pageCount = rendered.pageCount
     Column(
-        Modifier
+        modifier
             .fillMaxSize()
             .background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B))))
             .statusBarsPadding()
@@ -4444,7 +4470,7 @@ private fun PerformancePulseLine(metronome: NativeMetronome) {
 private fun GigCircleButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
     Surface(
         color = Amber.copy(alpha = if (enabled) 1f else 0.28f), contentColor = Ink, shape = RoundedCornerShape(50),
-        modifier = Modifier.size(46.dp).clickable(enabled = enabled, onClick = onClick),
+        modifier = Modifier.size(46.dp).focusProperties { canFocus = false }.clickable(enabled = enabled, onClick = onClick),
     ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = if (label == "♪") 24.sp else 20.sp, fontWeight = FontWeight.Black) } }
 }
 
