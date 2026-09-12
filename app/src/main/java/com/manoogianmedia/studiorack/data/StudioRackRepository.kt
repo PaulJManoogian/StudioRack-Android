@@ -159,6 +159,8 @@ class StudioRackRepository(
             dao,
             context.getString(com.manoogianmedia.studiorack.R.string.app_name),
             context.getString(com.manoogianmedia.studiorack.R.string.publisher_name),
+            "© ${java.time.Year.now().value} ${context.getString(com.manoogianmedia.studiorack.R.string.copyright_holder)}. All rights reserved.",
+            context.getString(com.manoogianmedia.studiorack.R.string.trademark_notice),
             context.getString(com.manoogianmedia.studiorack.R.string.export_file_prefix),
         ).export(kind, format, ids)
 

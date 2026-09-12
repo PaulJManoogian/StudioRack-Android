@@ -13,6 +13,8 @@ internal class LocalExchangeExporter(
     private val dao: StudioRackDao,
     private val productName: String,
     private val publisherName: String,
+    private val copyrightNotice: String,
+    private val trademarkNotice: String,
     private val filePrefix: String,
 ) {
     suspend fun export(kind: String, format: String, ids: List<String>): DataExport {
@@ -174,6 +176,8 @@ internal class LocalExchangeExporter(
         if (format == "json") {
             val payload = JSONObject()
                 .put("product", productName)
+                .put("copyright", copyrightNotice)
+                .put("trademarks", trademarkNotice)
                 .put("format_version", 1)
                 .put("resource", kind)
                 .put("records", JSONArray(records))
@@ -189,14 +193,14 @@ internal class LocalExchangeExporter(
         }
         if (format == "xml") {
             val body = records.joinToString("") { "<record>${xml(it.toString())}</record>" }
-            val output = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><application-export product=\"${xml(productName)}\" version=\"1\" resource=\"${xml(kind)}\">$body</application-export>"
+            val output = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><application-export product=\"${xml(productName)}\" copyright=\"${xml(copyrightNotice)}\" trademarks=\"${xml(trademarkNotice)}\" version=\"1\" resource=\"${xml(kind)}\">$body</application-export>"
             return output.toByteArray(Charsets.UTF_8) to "application/xml"
         }
         val table = buildList { add(headers); rows.forEach { row -> add(headers.map { row[it].orEmpty() }) } }
             .joinToString("") { values -> "<Row>" + values.joinToString("") { "<Cell><Data ss:Type=\"String\">${xml(it)}</Data></Cell>" } + "</Row>" }
         val output = "<?xml version=\"1.0\"?><?mso-application progid=\"Excel.Sheet\"?>" +
             "<Workbook xmlns=\"urn:schemas-microsoft-com:office:spreadsheet\" xmlns:ss=\"urn:schemas-microsoft-com:office:spreadsheet\">" +
-            "<DocumentProperties xmlns=\"urn:schemas-microsoft-com:office:office\"><Title>${xml(productName)} ${xml(kind.replaceFirstChar(Char::uppercase))} Export</Title><Author>${xml(publisherName)}</Author><Company>${xml(publisherName)}</Company></DocumentProperties>" +
+            "<DocumentProperties xmlns=\"urn:schemas-microsoft-com:office:office\"><Title>${xml(productName)} ${xml(kind.replaceFirstChar(Char::uppercase))} Export</Title><Author>${xml(publisherName)}</Author><Company>${xml(publisherName)}</Company><Description>${xml("$copyrightNotice $trademarkNotice")}</Description></DocumentProperties>" +
             "<Worksheet ss:Name=\"${xml(kind.replaceFirstChar(Char::uppercase))}\"><Table>$table</Table></Worksheet></Workbook>"
         return output.toByteArray(Charsets.UTF_8) to "application/vnd.ms-excel"
     }

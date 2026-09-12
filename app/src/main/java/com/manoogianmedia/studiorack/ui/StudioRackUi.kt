@@ -238,7 +238,7 @@ private fun MainShell(
     val conflicts by model.conflicts.collectAsState()
     val syncHealth by model.syncHealth.collectAsState()
     val notificationCount by model.notificationCount.collectAsState()
-    val productName = stringResource(R.string.app_name)
+    val productName = stringResource(R.string.app_name_marked)
     LaunchedEffect(notificationRoutes) {
         notificationRoutes.collect { route ->
             section = when (route.destination) {
@@ -336,7 +336,7 @@ private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: (
 
 @Composable
 private fun StudioRackSplash() {
-    val productName = stringResource(R.string.app_name)
+    val productName = stringResource(R.string.app_name_marked)
     Box(
         Modifier
             .fillMaxSize()
@@ -368,7 +368,7 @@ private fun StudioRackSplash() {
 
 @Composable
 private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
-    val productName = stringResource(R.string.app_name)
+    val productName = stringResource(R.string.app_name_marked)
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var mfa by remember { mutableStateOf("") }
@@ -958,6 +958,26 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
             "Sync" -> syncContent(model, uiState)
             else -> settingsContent(model, uiState)
         }
+        item { BrandLegalCard() }
+    }
+}
+
+@Composable
+private fun BrandLegalCard() {
+    val productName = stringResource(R.string.app_name_marked)
+    val copyrightHolder = stringResource(R.string.copyright_holder)
+    val registeredTagline = stringResource(R.string.registered_tagline_marked)
+    val trademarkNotice = stringResource(R.string.trademark_notice)
+    InfoCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(painterResource(R.drawable.brand_logo), productName, Modifier.size(42.dp))
+            Column(Modifier.padding(start = 10.dp)) {
+                Text(productName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text(registeredTagline, color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Text("Copyright ${java.time.Year.now().value} $copyrightHolder. All rights reserved.", color = TextSoft, fontSize = 11.sp)
+        Text(trademarkNotice, color = TextSoft, fontSize = 10.sp, lineHeight = 14.sp)
     }
 }
 

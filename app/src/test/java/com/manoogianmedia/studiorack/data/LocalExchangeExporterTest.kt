@@ -12,6 +12,8 @@ class LocalExchangeExporterTest {
         dao = errorDao(),
         productName = "Studio Leviathan",
         publisherName = "Manoogian Media",
+        copyrightNotice = "© 2026 Manoogian Media, Inc. All rights reserved.",
+        trademarkNotice = "Manoogian Media® and Accept No Limitations® are registered trademarks.",
         filePrefix = "studio-leviathan",
     )
 
@@ -30,7 +32,11 @@ class LocalExchangeExporterTest {
             assertTrue(text.contains("Offline Song"))
             assertTrue(text.contains("Bb"))
             assertFalse(text.contains("StudioRack", ignoreCase = true))
-            if (format != "csv") assertTrue(text.contains("Studio Leviathan"))
+            if (format != "csv") {
+                assertTrue(text.contains("Studio Leviathan"))
+                assertTrue(text.contains("Manoogian Media®"))
+                assertTrue(text.contains("Accept No Limitations®"))
+            }
         }
     }
 

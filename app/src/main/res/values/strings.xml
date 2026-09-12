@@ -2,11 +2,17 @@
 <resources>
     <!-- Display identity only. Package names, database names, API routes, and sync IDs stay stable. -->
     <string name="app_name">Studio Leviathan</string>
+    <string name="app_name_marked">Studio Leviathan™</string>
     <string name="agent_name">Crew</string>
+    <string name="agent_name_marked">Crew™</string>
     <string name="agent_workshop_name">The Foundry</string>
     <string name="live_mode_name">Leviathan Live</string>
+    <string name="live_mode_name_marked">Leviathan Live™</string>
     <string name="publisher_name">Manoogian Media</string>
+    <string name="publisher_name_marked">Manoogian Media®</string>
     <string name="copyright_holder">Manoogian Media, Inc.</string>
+    <string name="registered_tagline_marked">Accept No Limitations®</string>
+    <string name="trademark_notice">Studio Leviathan™, Leviathan Live™, Crew™, and the Leviathan Crown design are trademarks of Manoogian Media, Inc. Manoogian Media®, the Manoogian Media logo, and Accept No Limitations® are registered trademarks of Manoogian Media, Inc.</string>
     <string name="brand_tagline">Everything behind the performance.</string>
     <string name="brand_descriptor">The performance operations platform.</string>
     <string name="public_base_url" translatable="false">https://www.manoogianmedia.com/leviathan</string>
