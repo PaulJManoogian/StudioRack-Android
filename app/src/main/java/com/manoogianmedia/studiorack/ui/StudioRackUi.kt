@@ -2940,12 +2940,15 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                 TextButton(onClick = { uriHandler.openUri("https://getsongbpm.com") }) {
                     Text("Song data by GetSongBPM", color = TextSoft, fontSize = 11.sp)
                 }
+                TextButton(onClick = { uriHandler.openUri("https://lrclib.net") }) {
+                    Text("Duration data by LRCLIB", color = TextSoft, fontSize = 11.sp)
+                }
                 if (metadataMessage.isNotBlank()) Text(metadataMessage, color = if (metadataResults.isEmpty() && !metadataBusy) Amber else TextSoft, fontSize = 12.sp)
                 metadataResults.forEach { item ->
                     Surface(color = PanelRaised, border = BorderStroke(1.dp, Amber.copy(alpha = .25f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Text(listOf(item.optString("title"), item.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = Color.White, fontWeight = FontWeight.Bold)
-                            Text(listOf(item.optString("album"), item.optString("release_year"), item.optString("genre"), item.optString("tempo").takeIf(String::isNotBlank)?.let { "$it BPM" }.orEmpty(), item.optString("song_key"), item.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 11.sp)
+                            Text(listOf(item.optString("album"), item.optString("release_year"), item.optString("genre"), item.optString("tempo").takeIf(String::isNotBlank)?.let { "$it BPM" }.orEmpty(), item.optString("song_key"), item.optString("time_signature"), item.optString("duration_label").takeIf(String::isNotBlank)?.let { "Length $it (LRCLIB)" }.orEmpty()).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 11.sp)
                             StudioButton(onClick = {
                                 title = item.optString("title").ifBlank { title }; artist = item.optString("artist").ifBlank { artist }
                                 album = item.optString("album"); releaseYear = item.optString("release_year"); genre = item.optString("genre")
@@ -2953,7 +2956,16 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                                 metadataSource = item.optString("source"); metadataSourceId = item.optString("source_id"); metadataSourceUri = item.optString("source_uri")
                                 metadataCheckedUtc = item.optString("checked_utc"); danceability = if (item.isNull("danceability")) -1 else item.optInt("danceability")
                                 acousticness = if (item.isNull("acousticness")) -1 else item.optInt("acousticness"); artistMbid = item.optString("artist_mbid")
-                                metadataResults = emptyList(); metadataMessage = "Recording selected. Review or change any field, then save."
+                                val durationAdded = duration.isBlank() && item.optInt("duration_seconds") > 0
+                                if (durationAdded) {
+                                    duration = item.optString("duration_label")
+                                    durationSource = item.optString("duration_source")
+                                    durationSourceId = item.optString("duration_source_id")
+                                    durationSourceUri = item.optString("duration_source_uri")
+                                    durationCheckedUtc = item.optString("duration_checked_utc")
+                                }
+                                metadataResults = emptyList()
+                                metadataMessage = if (durationAdded) "Recording and LRCLIB duration selected. Review or change any field, then save." else "Recording selected. Review or change any field, then save."
                             }, modifier = Modifier.fillMaxWidth()) { Text("Use This Recording", color = Ink, fontWeight = FontWeight.Black) }
                         }
                     }
