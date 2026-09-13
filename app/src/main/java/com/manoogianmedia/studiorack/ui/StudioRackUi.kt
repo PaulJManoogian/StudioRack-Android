@@ -1021,6 +1021,7 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
             "People" -> directoryContent(model)
             agentName -> buddyContent(model)
             "Reference" -> referenceContent(model)
+            "Help" -> helpContent()
             "Sync" -> syncContent(model, uiState)
             else -> settingsContent(model, uiState)
         }
@@ -1049,6 +1050,85 @@ private fun BrandLegalCard() {
 
 private fun androidx.compose.foundation.lazy.LazyListScope.sharingContent(model: StudioRackViewModel) {
     item { SharingPanel(model) }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.helpContent() {
+    item { HelpPanel() }
+}
+
+@Composable
+private fun HelpPanel() {
+    val productName = stringResource(R.string.app_name)
+    val agentName = stringResource(R.string.agent_name)
+    val liveName = stringResource(R.string.live_mode_name)
+    val sections = remember(productName, agentName, liveName) {
+        studioLeviathanHelpSections(productName, agentName, liveName)
+    }
+    var selectedId by remember { mutableStateOf(sections.first().id) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val selected = sections.firstOrNull { it.id == selectedId } ?: sections.first()
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeading("DOCUMENTATION", "$productName Help")
+        Text(
+            "Manage equipment, prepare performances, work offline, share safely, and use $agentName across the studio.",
+            color = TextSoft,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+        )
+        Box(Modifier.fillMaxWidth()) {
+            StudioButton(
+                onClick = { menuExpanded = true },
+                modifier = Modifier.fillMaxWidth(),
+                kind = StudioButtonKind.Secondary,
+            ) {
+                Text(selected.label, color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+                modifier = Modifier.background(PanelRaised),
+            ) {
+                sections.forEach { section ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                section.label,
+                                color = if (section.id == selected.id) Amber else Color.White,
+                                fontWeight = if (section.id == selected.id) FontWeight.Bold else FontWeight.Normal,
+                            )
+                        },
+                        onClick = {
+                            selectedId = section.id
+                            menuExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+        SectionHeading(selected.eyebrow, selected.title)
+        Text(selected.introduction, color = TextSoft, fontSize = 14.sp, lineHeight = 20.sp)
+        selected.topics.forEach { topic ->
+            InfoCard {
+                Text(topic.title, color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                topic.paragraphs.forEach { paragraph ->
+                    Text(paragraph, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
+                }
+                topic.points.forEach { point ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        Text("-", color = Cyan, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                        Text(
+                            point,
+                            modifier = Modifier.padding(start = 8.dp).weight(1f),
+                            color = TextSoft,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2500,7 +2580,7 @@ private fun MoreChoiceStrip(selected: String, agentName: String, choose: (String
             }
         }
         SubBrandIconButton(SubBrand.Crew, "Leviathan Crew", { choose(agentName) }, selected == agentName)
-        listOf("Reference", "Sync", "Settings").forEach { option ->
+        listOf("Reference", "Help", "Sync", "Settings").forEach { option ->
             StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
                 Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold)
             }
