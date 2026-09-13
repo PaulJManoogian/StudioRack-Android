@@ -10,10 +10,9 @@
     <string name="live_mode_name">Leviathan Live</string>
     <string name="live_mode_name_marked">Leviathan Live™</string>
     <string name="publisher_name">Manoogian Media</string>
-    <string name="publisher_name_marked">Manoogian Media®</string>
     <string name="copyright_holder">Manoogian Media, Inc.</string>
-    <string name="registered_tagline_marked">Accept No Limitations®</string>
-    <string name="trademark_notice">Studio Leviathan™, Leviathan Live™, Crew™, and the Leviathan Crown design are trademarks of Manoogian Media, Inc. Manoogian Media®, the Manoogian Media logo, and Accept No Limitations® are registered trademarks of Manoogian Media, Inc.</string>
+    <string name="brand_tagline_text">Accept No Limitations</string>
+    <string name="trademark_notice">Studio Leviathan™, Leviathan Live™, Crew™, and the Leviathan Crown design are trademarks of Manoogian Media, Inc. The combined &quot;Manoogian Media, Inc. Accept No Limitations&quot; corporate logo mark is a registered trademark of Manoogian Media, Inc.</string>
     <string name="brand_tagline">Everything behind the performance.</string>
     <string name="brand_descriptor">The performance operations platform.</string>
     <string name="public_base_url" translatable="false">https://www.manoogianmedia.com/leviathan</string>
