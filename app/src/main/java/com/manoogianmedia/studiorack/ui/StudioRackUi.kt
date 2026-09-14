@@ -266,7 +266,14 @@ private fun MainShell(
         }
     }
     val online = rememberNetworkConnected()
-    val connection = connectionBanner(online, uiState.busy || syncHealth.running, uiState.syncError || syncHealth.error != null, pending)
+    val maintenanceMessage = syncHealth.error?.takeIf { syncHealth.status == 503 }
+    val connection = connectionBanner(
+        online,
+        uiState.busy || syncHealth.running,
+        uiState.syncError || syncHealth.error != null,
+        pending,
+        maintenanceMessage != null,
+    )
     Scaffold(
         containerColor = Ink,
         topBar = {
@@ -322,14 +329,25 @@ private fun MainShell(
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding).background(Brush.linearGradient(listOf(Ink, Color(0xFF101A29), Ink)))) {
-            when (section) {
-                AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
-                AppSection.EQUIPMENT -> EquipmentScreen(model)
-                AppSection.KITS -> KitsScreen(model)
-                AppSection.SESSIONS -> SessionsScreen(model, openGig)
-                AppSection.LIBRARY -> LibraryScreen(model)
-                AppSection.MORE -> MoreScreen(model, uiState)
+        Column(Modifier.fillMaxSize().padding(padding).background(Brush.linearGradient(listOf(Ink, Color(0xFF101A29), Ink)))) {
+            if (maintenanceMessage != null) {
+                Surface(color = Color(0xFF7D3038), contentColor = Color.White) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Text("SYSTEM MAINTENANCE", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        Text(maintenanceMessage, fontSize = 12.sp, lineHeight = 16.sp)
+                        Text("Your offline copy remains available.", fontSize = 10.sp, color = Color.White.copy(alpha = .72f))
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                when (section) {
+                    AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
+                    AppSection.EQUIPMENT -> EquipmentScreen(model)
+                    AppSection.KITS -> KitsScreen(model)
+                    AppSection.SESSIONS -> SessionsScreen(model, openGig)
+                    AppSection.LIBRARY -> LibraryScreen(model)
+                    AppSection.MORE -> MoreScreen(model, uiState)
+                }
             }
         }
     }
@@ -2851,7 +2869,8 @@ private fun deviceHasInternet(context: Context): Boolean {
 private enum class ConnectionKind { ONLINE, OFFLINE, WARNING, ERROR }
 private data class ConnectionBanner(val label: String, val kind: ConnectionKind)
 
-private fun connectionBanner(online: Boolean, syncing: Boolean, syncError: Boolean, pending: Int): ConnectionBanner = when {
+private fun connectionBanner(online: Boolean, syncing: Boolean, syncError: Boolean, pending: Int, maintenance: Boolean = false): ConnectionBanner = when {
+    maintenance -> ConnectionBanner("MAINTENANCE - OFFLINE COPY", ConnectionKind.ERROR)
     syncing && online -> ConnectionBanner("ONLINE - SYNCING", ConnectionKind.ONLINE)
     syncing -> ConnectionBanner("OFFLINE - SYNC PAUSED", ConnectionKind.WARNING)
     online && syncError -> ConnectionBanner("ONLINE - SYNC ERROR", ConnectionKind.ERROR)

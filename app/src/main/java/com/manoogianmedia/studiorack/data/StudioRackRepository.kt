@@ -488,7 +488,11 @@ class StudioRackRepository(
             notifications.reconcile()
             _syncHealth.value = RepositorySyncHealth(running = false, lastSuccessAt = System.currentTimeMillis())
         } catch (error: Exception) {
-            _syncHealth.value = _syncHealth.value.copy(running = false, error = error.message ?: "Synchronization failed.")
+            _syncHealth.value = _syncHealth.value.copy(
+                running = false,
+                error = error.message ?: "Synchronization failed.",
+                status = (error as? SyncException)?.status,
+            )
             throw error
         }
     }
@@ -781,6 +785,7 @@ data class RepositorySyncHealth(
     val running: Boolean = false,
     val error: String? = null,
     val lastSuccessAt: Long? = null,
+    val status: Int? = null,
 )
 
 private fun sha256(file: File): String {
