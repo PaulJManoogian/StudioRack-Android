@@ -55,6 +55,17 @@ class SyncClient(
 
     suspend fun updateShare(grantId: String, data: JSONObject): JSONObject = request("/sharing/$grantId/update", "POST", data)
 
+    suspend fun workspaceMembers(): JSONObject = request("/workspace/members")
+
+    suspend fun inviteWorkspaceMember(data: JSONObject): JSONObject = request("/workspace/members/invite", "POST", data)
+
+    suspend fun workspaceMemberAction(memberId: String, action: String, role: String = ""): JSONObject =
+        request(
+            "/workspace/members/${URLEncoder.encode(memberId, Charsets.UTF_8.name())}/action",
+            "POST",
+            JSONObject().put("action", action).put("role", role),
+        )
+
     suspend fun reportOverview(): JSONObject = request("/reports/overview")
 
     suspend fun runAiReport(question: String): JSONObject =

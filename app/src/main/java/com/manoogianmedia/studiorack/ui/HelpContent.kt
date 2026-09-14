@@ -159,7 +159,7 @@ internal fun studioLeviathanHelpSections(
                 "Bluetooth Page Turner controls enablement, mode, direction, scroll amount, and exact action mappings.",
                 "Clocks independently control wall time, elapsed performance time, and estimated set time remaining.",
             )),
-            HelpTopic("Access And Security", listOf("Each account owns its records. Sign-in uses approved registration and multifactor authentication. Object-level sharing grants only selected information. Never share passwords, API keys, MFA secrets, or private guest tokens.")),
+            HelpTopic("Access And Security", listOf("Each workspace owns its records. The Owner controls billing, membership, and ownership transfer. Account Managers may invite and manage Editors and Viewers; Editors change operational records; Viewers have read-only access.", "A pending invitation reserves a licensed member seat. Verification activates the login. Revoking access releases the seat and disconnects that member's synchronized devices. Guest sharing does not consume seats.", "Workspace roles never grant Manoogian Media administration. Never share passwords, API keys, MFA secrets, or private guest tokens.")),
         ),
     ),
     HelpSection(

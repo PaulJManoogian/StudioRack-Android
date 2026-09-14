@@ -154,6 +154,13 @@ class StudioRackRepository(
         sync()
     }
 
+    suspend fun workspaceMembers(): JSONObject = client.workspaceMembers()
+
+    suspend fun inviteWorkspaceMember(data: JSONObject): JSONObject = client.inviteWorkspaceMember(data)
+
+    suspend fun workspaceMemberAction(memberId: String, action: String, role: String = ""): JSONObject =
+        client.workspaceMemberAction(memberId, action, role)
+
     suspend fun exportData(kind: String, format: String, ids: List<String> = emptyList()): DataExport =
         LocalExchangeExporter(
             dao,

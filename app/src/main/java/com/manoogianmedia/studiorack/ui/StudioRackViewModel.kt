@@ -134,6 +134,8 @@ class StudioRackViewModel(
     val uiState: StateFlow<StudioRackUiState> = _uiState.asStateFlow()
     private val _reportState = MutableStateFlow(ReportUiState())
     val reportState: StateFlow<ReportUiState> = _reportState.asStateFlow()
+    private val _workspaceMembersState = MutableStateFlow(WorkspaceMembersUiState())
+    val workspaceMembersState: StateFlow<WorkspaceMembersUiState> = _workspaceMembersState.asStateFlow()
 
     init {
         if (initiallySignedIn) {
@@ -283,6 +285,37 @@ class StudioRackViewModel(
             runCatching { repository.revokeShare(grantId) }
                 .onSuccess { _uiState.value = _uiState.value.copy(message = "Shared access revoked.", syncError = false); done() }
                 .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not revoke shared access.", syncError = true) }
+        }
+    }
+
+    fun loadWorkspaceMembers() {
+        _workspaceMembersState.value = _workspaceMembersState.value.copy(busy = true, message = "")
+        viewModelScope.launch {
+            runCatching { repository.workspaceMembers() }
+                .onSuccess { _workspaceMembersState.value = WorkspaceMembersUiState(payload = it) }
+                .onFailure { _workspaceMembersState.value = WorkspaceMembersUiState(message = it.message ?: "Workspace members require a connection.", error = true) }
+        }
+    }
+
+    fun inviteWorkspaceMember(name: String, email: String, role: String, contactId: String, done: () -> Unit) {
+        _workspaceMembersState.value = _workspaceMembersState.value.copy(busy = true, message = "Sending invitation...")
+        viewModelScope.launch {
+            runCatching {
+                repository.inviteWorkspaceMember(JSONObject().put("name", name.trim()).put("email", email.trim()).put("role", role).put("contact_id", contactId))
+            }.onSuccess {
+                _workspaceMembersState.value = _workspaceMembersState.value.copy(message = it.optString("message", "Invitation sent."), error = false)
+                loadWorkspaceMembers()
+                done()
+            }.onFailure { _workspaceMembersState.value = _workspaceMembersState.value.copy(busy = false, message = it.message ?: "Could not send the invitation.", error = true) }
+        }
+    }
+
+    fun workspaceMemberAction(memberId: String, action: String, role: String = "") {
+        _workspaceMembersState.value = _workspaceMembersState.value.copy(busy = true, message = "Updating member...")
+        viewModelScope.launch {
+            runCatching { repository.workspaceMemberAction(memberId, action, role) }
+                .onSuccess { loadWorkspaceMembers() }
+                .onFailure { _workspaceMembersState.value = _workspaceMembersState.value.copy(busy = false, message = it.message ?: "Could not update the member.", error = true) }
         }
     }
 
@@ -521,6 +554,13 @@ data class ReportUiState(
     val message: String = "",
     val onlineOverview: JSONObject? = null,
     val aiResult: JSONObject? = null,
+)
+
+data class WorkspaceMembersUiState(
+    val busy: Boolean = false,
+    val message: String = "",
+    val error: Boolean = false,
+    val payload: JSONObject? = null,
 )
 
 data class LiveRefreshResult(val revision: String, val connected: Boolean, val changed: Boolean)

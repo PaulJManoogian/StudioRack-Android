@@ -64,6 +64,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
@@ -1037,6 +1038,7 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
             "Reports" -> reportsContent(model)
             "Sharing" -> sharingContent(model)
             "People" -> directoryContent(model)
+            "Members" -> workspaceMembersContent(model)
             agentName -> buddyContent(model)
             "Reference" -> referenceContent(model)
             "Help" -> helpContent()
@@ -1068,6 +1070,114 @@ private fun BrandLegalCard() {
 
 private fun androidx.compose.foundation.lazy.LazyListScope.sharingContent(model: StudioRackViewModel) {
     item { SharingPanel(model) }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.workspaceMembersContent(model: StudioRackViewModel) {
+    item { WorkspaceMembersPanel(model) }
+}
+
+@Composable
+private fun WorkspaceMembersPanel(model: StudioRackViewModel) {
+    val state by model.workspaceMembersState.collectAsState()
+    val payload = state.payload
+    val members = remember(payload) {
+        buildList {
+            val rows = payload?.optJSONArray("members") ?: JSONArray()
+            for (index in 0 until rows.length()) add(rows.getJSONObject(index))
+        }
+    }
+    val contacts = remember(payload) {
+        buildList {
+            val rows = payload?.optJSONArray("contacts") ?: JSONArray()
+            for (index in 0 until rows.length()) add(rows.getJSONObject(index))
+        }
+    }
+    val currentRole = payload?.optString("role").orEmpty()
+    val seats = payload?.optJSONObject("seats")
+    var showInvite by remember { mutableStateOf(false) }
+    var pendingAction by remember { mutableStateOf<Pair<JSONObject, String>?>(null) }
+
+    LaunchedEffect(Unit) { model.loadWorkspaceMembers() }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeading("WORKSPACE ACCESS", "Members")
+        if (state.message.isNotBlank()) Text(state.message, color = if (state.error) Color(0xFFFF8A8A) else TextSoft)
+        if (state.busy && payload == null) CircularProgressIndicator(color = Amber)
+        if (payload != null) {
+            InfoCard {
+                Text("${seats?.optInt("available") ?: 0} seats available", color = Amber, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                Text("${seats?.optInt("reserved") ?: 0} of ${seats?.optInt("licensed") ?: 0} licensed member seats reserved", color = TextSoft)
+                if ((seats?.optInt("available") ?: 0) > 0) StudioButton(onClick = { showInvite = true }) { Text("Invite Member", color = Ink, fontWeight = FontWeight.Black) }
+            }
+            members.forEach { member ->
+                val role = member.optString("workspace_role", "editor")
+                val status = member.optString("status")
+                val canManage = role != "owner" && (currentRole == "owner" || role != "manager")
+                InfoCard {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                        Column(Modifier.weight(1f)) {
+                            Text(member.optString("name").ifBlank { member.optString("email") }, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                            Text(member.optString("email"), color = TextSoft, fontSize = 13.sp)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(role.replaceFirstChar(Char::uppercase), color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Text(status.replaceFirstChar(Char::uppercase), color = TextSoft, fontSize = 11.sp)
+                        }
+                    }
+                    if (canManage) {
+                        ChoiceStrip(
+                            buildList { if (currentRole == "owner") add("Manager"); add("Editor"); add("Viewer") },
+                            role.replaceFirstChar(Char::uppercase),
+                        ) { selected -> model.workspaceMemberAction(member.getString("id"), "role", selected.lowercase()) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (status == "pending") StudioButton(onClick = { model.workspaceMemberAction(member.getString("id"), "resend") }, kind = StudioButtonKind.Secondary) { Text("Resend", color = Color.White) }
+                            if (currentRole == "owner" && status == "active") StudioButton(onClick = { pendingAction = member to "transfer" }, kind = StudioButtonKind.Secondary) { Text("Make Owner", color = Color.White) }
+                            StudioButton(onClick = { pendingAction = member to "revoke" }, kind = StudioButtonKind.Danger) { Text("Revoke", color = Color.White) }
+                        }
+                    }
+                }
+            }
+            InfoCard {
+                Text("Access levels", color = Amber, fontWeight = FontWeight.Bold)
+                Text("Owner: billing, members, settings, and ownership transfer.\nAccount Manager: Editors and Viewers plus operational work.\nEditor: operational changes.\nViewer: read-only.", color = TextSoft, lineHeight = 20.sp)
+                Text("Manoogian Media administration cannot be assigned here.", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+    if (showInvite) WorkspaceInviteDialog(currentRole, contacts, model) { showInvite = false }
+    pendingAction?.let { (member, action) ->
+        AlertDialog(
+            onDismissRequest = { pendingAction = null },
+            title = { Text(if (action == "transfer") "Transfer ownership?" else "Revoke member?") },
+            text = { Text(if (action == "transfer") "You will become an Account Manager. The new Owner will control billing and membership." else "Access and synchronized devices will be revoked, and the seat will become available.") },
+            confirmButton = { TextButton(onClick = { model.workspaceMemberAction(member.getString("id"), action); pendingAction = null }) { Text("Confirm") } },
+            dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun WorkspaceInviteDialog(currentRole: String, contacts: List<JSONObject>, model: StudioRackViewModel, close: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var role by remember { mutableStateOf("editor") }
+    var contactId by remember { mutableStateOf("") }
+    var contactMenu by remember { mutableStateOf(false) }
+    EditorDialog("Invite Workspace Member", close) {
+        Box(Modifier.fillMaxWidth()) {
+            StudioButton(onClick = { contactMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text(contacts.firstOrNull { it.optString("id") == contactId }?.optString("display_name") ?: "Link Existing Contact", color = Color.White) }
+            DropdownMenu(expanded = contactMenu, onDismissRequest = { contactMenu = false }) {
+                contacts.forEach { contact -> DropdownMenuItem(text = { Text(contact.optString("display_name")) }, onClick = {
+                    contactId = contact.optString("id"); name = contact.optString("display_name"); email = contact.optString("email"); contactMenu = false
+                }) }
+            }
+        }
+        StudioField("Name", name) { name = it }
+        StudioField("Email", email) { email = it }
+        Text("Role", color = TextSoft)
+        ChoiceStrip(buildList { if (currentRole == "owner") add("Manager"); add("Editor"); add("Viewer") }, role.replaceFirstChar(Char::uppercase)) { role = it.lowercase() }
+        StudioButton(onClick = { model.inviteWorkspaceMember(name, email, role, contactId, close) }, enabled = name.isNotBlank() && email.contains("@"), modifier = Modifier.fillMaxWidth()) { Text("Send Invitation", color = Ink, fontWeight = FontWeight.Black) }
+        Text("Invitations require a connection and reserve a licensed member seat immediately.", color = TextSoft, fontSize = 11.sp)
+    }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.helpContent() {
@@ -2592,7 +2702,7 @@ private fun MoreChoiceStrip(selected: String, agentName: String, choose: (String
         horizontalArrangement = Arrangement.spacedBy(7.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        listOf("Reports", "Sharing", "People").forEach { option ->
+        listOf("Reports", "Sharing", "People", "Members").forEach { option ->
             StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
                 Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold)
             }
