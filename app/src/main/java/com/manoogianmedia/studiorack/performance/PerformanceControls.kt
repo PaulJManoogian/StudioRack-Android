@@ -136,6 +136,9 @@ data class MetronomeState(
     val pulse: Boolean = false,
     val downbeat: Boolean = false,
     val beat: Int = 0,
+    val tempo: Int = 120,
+    val beatsPerMeasure: Int = 4,
+    val startedAtEpochMs: Long = 0,
 )
 
 class NativeMetronome {
@@ -152,6 +155,7 @@ class NativeMetronome {
     fun configure(tempoText: String?, timeSignature: String?, mode: String, sound: String) {
         tempo = tempoText?.filter(Char::isDigit)?.toIntOrNull()?.coerceIn(30, 260) ?: 120
         beatsPerMeasure = timeSignature?.substringBefore('/')?.trim()?.toIntOrNull()?.coerceIn(1, 12) ?: 4
+        mutableState.value = mutableState.value.copy(tempo = tempo, beatsPerMeasure = beatsPerMeasure)
         this.mode = mode
         if (this.sound != sound) {
             this.sound = sound
@@ -172,7 +176,14 @@ class NativeMetronome {
 
     fun start() {
         if (mutableState.value.running) return
-        mutableState.value = mutableState.value.copy(running = true, pulse = false, beat = 0)
+        mutableState.value = mutableState.value.copy(
+            running = true,
+            pulse = false,
+            beat = 0,
+            tempo = tempo,
+            beatsPerMeasure = beatsPerMeasure,
+            startedAtEpochMs = System.currentTimeMillis(),
+        )
         job = scope.launch {
             try {
                 var beatIndex = 0
@@ -202,7 +213,7 @@ class NativeMetronome {
     }
 
     fun stop() {
-        mutableState.value = mutableState.value.copy(running = false, pulse = false, downbeat = false, beat = 0)
+        mutableState.value = mutableState.value.copy(running = false, pulse = false, downbeat = false, beat = 0, startedAtEpochMs = 0)
         job?.cancel()
         job = null
         player.stop()

@@ -15,5 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "StudioRack-Android"
-include(":app")
-
+include(":app", ":live-protocol", ":wear")

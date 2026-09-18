@@ -1,9 +1,16 @@
 package com.manoogianmedia.studiorack.data
 
+import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.credentials.CreatePublicKeyCredentialRequest
+import androidx.credentials.CreatePublicKeyCredentialResponse
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetPublicKeyCredentialOption
+import androidx.credentials.PublicKeyCredential
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -30,6 +37,10 @@ class StudioRackRepository(
 ) {
     private val _syncHealth = MutableStateFlow(RepositorySyncHealth())
     private val notifications = StudioRackNotifications(context, dao)
+    private val deviceSettings = context.getSharedPreferences("studiorack_device_settings", Context.MODE_PRIVATE)
+    private val _backgroundSyncWifiOnly = MutableStateFlow(
+        deviceSettings.getBoolean(BACKGROUND_SYNC_WIFI_ONLY, false)
+    )
 
     fun signedIn() = tokenStore.isSignedIn()
     fun records(type: String): Flow<List<CachedRecord>> = dao.observeRecords(type)
@@ -40,6 +51,7 @@ class StudioRackRepository(
     fun conflicts(): Flow<List<SyncConflict>> = dao.observeConflicts()
     fun notificationCount(): Flow<Int> = dao.observeUnreadNotificationCount()
     fun syncHealth(): StateFlow<RepositorySyncHealth> = _syncHealth
+    fun backgroundSyncWifiOnly(): StateFlow<Boolean> = _backgroundSyncWifiOnly
 
     fun createNotificationChannels() = notifications.createChannels()
     suspend fun reconcileNotifications() = notifications.reconcile()
@@ -465,6 +477,42 @@ class StudioRackRepository(
         scheduleAutomaticSync()
     }
 
+    suspend fun signInWithPasskey(activity: Activity) {
+        require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) { "Passkeys require Android 9 or newer." }
+        val stableId = tokenStore.deviceId() ?: "android_" + Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        val start = client.passkeyAuthenticationOptions()
+        val publicKey = start.getJSONObject("public_key").toString()
+        val result = CredentialManager.create(activity).getCredential(
+            context = activity,
+            request = GetCredentialRequest(listOf(GetPublicKeyCredentialOption(publicKey))),
+        )
+        val credential = result.credential as? PublicKeyCredential
+            ?: error("The selected credential was not a Studio Leviathan passkey.")
+        val response = client.authenticatePasskey(
+            credential.authenticationResponseJson,
+            start.getString("challenge_token"),
+            "${Build.MANUFACTURER} ${Build.MODEL}",
+            stableId,
+        )
+        tokenStore.save(response.getString("access_token"), response.getString("device_id"), response.getString("account_id"))
+        sync()
+        scheduleAutomaticSync()
+    }
+
+    suspend fun createPasskey(activity: Activity) {
+        require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) { "Passkeys require Android 9 or newer." }
+        val start = client.passkeyRegistrationOptions()
+        val request = CreatePublicKeyCredentialRequest(start.getJSONObject("public_key").toString())
+        val result = CredentialManager.create(activity).createCredential(activity, request)
+        val credential = result as? CreatePublicKeyCredentialResponse
+            ?: error("A passkey was not created.")
+        client.registerPasskey(
+            credential.registrationResponseJson,
+            start.getString("challenge_token"),
+            "${Build.MANUFACTURER} ${Build.MODEL}",
+        )
+    }
+
     suspend fun signOut() {
         runCatching { client.revoke() }
         notifications.clearAll()
@@ -478,10 +526,18 @@ class StudioRackRepository(
         syncNow()
     }
 
+    suspend fun saveCrewBehaviorSettings(settings: JSONObject) {
+        val state = dao.syncState() ?: SyncState()
+        settings.put("_mobile_pending", 1)
+        dao.putState(state.copy(crewBehaviorSettingsJson = settings.toString()))
+        syncNow()
+    }
+
     suspend fun sync() {
         _syncHealth.value = _syncHealth.value.copy(running = true, error = null)
         try {
             pushPendingPerformanceSettings()
+            pushPendingCrewBehaviorSettings()
             pushPendingAttachments()
             pushPending()
             var cursor = dao.syncState()?.cursor ?: 0
@@ -513,14 +569,30 @@ class StudioRackRepository(
         dao.putState(state.copy(performanceSettingsJson = saved.toString()))
     }
 
+    private suspend fun pushPendingCrewBehaviorSettings() {
+        val state = dao.syncState() ?: return
+        val settings = runCatching { JSONObject(state.crewBehaviorSettingsJson) }.getOrNull() ?: return
+        if (settings.optInt("_mobile_pending") != 1) return
+        settings.remove("_mobile_pending")
+        val saved = client.updateCrewBehaviorSettings(settings).getJSONObject("crew_behavior_settings")
+        dao.putState(state.copy(crewBehaviorSettingsJson = saved.toString()))
+    }
+
     fun syncNow() {
         WorkManager.getInstance(context).enqueue(OneTimeWorkRequestBuilder<SyncWorker>().build())
     }
 
+    fun setBackgroundSyncWifiOnly(enabled: Boolean) {
+        deviceSettings.edit().putBoolean(BACKGROUND_SYNC_WIFI_ONLY, enabled).apply()
+        _backgroundSyncWifiOnly.value = enabled
+        scheduleAutomaticSync()
+    }
+
     fun scheduleAutomaticSync() {
-        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val networkType = if (_backgroundSyncWifiOnly.value) NetworkType.UNMETERED else NetworkType.CONNECTED
+        val constraints = Constraints.Builder().setRequiredNetworkType(networkType).build()
         val work = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES).setConstraints(constraints).build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork("studiorack-sync", ExistingPeriodicWorkPolicy.KEEP, work)
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork("studiorack-sync", ExistingPeriodicWorkPolicy.UPDATE, work)
     }
 
     private suspend fun pushPending() {
@@ -585,6 +657,7 @@ class StudioRackRepository(
             cursor = response.getLong("cursor"),
             accountJson = response.getJSONObject("account").toString(),
             performanceSettingsJson = response.optJSONObject("performance_settings")?.toString() ?: "{}",
+            crewBehaviorSettingsJson = response.optJSONObject("crew_behavior_settings")?.toString() ?: "{}",
             lastSyncAt = System.currentTimeMillis(),
         )
         val supporting = flattenSupporting(response.getJSONObject("supporting_entities")) +
@@ -725,6 +798,10 @@ class StudioRackRepository(
                 add(SupportingRecord(type, row.get("id").toString(), row.toString()))
             }
         }
+    }
+
+    private companion object {
+        const val BACKGROUND_SYNC_WIFI_ONLY = "background_sync_wifi_only"
     }
 }
 

@@ -18,4 +18,5 @@
     <string name="public_base_url" translatable="false">https://www.manoogianmedia.com/leviathan</string>
     <string name="api_base_url" translatable="false">https://www.manoogianmedia.com/leviathan/api/v1</string>
     <string name="export_file_prefix" translatable="false">studio-leviathan</string>
+    <string name="asset_statements" translatable="false">[{\"include\":\"https://www.manoogianmedia.com/.well-known/assetlinks.json\"}]</string>
 </resources>

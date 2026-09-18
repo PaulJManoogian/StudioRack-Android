@@ -1,6 +1,7 @@
 package com.manoogianmedia.studiorack.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class AttachmentCacheTest {
@@ -30,5 +31,15 @@ class AttachmentCacheTest {
                 "/api/v1/attachments/att_123",
             ),
         )
+    }
+
+    @Test
+    fun rejectsAuthenticatedDownloadsToAnotherHost() {
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveDownloadUrl(
+                "https://www.manoogianmedia.com/leviathan/api/v1",
+                "https://attacker.example/collect-token",
+            )
+        }
     }
 }

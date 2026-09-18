@@ -73,6 +73,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
@@ -143,6 +144,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.manoogianmedia.studiorack.crew.CrewBehaviorSettings
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.manoogianmedia.studiorack.data.CachedAttachment
@@ -160,6 +162,11 @@ import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
 import com.manoogianmedia.studiorack.performance.isSupportedPedalKeyCode
 import com.manoogianmedia.studiorack.R
+import com.manoogianmedia.studiorack.liveprotocol.LiveCommandType
+import com.manoogianmedia.studiorack.liveprotocol.LiveSnapshot
+import com.manoogianmedia.studiorack.liveprotocol.LiveSong
+import com.manoogianmedia.studiorack.wear.LiveWearBridge
+import com.manoogianmedia.studiorack.wear.WearCompanionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -405,6 +412,7 @@ private fun StudioRackSplash() {
 @Composable
 private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
     val productName = stringResource(R.string.app_name_marked)
+    val activity = LocalContext.current as? Activity
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var mfa by remember { mutableStateOf("") }
@@ -415,6 +423,19 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
         }
         Text("Your performance library, available offline.", color = TextSoft)
         Spacer(Modifier.height(24.dp))
+        StudioButton(
+            onClick = { activity?.let(model::signInWithPasskey) },
+            enabled = !uiState.busy && activity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Sign in with a passkey", color = Ink, fontWeight = FontWeight.Black) }
+        Text(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) "Use your fingerprint, face recognition, or device screen lock." else "Passkeys require Android 9 or newer.",
+            color = TextSoft,
+            fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text("Or use your existing login", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
         OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(code, { code = it }, label = { Text("$productName access code") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
         OutlinedTextField(mfa, { mfa = it.filter(Char::isDigit).take(6) }, label = { Text("Authenticator code") }, modifier = Modifier.fillMaxWidth())
@@ -1139,7 +1160,7 @@ private fun WorkspaceMembersPanel(model: StudioRackViewModel) {
             InfoCard {
                 Text("Access levels", color = Amber, fontWeight = FontWeight.Bold)
                 Text("Owner: billing, members, settings, and ownership transfer.\nAccount Manager: Editors and Viewers plus operational work.\nEditor: operational changes.\nViewer: read-only.", color = TextSoft, lineHeight = 20.sp)
-                Text("Manoogian Media administration cannot be assigned here.", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Roles control access only within this workspace.", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -2413,6 +2434,7 @@ private fun AiReportTab(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.buddyContent(model: StudioRackViewModel) {
     item { SubBrandSectionHeading(SubBrand.Crew) }
+    item { CrewBehaviorPanel(model) }
     item { Text("Available Skills", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
     item {
         val skills by model.buddySkills.collectAsState()
@@ -2433,6 +2455,127 @@ private fun androidx.compose.foundation.lazy.LazyListScope.buddyContent(model: S
     }
 }
 
+@Composable
+private fun CrewBehaviorPanel(model: StudioRackViewModel) {
+    val state by model.syncState.collectAsState()
+    val backgroundSyncWifiOnly by model.backgroundSyncWifiOnly.collectAsState()
+    val loaded = remember(state?.crewBehaviorSettingsJson) {
+        CrewBehaviorSettings.fromJson(state?.crewBehaviorSettingsJson ?: "{}")
+    }
+    var settings by remember(state?.crewBehaviorSettingsJson) { mutableStateOf(loaded) }
+    var expanded by remember { mutableStateOf(false) }
+    InfoCard {
+        Row(
+            Modifier.fillMaxWidth().clickable { expanded = !expanded },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Crew Behavior", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                Text("Reminder persistence, voice, and conversational preferences", color = TextSoft, fontSize = 12.sp)
+            }
+            Text(if (expanded) "Close" else "Edit", color = Amber, fontWeight = FontWeight.Bold)
+        }
+        if (expanded) {
+            Text("Reminder persistence", color = Amber, fontWeight = FontWeight.Bold)
+            Slider(
+                value = settings.persistenceLevel.toFloat(),
+                onValueChange = { settings = settings.copy(persistenceLevel = it.toInt().coerceIn(1, 5)) },
+                valueRange = 1f..5f,
+                steps = 3,
+            )
+            Text(
+                listOf(
+                    "Minimal: important deadlines only",
+                    "Gentle: one advance and one overdue follow-up",
+                    "Balanced: normal reminders with occasional follow-up",
+                    "Proactive: earlier reminders and regular follow-up",
+                    "Persistent: continue until completed, dismissed, or rescheduled",
+                )[settings.persistenceLevel - 1],
+                color = Color.White,
+                fontSize = 13.sp,
+            )
+            SettingToggle("Learn my completion timing and suggest improvements", settings.adaptiveTiming) {
+                settings = settings.copy(adaptiveTiming = it)
+            }
+            Text("Crew requires repeated evidence and never changes timing automatically.", color = TextSoft, fontSize = 12.sp)
+
+            Text("Warmth", color = Amber, fontWeight = FontWeight.Bold)
+            Slider(
+                value = settings.warmthLevel.toFloat(),
+                onValueChange = { settings = settings.copy(warmthLevel = it.toInt().coerceIn(1, 5)) },
+                valueRange = 1f..5f,
+                steps = 3,
+            )
+            Text(listOf("Plain", "Reserved", "Warm and professional", "Friendly", "Highly personable")[settings.warmthLevel - 1], color = Color.White, fontSize = 13.sp)
+            LabeledChoice("Response length", listOf("Brief", "Balanced", "Detailed"), settings.responseDetail.replaceFirstChar(Char::uppercase)) {
+                settings = settings.copy(responseDetail = it.lowercase())
+            }
+            LabeledChoice(
+                "When Crew is uncertain",
+                listOf("Say what is uncertain", "Ask first", "Cautious suggestion"),
+                when (settings.uncertaintyStyle) {
+                    "ask_first" -> "Ask first"
+                    "cautious" -> "Cautious suggestion"
+                    else -> "Say what is uncertain"
+                },
+            ) {
+                settings = settings.copy(uncertaintyStyle = when (it) {
+                    "Ask first" -> "ask_first"
+                    "Cautious suggestion" -> "cautious"
+                    else -> "transparent"
+                })
+            }
+            SettingToggle("Allow occasional, situational humor", settings.humorEnabled) { settings = settings.copy(humorEnabled = it) }
+            SettingToggle("Offer relevant next steps", settings.proactiveSuggestions) { settings = settings.copy(proactiveSuggestions = it) }
+
+            Text("Preferred delivery", color = Amber, fontWeight = FontWeight.Bold)
+            listOf("in_app" to "In-app", "mobile" to "Mobile notification", "email" to "Email").forEach { (key, label) ->
+                SettingToggle(label, key in settings.preferredChannels) { enabled ->
+                    val channels = settings.preferredChannels.toMutableList().apply {
+                        if (enabled && key !in this) add(key)
+                        if (!enabled) remove(key)
+                    }
+                    settings = settings.copy(preferredChannels = channels.ifEmpty { listOf("in_app") })
+                }
+            }
+            SettingToggle("Background notifications on Wi-Fi only", backgroundSyncWifiOnly) {
+                model.setBackgroundSyncWifiOnly(it)
+            }
+            Text(
+                "Restricts scheduled background synchronization to Wi-Fi or another unmetered network. Manual synchronization still works on mobile data.",
+                color = TextSoft,
+                fontSize = 12.sp,
+            )
+            OutlinedTextField(
+                value = settings.phrasesToAvoid,
+                onValueChange = { settings = settings.copy(phrasesToAvoid = it.take(4000)) },
+                label = { Text("Phrases to avoid") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = settings.communicationNotes,
+                onValueChange = { settings = settings.copy(communicationNotes = it.take(6000)) },
+                label = { Text("Communication preferences") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = settings.approvedExamples,
+                onValueChange = { settings = settings.copy(approvedExamples = it.take(6000)) },
+                label = { Text("Examples that sound right") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text("Crew will not guilt, scold, shame, or pressure you. Style examples cannot change permissions or execute actions.", color = TextSoft, fontSize = 12.sp)
+            StudioButton(onClick = { model.saveCrewBehaviorSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Save Crew Behavior", color = Ink, fontWeight = FontWeight.Black)
+            }
+        }
+    }
+}
+
 private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(model: StudioRackViewModel) {
     item {
         val categories by model.categories.collectAsState(); val types by model.itemTypes.collectAsState(); val locations by model.locations.collectAsState(); val statuses by model.statuses.collectAsState()
@@ -2445,11 +2588,30 @@ private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(mode
 
 private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model: StudioRackViewModel, uiState: StudioRackUiState) {
     item {
+        val context = LocalContext.current
+        val activity = context as? Activity
         val state by model.syncState.collectAsState(); val account = runCatching { JSONObject(state?.accountJson ?: "{}") }.getOrDefault(JSONObject())
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Account and Device", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
+            InfoCard {
+                Text("Sign-in & Security", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("Your approved Studio Leviathan login comes first. Google, Microsoft, and passkeys are optional additional sign-in methods; they do not create a new account or change your permissions.", color = TextSoft, fontSize = 13.sp, lineHeight = 19.sp)
+                StudioButton(
+                    onClick = { openMediaLink(context, context.getString(R.string.public_base_url) + "/settings/sign-in") },
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text("Manage Connected Accounts", color = Color.White, fontWeight = FontWeight.Black) }
+                StudioButton(
+                    onClick = { activity?.let(model::createPasskey) },
+                    enabled = !uiState.busy && activity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Add Passkey", color = Ink, fontWeight = FontWeight.Black) }
+                Text("Connect Google or Microsoft in the secure web settings. Passkeys can be added and used directly on this Android device.", color = TextSoft, fontSize = 12.sp, lineHeight = 17.sp)
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) Text("Passkeys require Android 9 or newer.", color = TextSoft, fontSize = 12.sp)
+            }
             StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
+            WearCompanionPanel(compact = true)
             Text("Leviathan Live settings are managed from Sessions > Leviathan Live.", color = TextSoft, fontSize = 12.sp)
         }
     }
@@ -2464,7 +2626,7 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
     var settings by remember(state?.performanceSettingsJson) { mutableStateOf(loadedSettings) }
     var section by remember { mutableStateOf("Live Settings") }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ChoiceStrip(listOf("Live Settings", "Performance Material", "Page Turner"), section) { section = it }
+        ChoiceStrip(listOf("Live Settings", "Performance Material", "Page Turner", "Wear OS"), section) { section = it }
         when (section) {
             "Live Settings" -> {
                 SubBrandLockup(SubBrand.Live)
@@ -2493,7 +2655,7 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
                     }
                 }
             }
-            else -> {
+            "Page Turner" -> {
                 Text("Bluetooth Page Turner", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 Text("Supports keyboard-mode pedals including AirTurn and Donner devices.", color = TextSoft, fontSize = 13.sp)
                 SettingToggle("Enable pedal controls", settings.pedalEnabled) { settings = settings.copy(pedalEnabled = it) }
@@ -2509,11 +2671,134 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
                 PedalKeyChoice("Metronome Start / Stop", settings.metronomeKey) { settings = settings.copy(metronomeKey = it) }
                 PedalKeyChoice("Metronome Mute / Unmute", settings.muteKey) { settings = settings.copy(muteKey = it) }
             }
+            else -> WearCompanionPanel()
         }
-        StudioButton(onClick = { model.savePerformanceSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Save Leviathan Live Settings", color = Ink, fontWeight = FontWeight.Black)
+        if (section != "Wear OS") {
+            StudioButton(onClick = { model.savePerformanceSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Save Leviathan Live Settings", color = Ink, fontWeight = FontWeight.Black)
+            }
+            Text("Settings take effect on this device immediately and synchronize when connected.", color = TextSoft, fontSize = 12.sp)
         }
-        Text("Settings take effect on this device immediately and synchronize when connected.", color = TextSoft, fontSize = 12.sp)
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun WearCompanionPanel(compact: Boolean = false) {
+    val context = LocalContext.current
+    val isTablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
+    val status by WearCompanionManager.status.collectAsState()
+    var resultMessage by remember { mutableStateOf("") }
+
+    LaunchedEffect(isTablet) {
+        if (isTablet) return@LaunchedEffect
+        while (true) {
+            WearCompanionManager.refresh(context)
+            delay(15_000)
+        }
+    }
+
+    InfoCard {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painterResource(R.drawable.brand_logo),
+                null,
+                Modifier.size(if (compact) 42.dp else 54.dp).graphicsLayer(alpha = if (isTablet) 0.42f else 1f),
+            )
+            Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                Text("Wear OS Companion", color = if (isTablet) TextSoft else Color.White, fontSize = if (compact) 18.sp else 21.sp, fontWeight = FontWeight.Black)
+                Text(
+                    when {
+                        isTablet -> "Unavailable on tablets"
+                        status.loading && status.pairedCount == 0 -> "Checking paired watches"
+                        status.pairedCount == 0 -> "No connected Wear OS watch found"
+                        status.isReady -> "Connected and ready"
+                        else -> "Watch connected; companion app needed"
+                    },
+                    color = when {
+                        isTablet -> Color(0xFF7F899B)
+                        status.isReady -> Color(0xFF62D68B)
+                        else -> Amber
+                    },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        if (isTablet) {
+            Text(
+                "Wear OS watches pair with and install companion apps through an Android phone. This tablet can still run Leviathan Live, but it cannot directly install or manage the watch companion.",
+                color = Color(0xFF7F899B),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+            return@InfoCard
+        }
+        if (!compact) {
+            Text(
+                "The watch shows the current and next song, set and medley position, transport controls, and a synchronized haptic metronome. The paired Android phone remains the watch connection authority.",
+                color = TextSoft,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+        }
+        status.connectedDevices.forEach { device ->
+            val installed = device.id in status.installedNodeIds
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    device.name.ifBlank { "Wear OS watch" },
+                    modifier = Modifier.weight(1f),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 20.sp,
+                )
+                Surface(
+                    color = if (installed) Color(0xFF163D2A) else Color(0xFF46351B),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, if (installed) Color(0xFF62D68B) else Amber),
+                ) {
+                    Text(
+                        if (installed) "Installed" else "Needs app",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        color = if (installed) Color(0xFF62D68B) else Amber,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        if (status.error.isNotBlank()) Text(status.error, color = Color(0xFFFF8A8A), fontSize = 12.sp)
+        if (resultMessage.isNotBlank()) Text(resultMessage, color = TextSoft, fontSize = 12.sp)
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StudioButton(
+                onClick = { WearCompanionManager.refresh(context) },
+                kind = StudioButtonKind.Secondary,
+            ) { Text("Refresh", color = Color.White, fontWeight = FontWeight.Bold) }
+            if (status.missingDevices.isNotEmpty()) {
+                StudioButton(
+                    onClick = {
+                        WearCompanionManager.openPlayStoreOnMissingWatches(context) { resultMessage = it }
+                    },
+                ) { Text("Install on Watch", color = Ink, fontWeight = FontWeight.Black) }
+            }
+        }
+        if (!status.isReady) {
+            Text(
+                "Install on Watch uses Google Play and will become active with the Studio Leviathan Wear OS test track. Alpha APK installation remains available for development devices.",
+                color = TextSoft,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+            )
+        }
     }
 }
 
@@ -3768,6 +4053,8 @@ private data class EventPerson(
     val contact: JSONObject,
     val roles: List<String>,
     val contexts: List<String>,
+    val sources: List<String>,
+    val groupNames: List<String>,
 )
 
 private data class EventPersonAccumulator(
@@ -3775,6 +4062,8 @@ private data class EventPersonAccumulator(
     val contact: JSONObject,
     val roles: LinkedHashSet<String> = linkedSetOf(),
     val contexts: LinkedHashSet<String> = linkedSetOf(),
+    val sources: LinkedHashSet<String> = linkedSetOf(),
+    val groupNames: LinkedHashSet<String> = linkedSetOf(),
 )
 
 private fun resolveEventPeople(
@@ -3793,24 +4082,27 @@ private fun resolveEventPeople(
         .filter { it.optString("event_id") == eventId }
         .mapTo(linkedSetOf()) { it.optString("ensemble_id") }
     val people = linkedMapOf<String, EventPersonAccumulator>()
-    fun add(contactId: String, role: String, context: String) {
+    fun add(contactId: String, role: String, context: String, source: String, groupName: String = "") {
         val record = contactsById[contactId] ?: return
         val person = people.getOrPut(contactId) { EventPersonAccumulator(contactId, recordJson(record)) }
         role.takeIf(String::isNotBlank)?.let(person.roles::add)
         context.takeIf(String::isNotBlank)?.let(person.contexts::add)
+        source.takeIf(String::isNotBlank)?.let(person.sources::add)
+        groupName.takeIf(String::isNotBlank)?.let(person.groupNames::add)
     }
     eventContacts.map(::recordJson).filter { it.optString("event_id") == eventId }.forEach {
-        add(it.optString("contact_id"), it.optString("relationship_role", "Participant").ifBlank { "Participant" }, "Event")
+        add(it.optString("contact_id"), it.optString("relationship_role", "Participant").ifBlank { "Participant" }, "Event", "Event")
     }
     ensembleContacts.map(::recordJson).filter { it.optString("ensemble_id") in selectedEnsembles }.forEach {
         val ensembleId = it.optString("ensemble_id")
-        add(it.optString("contact_id"), it.optString("relationship_role", "Member").ifBlank { "Member" }, ensembleNames[ensembleId].orEmpty())
+        val ensembleName = ensembleNames[ensembleId].orEmpty()
+        add(it.optString("contact_id"), it.optString("relationship_role", "Member").ifBlank { "Member" }, ensembleName, "Band / Group", ensembleName)
     }
     val venueId = event.optString("venue_id")
     venueContacts.map(::recordJson).filter { venueId.isNotBlank() && it.optString("venue_id") == venueId }.forEach {
-        add(it.optString("contact_id"), it.optString("relationship_role", "Venue Contact").ifBlank { "Venue Contact" }, "Venue")
+        add(it.optString("contact_id"), it.optString("relationship_role", "Venue Contact").ifBlank { "Venue Contact" }, "Venue", "Venue")
     }
-    return people.values.map { EventPerson(it.id, it.contact, it.roles.toList(), it.contexts.toList()) }
+    return people.values.map { EventPerson(it.id, it.contact, it.roles.toList(), it.contexts.toList(), it.sources.toList(), it.groupNames.toList()) }
         .sortedBy { it.contact.optString("display_name").lowercase() }
 }
 
@@ -3838,8 +4130,44 @@ private fun EventPeopleDialog(
     close: () -> Unit,
 ) {
     val context = LocalContext.current
-    val phones = people.map { it.contact.optString("phone") }.filter(String::isNotBlank).distinct()
-    val emails = people.map { it.contact.optString("email") }.filter(String::isNotBlank).distinct()
+    val methodsByContact = remember(contactMethods) {
+        contactMethods.map(::recordJson).groupBy { it.optString("contact_id") }
+    }
+    var selectedIds by remember(event.optString("id"), people.map(EventPerson::id)) {
+        mutableStateOf(people.mapTo(linkedSetOf(), EventPerson::id).toSet())
+    }
+    var recipientScope by remember(event.optString("id")) { mutableStateOf("Everyone") }
+    val venueAvailable = people.any { "Venue" in it.sources }
+    val scopeOptions = buildList {
+        add("Everyone")
+        add("Event participants")
+        groupNames.forEach { add("Band / Group: $it") }
+        if (venueAvailable) add("Venue contacts")
+        add("Custom selection")
+    }
+    fun chosenForScope(scope: String): Set<String> = people.filter { person ->
+        when {
+            scope == "Everyone" -> true
+            scope == "Event participants" -> "Event" in person.sources
+            scope == "Venue contacts" -> "Venue" in person.sources
+            scope.startsWith("Band / Group: ") -> scope.removePrefix("Band / Group: ") in person.groupNames
+            else -> person.id in selectedIds
+        }
+    }.mapTo(linkedSetOf(), EventPerson::id)
+    fun contactValue(person: EventPerson, type: String): String {
+        val legacy = person.contact.optString(type)
+        if (legacy.isNotBlank()) return legacy
+        return methodsByContact[person.id].orEmpty()
+            .filter { it.optString("method_type") == type && it.optString("value").isNotBlank() }
+            .sortedWith(compareByDescending<JSONObject> { it.optInt("is_primary") }.thenBy { it.optInt("position") })
+            .firstOrNull()?.optString("value").orEmpty()
+    }
+    val participants = people.filter { "Event" in it.sources }
+    val participantPhones = participants.map { contactValue(it, "phone") }.filter(String::isNotBlank).distinct()
+    val participantEmails = participants.map { contactValue(it, "email") }.filter(String::isNotBlank).distinct()
+    val selectedPeople = people.filter { it.id in selectedIds }
+    val selectedPhones = selectedPeople.map { contactValue(it, "phone") }.filter(String::isNotBlank).distinct()
+    val selectedEmails = selectedPeople.map { contactValue(it, "email") }.filter(String::isNotBlank).distinct()
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier.fillMaxSize().padding(14.dp).statusBarsPadding().navigationBarsPadding(),
@@ -3858,20 +4186,59 @@ private fun EventPeopleDialog(
                     StudioButton(onClick = close, kind = StudioButtonKind.Secondary) { Text("Close", color = Color.White) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (phones.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "smsto", phones) }) { Text("Text Everyone", color = Ink, fontWeight = FontWeight.Bold) }
-                    if (emails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", emails) }, kind = StudioButtonKind.Secondary) { Text("Email Everyone", color = Color.White, fontWeight = FontWeight.Bold) }
+                    if (participantPhones.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "smsto", participantPhones) }) { Text("Text Participants", color = Ink, fontWeight = FontWeight.Bold) }
+                    if (participantEmails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", participantEmails) }, kind = StudioButtonKind.Secondary) { Text("Email Participants", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+                EventRecipientScopeChoice(scopeOptions, recipientScope) { choice ->
+                    recipientScope = choice
+                    if (choice != "Custom selection") selectedIds = chosenForScope(choice)
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioButton(
+                        onClick = { openGroupContactLink(context, "smsto", selectedPhones) },
+                        enabled = selectedPhones.isNotEmpty(),
+                    ) { Text("Text Selected (${selectedPhones.size})", color = Ink, fontWeight = FontWeight.Bold) }
+                    StudioButton(
+                        onClick = { openGroupContactLink(context, "mailto", selectedEmails) },
+                        enabled = selectedEmails.isNotEmpty(),
+                        kind = StudioButtonKind.Secondary,
+                    ) { Text("Email Selected (${selectedEmails.size})", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (people.isEmpty()) item { EmptyCard("A band or group is selected, but it has no connected members yet.") }
                     items(people, key = EventPerson::id) { person ->
                         val label = (person.roles + person.contexts).filter(String::isNotBlank).joinToString(" / ")
-                        DirectoryContactRow(
-                            person.contact,
-                            label,
-                            context,
-                            contactMethods.filter { recordJson(it).optString("contact_id") == person.id }.map(::recordJson),
-                        )
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                            Checkbox(
+                                checked = person.id in selectedIds,
+                                onCheckedChange = { checked ->
+                                    recipientScope = "Custom selection"
+                                    selectedIds = selectedIds.toMutableSet().apply { if (checked) add(person.id) else remove(person.id) }.toSet()
+                                },
+                            )
+                            Box(Modifier.weight(1f)) {
+                                DirectoryContactRow(person.contact, label, context, methodsByContact[person.id].orEmpty())
+                            }
+                        }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EventRecipientScopeChoice(options: List<String>, selected: String, choose: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("Choose recipients", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Box(Modifier.fillMaxWidth()) {
+            StudioButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                Text(selected, color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option ->
+                    DropdownMenuItem(text = { Text(option) }, onClick = { choose(option); expanded = false })
                 }
             }
         }
@@ -3981,6 +4348,7 @@ private fun GigModeScreen(
     hardwareKeys: Flow<Int>,
     back: () -> Unit,
 ) {
+    val context = LocalContext.current
     val venues by model.venues.collectAsState()
     val events by model.events.collectAsState()
     val songs by model.songs.collectAsState()
@@ -3995,6 +4363,7 @@ private fun GigModeScreen(
         PerformanceSettings.fromJson(syncState?.performanceSettingsJson ?: "{}")
     }
     val metronome = remember { NativeMetronome() }
+    val metronomeState by metronome.state.collectAsState()
     val listState = rememberLazyListState()
     val pedalFocusRequester = remember { FocusRequester() }
     val pedalScope = rememberCoroutineScope()
@@ -4036,6 +4405,7 @@ private fun GigModeScreen(
     var liveConnected by remember(eventId) { mutableStateOf(false) }
     var liveUpdating by remember(eventId) { mutableStateOf(false) }
     var showLocalLive by remember(eventId) { mutableStateOf(false) }
+    var lastWearCommandId by remember(eventId) { mutableStateOf("") }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
     LaunchedEffect(performanceSongs.map { it.entry.optString("id") }) {
         if (performanceSongs.isEmpty()) {
@@ -4062,6 +4432,67 @@ private fun GigModeScreen(
         performanceSongs.drop(currentSong)
             .takeWhile { it.sectionName == activeGigSong?.sectionName }
             .sumOf { it.song?.optInt("duration_seconds") ?: 0 }
+    }
+
+    LaunchedEffect(eventId, performanceSongs.size) {
+        LiveWearBridge.commands.collect { command ->
+            if (command.id == lastWearCommandId) return@collect
+            when (command.type) {
+                LiveCommandType.PREVIOUS -> if (performanceSongs.isNotEmpty()) {
+                    currentSong = (currentSong - 1).coerceAtLeast(0)
+                    currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                }
+                LiveCommandType.NEXT -> if (performanceSongs.isNotEmpty()) {
+                    currentSong = (currentSong + 1).coerceAtMost(performanceSongs.lastIndex)
+                    currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                }
+                LiveCommandType.TOGGLE_METRONOME -> metronome.toggle()
+                LiveCommandType.TOGGLE_MUTE -> metronome.toggleMuted()
+            }
+            lastWearCommandId = command.id
+        }
+    }
+
+    LaunchedEffect(
+        eventId,
+        currentSong,
+        performanceSongs,
+        metronomeState.running,
+        metronomeState.muted,
+        metronomeState.tempo,
+        metronomeState.beatsPerMeasure,
+        metronomeState.startedAtEpochMs,
+        lastWearCommandId,
+    ) {
+        val current = performanceSongs.getOrNull(currentSong)
+        LiveWearBridge.publish(
+            context,
+            LiveSnapshot(
+                active = current != null,
+                eventId = eventId,
+                eventTitle = event.optString("title"),
+                setListName = setList?.optString("name").orEmpty(),
+                sectionName = current?.sectionName.orEmpty(),
+                currentIndex = currentSong,
+                totalSongs = performanceSongs.size,
+                current = current?.toWearSong() ?: LiveSong(),
+                previous = performanceSongs.getOrNull(currentSong - 1)?.toWearSong() ?: LiveSong(),
+                next = performanceSongs.getOrNull(currentSong + 1)?.toWearSong() ?: LiveSong(),
+                metronomeRunning = metronomeState.running,
+                metronomeMuted = metronomeState.muted,
+                metronomeTempo = metronomeState.tempo,
+                beatsPerMeasure = metronomeState.beatsPerMeasure,
+                metronomeStartedAtEpochMs = metronomeState.startedAtEpochMs,
+                lastCommandId = lastWearCommandId,
+                revision = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    DisposableEffect(eventId) {
+        onDispose {
+            LiveWearBridge.publish(context, LiveSnapshot(active = false, eventId = eventId, revision = System.currentTimeMillis()))
+        }
     }
 
     val performanceAttachmentKeys = remember(performanceSongs) {
@@ -4750,6 +5181,19 @@ private fun GigDetail(label: String, value: String, modifier: Modifier = Modifie
 
 private fun gigSongTitle(item: GigSong) = item.song?.optString("title")?.takeIf(String::isNotBlank) ?: item.entry.optString("manual_title", "Untitled")
 private fun gigSongCue(item: GigSong) = listOf(item.song?.optString("starts_by"), displaySongKey(item.song?.optString("song_key").orEmpty()).takeIf(String::isNotBlank)?.let { "Key $it" }, item.song?.optString("tempo"), item.song?.optString("time_signature")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
+
+private fun GigSong.toWearSong() = LiveSong(
+    title = gigSongTitle(this),
+    artist = song?.optString("artist").orEmpty(),
+    key = displaySongKey(song?.optString("song_key").orEmpty()),
+    tempo = song?.optString("tempo").orEmpty(),
+    timeSignature = song?.optString("time_signature").orEmpty(),
+    startsBy = song?.optString("starts_by").orEmpty(),
+    groupType = performanceGroup?.type.orEmpty(),
+    groupName = performanceGroup?.name.orEmpty(),
+    groupPosition = performanceGroupPosition,
+    groupCount = performanceGroupCount,
+)
 
 private fun normalizeSongKey(value: String): String = value
     .replace('♯', '#').replace('♭', 'b').replace("♮", "")

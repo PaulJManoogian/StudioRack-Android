@@ -31,6 +31,34 @@ class SyncClient(
             authenticated = false,
         )
 
+    suspend fun passkeyAuthenticationOptions(): JSONObject =
+        request("/auth/passkey/options", "POST", JSONObject(), authenticated = false)
+
+    suspend fun authenticatePasskey(credentialJson: String, challengeToken: String, deviceName: String, deviceId: String): JSONObject =
+        request(
+            "/auth/passkey/verify",
+            "POST",
+            JSONObject()
+                .put("credential", JSONObject(credentialJson))
+                .put("challenge_token", challengeToken)
+                .put("device_name", deviceName)
+                .put("device_id", deviceId),
+            authenticated = false,
+        )
+
+    suspend fun passkeyRegistrationOptions(): JSONObject =
+        request("/passkeys/register/options", "POST", JSONObject())
+
+    suspend fun registerPasskey(credentialJson: String, challengeToken: String, deviceName: String): JSONObject =
+        request(
+            "/passkeys/register/verify",
+            "POST",
+            JSONObject()
+                .put("credential", JSONObject(credentialJson))
+                .put("challenge_token", challengeToken)
+                .put("device_name", deviceName),
+        )
+
     suspend fun pull(cursor: Long): JSONObject = request("/sync/pull?cursor=$cursor&limit=500")
 
     suspend fun push(mutations: JSONArray): JSONObject =
@@ -38,6 +66,9 @@ class SyncClient(
 
     suspend fun updatePerformanceSettings(settings: JSONObject): JSONObject =
         request("/settings/performance", "PUT", settings)
+
+    suspend fun updateCrewBehaviorSettings(settings: JSONObject): JSONObject =
+        request("/settings/crew-behavior", "PUT", settings)
 
     suspend fun liveEventStatus(eventId: String): JSONObject =
         request("/live/events/${URLEncoder.encode(eventId, Charsets.UTF_8.name())}/status")
@@ -284,8 +315,21 @@ internal fun exchangeUrl(baseUrl: String, kind: String, format: String, ids: Lis
 
 class SyncException(val status: Int, override val message: String) : Exception(message)
 
-internal fun resolveDownloadUrl(baseUrl: String, path: String): String = when {
-    path.startsWith("http://") || path.startsWith("https://") -> path
-    path.startsWith("/api/") -> baseUrl.substringBefore("/api/v1") + path
-    else -> baseUrl.trimEnd('/') + "/" + path.trimStart('/')
+internal fun resolveDownloadUrl(baseUrl: String, path: String): String {
+    val base = URL(baseUrl)
+    val target = URL(
+        when {
+            path.startsWith("http://") || path.startsWith("https://") -> path
+            path.startsWith("/api/") -> baseUrl.substringBefore("/api/v1") + path
+            else -> baseUrl.trimEnd('/') + "/" + path.trimStart('/')
+        }
+    )
+    val basePort = if (base.port >= 0) base.port else base.defaultPort
+    val targetPort = if (target.port >= 0) target.port else target.defaultPort
+    require(
+        target.protocol.equals(base.protocol, ignoreCase = true) &&
+            target.host.equals(base.host, ignoreCase = true) &&
+            targetPort == basePort
+    ) { "Authenticated downloads must remain on the Studio Leviathan server." }
+    return target.toString()
 }

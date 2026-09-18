@@ -1,5 +1,6 @@
 package com.manoogianmedia.studiorack.ui
 
+import android.app.Activity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -16,6 +17,7 @@ import com.manoogianmedia.studiorack.data.LocalLiveCoordinator
 import com.manoogianmedia.studiorack.data.LocalLivePeer
 import com.manoogianmedia.studiorack.data.LocalLiveRole
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
+import com.manoogianmedia.studiorack.crew.CrewBehaviorSettings
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -126,6 +128,7 @@ class StudioRackViewModel(
     val notificationCount: StateFlow<Int> = repository.notificationCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val syncHealth: StateFlow<RepositorySyncHealth> = repository.syncHealth()
+    val backgroundSyncWifiOnly: StateFlow<Boolean> = repository.backgroundSyncWifiOnly()
     val localLive = localLiveCoordinator.state
     val nearbyLiveSessions = localLiveCoordinator.peers
 
@@ -166,6 +169,24 @@ class StudioRackViewModel(
         }
     }
 
+    fun signInWithPasskey(activity: Activity) {
+        _uiState.value = _uiState.value.copy(busy = true, message = "")
+        viewModelScope.launch {
+            runCatching { repository.signInWithPasskey(activity) }
+                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "Signed in with your passkey.", syncError = false) }
+                .onFailure { _uiState.value = StudioRackUiState(signedIn = false, message = it.passkeyMessage("Passkey sign-in failed."), syncError = true) }
+        }
+    }
+
+    fun createPasskey(activity: Activity) {
+        _uiState.value = _uiState.value.copy(busy = true, message = "")
+        viewModelScope.launch {
+            runCatching { repository.createPasskey(activity) }
+                .onSuccess { _uiState.value = _uiState.value.copy(busy = false, message = "Passkey added to this Studio Leviathan login.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = it.passkeyMessage("Passkey could not be created."), syncError = true) }
+        }
+    }
+
     fun sync() {
         _uiState.value = _uiState.value.copy(busy = true, syncError = false)
         viewModelScope.launch {
@@ -191,6 +212,36 @@ class StudioRackViewModel(
                     )
                 }
         }
+    }
+
+    fun saveCrewBehaviorSettings(settings: CrewBehaviorSettings) {
+        viewModelScope.launch {
+            runCatching { repository.saveCrewBehaviorSettings(settings.toJson(pendingSync = true)) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        message = "Crew behavior saved. It will synchronize when connected.",
+                        syncError = false,
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        message = it.message ?: "Could not save Crew behavior.",
+                        syncError = true,
+                    )
+                }
+        }
+    }
+
+    fun setBackgroundSyncWifiOnly(enabled: Boolean) {
+        repository.setBackgroundSyncWifiOnly(enabled)
+        _uiState.value = _uiState.value.copy(
+            message = if (enabled) {
+                "Background notifications will synchronize on Wi-Fi only."
+            } else {
+                "Background notifications may synchronize over Wi-Fi or mobile data."
+            },
+            syncError = false,
+        )
     }
 
     suspend fun searchSongMetadata(title: String, artist: String): JSONObject =
@@ -548,6 +599,14 @@ data class StudioRackUiState(
     val starting: Boolean = false,
     val syncError: Boolean = false,
 )
+
+private fun Throwable.passkeyMessage(fallback: String): String = when {
+    this::class.simpleName?.contains("Cancellation", ignoreCase = true) == true -> "Passkey request canceled."
+    this::class.simpleName?.contains("NoCredential", ignoreCase = true) == true -> "No Studio Leviathan passkey is available on this device."
+    this::class.simpleName?.contains("ProviderConfiguration", ignoreCase = true) == true -> "No compatible passkey provider is available on this device."
+    !message.isNullOrBlank() -> message!!
+    else -> fallback
+}
 
 data class ReportUiState(
     val busy: Boolean = false,

@@ -50,6 +50,7 @@ data class SyncState(
     val cursor: Long = 0,
     val accountJson: String = "{}",
     val performanceSettingsJson: String = "{}",
+    val crewBehaviorSettingsJson: String = "{}",
     val lastSyncAt: Long? = null,
     val lastError: String? = null,
 )
@@ -215,7 +216,7 @@ interface StudioRackDao {
 
 @Database(
     entities = [CachedRecord::class, SupportingRecord::class, PendingMutation::class, SyncConflict::class, SyncState::class, CachedAttachment::class, NotificationReceipt::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class StudioRackDatabase : RoomDatabase() {
@@ -273,10 +274,16 @@ abstract class StudioRackDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sync_state ADD COLUMN crewBehaviorSettingsJson TEXT NOT NULL DEFAULT '{}'")
+            }
+        }
+
         fun create(context: Context): StudioRackDatabase = Room.databaseBuilder(
             context,
             StudioRackDatabase::class.java,
             "studiorack-offline.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
     }
 }
