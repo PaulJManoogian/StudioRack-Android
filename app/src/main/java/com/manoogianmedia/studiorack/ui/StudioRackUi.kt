@@ -1062,6 +1062,7 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
             "Members" -> workspaceMembersContent(model)
             agentName -> buddyContent(model)
             "Reference" -> referenceContent(model)
+            "Modules" -> modulesContent(model)
             "Help" -> helpContent()
             "Sync" -> syncContent(model, uiState)
             else -> settingsContent(model, uiState)
@@ -1203,6 +1204,58 @@ private fun WorkspaceInviteDialog(currentRole: String, contacts: List<JSONObject
 
 private fun androidx.compose.foundation.lazy.LazyListScope.helpContent() {
     item { HelpPanel() }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.modulesContent(model: StudioRackViewModel) {
+    item { WorkspaceModulesPanel(model) }
+}
+
+@Composable
+private fun WorkspaceModulesPanel(model: StudioRackViewModel) {
+    val modules by model.workspaceModules.collectAsState()
+    val profiles by model.workspaceProfiles.collectAsState()
+    val syncState by model.syncState.collectAsState()
+    val workspaceRole = remember(syncState?.accountJson) { JSONObject(syncState?.accountJson ?: "{}").optString("workspace_role", "viewer") }
+    val profileRows = profiles.map(::supportingJson)
+    val profile = profileRows.firstOrNull { it.optBoolean("current") } ?: profileRows.firstOrNull()
+    var profileMenu by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeading("WORKSPACE FOCUS", "Modules")
+        InfoCard {
+            Text(profile?.optString("name")?.ifBlank { "Complete Studio" } ?: "Complete Studio", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
+            profile?.optString("description")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft, lineHeight = 20.sp) }
+            Text("Module access and reference choices synchronize from the workspace. Existing records remain available offline and are never deleted when access changes.", color = TextSoft, fontSize = 13.sp, lineHeight = 19.sp)
+            if (profileRows.size > 1 && workspaceRole in setOf("owner", "manager")) {
+                Box(Modifier.fillMaxWidth()) {
+                    StudioButton(onClick = { profileMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Change Workspace Focus", color = Color.White, fontWeight = FontWeight.Bold) }
+                    DropdownMenu(expanded = profileMenu, onDismissRequest = { profileMenu = false }, modifier = Modifier.background(PanelRaised)) {
+                        profileRows.forEach { option -> DropdownMenuItem(
+                            text = { Column { Text(option.optString("name"), color = if (option.optBoolean("current")) Amber else Color.White, fontWeight = FontWeight.Bold); Text(option.optString("description"), color = TextSoft, fontSize = 11.sp) } },
+                            onClick = { profileMenu = false; model.updateWorkspaceProfile(option.optString("id")) },
+                        ) }
+                    }
+                }
+            }
+        }
+        if (modules.isEmpty()) {
+            EmptyCard("Synchronize to load workspace module access.")
+        } else {
+            modules.map(::supportingJson).sortedBy { it.optString("name") }.forEach { module ->
+                val enabled = module.optBoolean("enabled")
+                val sources = module.optJSONArray("sources")
+                val sourceText = buildList {
+                    if (sources != null) for (index in 0 until sources.length()) add(sources.optString(index))
+                }.joinToString(", ")
+                InfoCard {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(module.optString("name"), modifier = Modifier.weight(1f), color = if (enabled) Color.White else TextSoft, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(if (enabled) "ACTIVE" else "NOT INCLUDED", color = if (enabled) Color(0xFF58E99B) else TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    }
+                    Text(if (enabled) sourceText.ifBlank { "Workspace access" } else "Existing information remains retained and exportable.", color = TextSoft, fontSize = 12.sp)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2993,7 +3046,7 @@ private fun MoreChoiceStrip(selected: String, agentName: String, choose: (String
             }
         }
         SubBrandIconButton(SubBrand.Crew, "Leviathan Crew", { choose(agentName) }, selected == agentName)
-        listOf("Reference", "Help", "Sync", "Settings").forEach { option ->
+        listOf("Reference", "Modules", "Help", "Sync", "Settings").forEach { option ->
             StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
                 Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold)
             }

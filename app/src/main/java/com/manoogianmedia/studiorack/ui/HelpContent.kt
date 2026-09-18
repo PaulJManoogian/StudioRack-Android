@@ -154,6 +154,7 @@ internal fun studioLeviathanHelpSections(
         "Keep organization metadata and operational preferences out of performance screens while making them easy to maintain.",
         listOf(
             HelpTopic("Studio Profile", listOf("Store organization and owner details, address, contact methods, map link, and business metadata. Upload a studio logo, resize it by percentage, and drag it into position. The saved logo treatment is synchronized and displayed without editing controls on the dashboard.")),
+            HelpTopic("Workspace Modules", listOf("Open More > Modules to see the workspace's operating profile and effective reference modules. Owners and Account Managers can select a different focus, such as Individual Musician, Band or Ensemble, Recording Studio, Live Production Company, or Worship Organization. Changing focus updates specialized choices and forms but never deletes existing records, values, reports, or exports.")),
             HelpTopic("$liveName Settings", points = listOf(
                 "Performance Material controls preferred attachment types and priority.",
                 "Metronome controls autostart, mute state, tempo behavior, and sound.",

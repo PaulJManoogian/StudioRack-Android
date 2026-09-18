@@ -95,6 +95,10 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val itemTypes: StateFlow<List<SupportingRecord>> = repository.supporting("item_type")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val workspaceModules: StateFlow<List<SupportingRecord>> = repository.supporting("workspace_module")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val workspaceProfiles: StateFlow<List<SupportingRecord>> = repository.supporting("workspace_profile")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val brands: StateFlow<List<SupportingRecord>> = repository.supporting("brand")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val locations: StateFlow<List<SupportingRecord>> = repository.supporting("location")
@@ -229,6 +233,15 @@ class StudioRackViewModel(
                         syncError = true,
                     )
                 }
+        }
+    }
+
+    fun updateWorkspaceProfile(profileId: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(busy = true, message = "Updating workspace modules...")
+            runCatching { repository.updateWorkspaceProfile(profileId) }
+                .onSuccess { _uiState.value = _uiState.value.copy(busy = false, message = "Workspace focus updated.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = it.message ?: "Workspace modules could not be updated.", syncError = true) }
         }
     }
 

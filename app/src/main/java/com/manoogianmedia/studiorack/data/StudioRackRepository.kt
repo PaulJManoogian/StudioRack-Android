@@ -533,6 +533,11 @@ class StudioRackRepository(
         syncNow()
     }
 
+    suspend fun updateWorkspaceProfile(profileId: String) {
+        client.updateWorkspaceProfile(profileId)
+        sync()
+    }
+
     suspend fun sync() {
         _syncHealth.value = _syncHealth.value.copy(running = true, error = null)
         try {

@@ -70,6 +70,9 @@ class SyncClient(
     suspend fun updateCrewBehaviorSettings(settings: JSONObject): JSONObject =
         request("/settings/crew-behavior", "PUT", settings)
 
+    suspend fun updateWorkspaceProfile(profileId: String): JSONObject =
+        request("/settings/workspace-profile", "PUT", JSONObject().put("profile_id", profileId))
+
     suspend fun liveEventStatus(eventId: String): JSONObject =
         request("/live/events/${URLEncoder.encode(eventId, Charsets.UTF_8.name())}/status")
 
