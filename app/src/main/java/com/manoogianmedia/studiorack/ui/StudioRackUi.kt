@@ -1212,6 +1212,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.modulesContent(model:
 
 @Composable
 private fun WorkspaceModulesPanel(model: StudioRackViewModel) {
+    val context = LocalContext.current
     val modules by model.workspaceModules.collectAsState()
     val profiles by model.workspaceProfiles.collectAsState()
     val syncState by model.syncState.collectAsState()
@@ -1225,6 +1226,13 @@ private fun WorkspaceModulesPanel(model: StudioRackViewModel) {
             Text(profile?.optString("name")?.ifBlank { "Complete Studio" } ?: "Complete Studio", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
             profile?.optString("description")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft, lineHeight = 20.sp) }
             Text("Module access and reference choices synchronize from the workspace. Existing records remain available offline and are never deleted when access changes.", color = TextSoft, fontSize = 13.sp, lineHeight = 19.sp)
+            if (workspaceRole == "owner") {
+                StudioButton(
+                    onClick = { openMediaLink(context, context.getString(R.string.public_base_url) + "/billing") },
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text("Manage Module Billing", color = Color.White, fontWeight = FontWeight.Bold) }
+            }
             if (profileRows.size > 1 && workspaceRole in setOf("owner", "manager")) {
                 Box(Modifier.fillMaxWidth()) {
                     StudioButton(onClick = { profileMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Change Workspace Focus", color = Color.White, fontWeight = FontWeight.Bold) }
@@ -1242,16 +1250,12 @@ private fun WorkspaceModulesPanel(model: StudioRackViewModel) {
         } else {
             modules.map(::supportingJson).sortedBy { it.optString("name") }.forEach { module ->
                 val enabled = module.optBoolean("enabled")
-                val sources = module.optJSONArray("sources")
-                val sourceText = buildList {
-                    if (sources != null) for (index in 0 until sources.length()) add(sources.optString(index))
-                }.joinToString(", ")
                 InfoCard {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(module.optString("name"), modifier = Modifier.weight(1f), color = if (enabled) Color.White else TextSoft, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                         Text(if (enabled) "ACTIVE" else "NOT INCLUDED", color = if (enabled) Color(0xFF58E99B) else TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Black)
                     }
-                    Text(if (enabled) sourceText.ifBlank { "Workspace access" } else "Existing information remains retained and exportable.", color = TextSoft, fontSize = 12.sp)
+                    Text(if (enabled) "Available in this workspace" else "Existing information remains retained and exportable.", color = TextSoft, fontSize = 12.sp)
                 }
             }
         }
