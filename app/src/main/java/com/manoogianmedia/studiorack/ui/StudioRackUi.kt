@@ -1061,7 +1061,7 @@ private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
             "People" -> directoryContent(model)
             "Members" -> workspaceMembersContent(model)
             agentName -> buddyContent(model)
-            "Reference" -> referenceContent(model)
+            "Module Data" -> referenceContent(model)
             "Modules" -> modulesContent(model)
             "Help" -> helpContent()
             "Sync" -> syncContent(model, uiState)
@@ -2632,12 +2632,15 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
 private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(model: StudioRackViewModel) {
     item {
         val categories by model.categories.collectAsState(); val types by model.itemTypes.collectAsState(); val locations by model.locations.collectAsState(); val statuses by model.statuses.collectAsState()
+        val kitDesignations by model.kitDesignations.collectAsState(); val drumHeads by model.drumHeads.collectAsState(); val dampeningOptions by model.dampeningOptions.collectAsState(); val assetStyles by model.assetStyles.collectAsState()
         val modules by model.workspaceModules.collectAsState(); val profiles by model.workspaceProfiles.collectAsState()
         val currentProfile = profiles.map(::supportingJson).firstOrNull { it.optBoolean("current") }
-        val activeModules = modules.map(::supportingJson).filter { it.optBoolean("enabled") }
+        val activeModules = modules.map(::supportingJson).filter { it.optBoolean("enabled") }.sortedBy { it.optString("name") }
+        val workspaceCategories = categories.filter { supportingJson(it).optString("reference_state") == "workspace" }
+        val workspaceTypes = types.filter { supportingJson(it).optString("reference_state") == "workspace" }
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Reference Data", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("Modules focus the choices offered for new equipment. Workspace extensions and values used by existing records remain available.", color = TextSoft, fontSize = 13.sp, lineHeight = 18.sp)
+            Text("Module Data", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Workspace choices are kept separate from the specialized catalogs supplied by each enabled module.", color = TextSoft, fontSize = 13.sp, lineHeight = 18.sp)
             InfoCard {
                 DetailLine("Workspace focus", currentProfile?.optString("name") ?: "Custom workspace")
                 DetailLine("Active modules", activeModules.size.toString())
@@ -2645,10 +2648,27 @@ private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(mode
                     Text(activeModules.joinToString("  |  ") { it.optString("name") }, color = Cyan, fontSize = 12.sp, lineHeight = 17.sp)
                 }
             }
-            ModuleReferenceGroup("Categories", categories)
-            ModuleReferenceGroup("Equipment Types", types)
-            ReferenceGroup("Workspace Locations", locations)
-            ReferenceGroup("Equipment Statuses", statuses)
+            ExpandableRecordCard("Workspace Data", "Locations, statuses, kit designations, and private extensions", emptyList()) {
+                ReferenceRows("Locations", locations)
+                ReferenceRows("Equipment Statuses", statuses)
+                ReferenceRows("Kit Designations", kitDesignations)
+                ReferenceRows("Custom Categories", workspaceCategories)
+                ReferenceRows("Custom Equipment Types", workspaceTypes)
+            }
+            activeModules.forEach { module ->
+                val moduleId = module.optString("id")
+                val moduleCategories = categories.filter { supportingJson(it).hasModule(moduleId) }
+                val moduleTypes = types.filter { supportingJson(it).hasModule(moduleId) }
+                ExpandableRecordCard(module.optString("name", moduleId), "${moduleCategories.size} categories  |  ${moduleTypes.size} equipment types", emptyList()) {
+                    ReferenceRows("Categories", moduleCategories)
+                    ReferenceRows("Equipment Types", moduleTypes)
+                    if (moduleId == "drums_percussion") {
+                        ReferenceRows("Drum Heads", drumHeads)
+                        ReferenceRows("Dampening", dampeningOptions)
+                    }
+                    if (moduleId == "core_assets") ReferenceRows("Asset Styles", assetStyles)
+                }
+            }
         }
     }
 }
@@ -3060,7 +3080,7 @@ private fun MoreChoiceStrip(selected: String, agentName: String, choose: (String
             }
         }
         SubBrandIconButton(SubBrand.Crew, "Leviathan Crew", { choose(agentName) }, selected == agentName)
-        listOf("Reference", "Modules", "Help", "Sync", "Settings").forEach { option ->
+        listOf("Module Data", "Modules", "Help", "Sync", "Settings").forEach { option ->
             StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
                 Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold)
             }
@@ -3317,6 +3337,29 @@ private fun ReferenceGroup(title: String, rows: List<SupportingRecord>) {
     ExpandableRecordCard(title, "${rows.size} available", emptyList()) {
         rows.forEach { DetailLine(supportingJson(it).optString("name", it.entityId), supportingJson(it).optString("asset_code")) }
     }
+}
+
+@Composable
+private fun ReferenceRows(title: String, rows: List<SupportingRecord>) {
+    Text(title, color = Amber, fontSize = 13.sp, fontWeight = FontWeight.Black)
+    if (rows.isEmpty()) {
+        Text("No workspace entries", color = TextSoft, fontSize = 12.sp)
+    } else {
+        rows.forEach { record ->
+            val json = supportingJson(record)
+            val detail = buildList {
+                json.optString("asset_code").takeIf(String::isNotBlank)?.let(::add)
+                json.optString("reference_state_label").takeIf(String::isNotBlank)?.let(::add)
+                json.optInt("usage_count").takeIf { it > 0 }?.let { add("Used by $it") }
+            }.joinToString("  |  ")
+            DetailLine(json.optString("name", record.entityId), detail)
+        }
+    }
+}
+
+private fun JSONObject.hasModule(moduleId: String): Boolean {
+    val ids = optJSONArray("module_ids") ?: return false
+    return (0 until ids.length()).any { ids.optString(it) == moduleId }
 }
 
 @Composable
