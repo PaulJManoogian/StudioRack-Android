@@ -460,6 +460,8 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val eventContacts by model.eventContacts.collectAsState()
     val ensembleContacts by model.ensembleContacts.collectAsState()
     val venueContacts by model.venueContacts.collectAsState()
+    val venues by model.venues.collectAsState()
+    val setLists by model.setLists.collectAsState()
     val items by model.items.collectAsState()
     val kits by model.kits.collectAsState()
     val brands by model.brands.collectAsState()
@@ -483,6 +485,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val tracked = careRows.size
     val openBuddy = actions.map(::supportingJson).count { it.optString("status") !in setOf("handled", "cleared") }
     var peopleEvent by remember { mutableStateOf<JSONObject?>(null) }
+    var viewingEvent by remember { mutableStateOf<JSONObject?>(null) }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -544,7 +547,8 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
             EventCard(
                 event,
                 readiness,
-                open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) },
+                open = { viewingEvent = event },
+                openSetList = if (event.optString("set_list_id").isNotBlank()) ({ openGig(event.getString("id")) }) else null,
                 peopleCount = eventPeople.size,
                 people = if (eventPeople.isNotEmpty() || eventGroupNames.isNotEmpty()) ({ peopleEvent = event }) else null,
             )
@@ -563,6 +567,14 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
             contactMethods,
             resolveEventGroupNames(event, ensembles, eventEnsembles),
         ) { peopleEvent = null }
+    }
+    viewingEvent?.let { event ->
+        val venue = venues.firstOrNull { it.entityId == event.optString("venue_id") }?.let(::recordJson)
+        val setListName = setLists.firstOrNull { it.entityId == event.optString("set_list_id") }?.let { recordJson(it).optString("name") }.orEmpty()
+        SessionDetailDialog(event, venue, setListName, openSetList = {
+            viewingEvent = null
+            openGig(event.getString("id"))
+        }) { viewingEvent = null }
     }
     }
 }
@@ -779,6 +791,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     val eventContacts by model.eventContacts.collectAsState()
     val ensembleContacts by model.ensembleContacts.collectAsState()
     val venueContacts by model.venueContacts.collectAsState()
+    val setLists by model.setLists.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
@@ -792,10 +805,11 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
     var localLiveEvent by remember { mutableStateOf<JSONObject?>(null) }
     var showLocalLive by remember { mutableStateOf(false) }
     var peopleEvent by remember { mutableStateOf<JSONObject?>(null) }
+    var viewingEvent by remember { mutableStateOf<JSONObject?>(null) }
     val venueNames = venues.associate { it.entityId to recordJson(it).optString("name") }
     val rows = events.map(::recordJson).onEach { event ->
         val venueName = venueNames[event.optString("venue_id")].orEmpty()
-        if (venueName.isNotBlank()) event.put("location", listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - "))
+        event.put("_display_location", listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - "))
     }.filter {
         (type == "All" || it.optString("event_type").humanize() == type) && (query.isBlank() || it.toString().contains(query, true))
     }.sortedBy { it.optString("event_date") + it.optString("start_time") }
@@ -828,7 +842,8 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
                 EventCard(
                     event,
                     eventPacketReadiness(event, entries, attachments, cachedAttachments),
-                    open = { if (event.optString("set_list_id").isNotBlank()) openGig(event.getString("id")) },
+                    open = { viewingEvent = event },
+                    openSetList = if (event.optString("set_list_id").isNotBlank()) ({ openGig(event.getString("id")) }) else null,
                     edit = { editingEvent = EditorTarget(event.optString("id"), event) },
                     copy = {
                         editingEvent = EditorTarget(null, JSONObject(event.toString())
@@ -853,6 +868,14 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
             contactMethods,
             resolveEventGroupNames(event, ensembles, eventEnsembles),
         ) { peopleEvent = null }
+    }
+    viewingEvent?.let { event ->
+        val venue = venues.firstOrNull { it.entityId == event.optString("venue_id") }?.let(::recordJson)
+        val setListName = setLists.firstOrNull { it.entityId == event.optString("set_list_id") }?.let { recordJson(it).optString("name") }.orEmpty()
+        SessionDetailDialog(event, venue, setListName, openSetList = {
+            viewingEvent = null
+            openGig(event.getString("id"))
+        }) { viewingEvent = null }
     }
     }
 }
@@ -4087,11 +4110,74 @@ private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Uni
 }
 
 @Composable
+private fun SessionDetailDialog(
+    event: JSONObject,
+    venue: JSONObject?,
+    setListName: String,
+    openSetList: () -> Unit,
+    close: () -> Unit,
+) {
+    val context = LocalContext.current
+    val mapLink = remember(event.toString(), venue?.toString()) { sessionMapLink(event, venue) }
+    val hasSetList = event.optString("set_list_id").isNotBlank()
+    val venueName = venue?.optString("name").orEmpty()
+    val venueAddress = venueAddress(venue)
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Ink) {
+            LazyColumn(
+                Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = close) {
+                            Icon(Icons.Rounded.ArrowBack, "Back to schedule", tint = Cyan)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Schedule", color = Cyan)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text(event.optString("event_status", "scheduled").humanize(), color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+                item {
+                    Text("SESSION DETAILS", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text(event.optString("title", "Scheduled Session"), color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                }
+                item {
+                    InfoCard {
+                        DetailLine("Type", event.optString("event_type").humanize())
+                        DetailLine("Date", event.optString("event_date"))
+                        DetailLine("Time", listOf(event.optString("start_time"), event.optString("end_time")).filter(String::isNotBlank).joinToString(" to "))
+                        DetailLine("Venue", venueName)
+                        DetailLine("Address", venueAddress)
+                        DetailLine("Room / location details", event.optString("location"))
+                        DetailLine("Set list", setListName)
+                        DetailLine("Notes", event.optString("notes"))
+                    }
+                }
+                if (mapLink != null) item {
+                    StudioButton(onClick = { openMapLink(context, mapLink) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Directions", color = Ink, fontWeight = FontWeight.Black)
+                    }
+                }
+                if (hasSetList) item {
+                    StudioButton(onClick = openSetList, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                        Text("Open Set List", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+                item { Spacer(Modifier.height(18.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun EventCard(
     event: JSONObject,
     readiness: PacketReadiness,
     open: () -> Unit,
+    openSetList: (() -> Unit)? = null,
     edit: (() -> Unit)? = null,
     copy: (() -> Unit)? = null,
     host: (() -> Unit)? = null,
@@ -4110,7 +4196,7 @@ private fun EventCard(
             Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp)) {
                 Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString(" / "), color = TextSoft, fontSize = 13.sp)
                 Text(event.optString("title", "Untitled session"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text(listOf(event.optString("event_type").humanize(), event.optString("location")).filter(String::isNotBlank).joinToString(" - "), color = TextSoft)
+                Text(listOf(event.optString("event_type").humanize(), event.optString("_display_location", event.optString("location"))).filter(String::isNotBlank).joinToString(" - "), color = TextSoft)
                 if (readiness.total > 0) {
                     Text(
                         if (readiness.ready == readiness.total) "Offline packet ready (${readiness.ready} attachments)" else "Offline packet: ${readiness.ready}/${readiness.total} attachments ready",
@@ -4121,7 +4207,7 @@ private fun EventCard(
                     )
                 }
                 if (event.optString("set_list_id").isNotBlank() || edit != null || copy != null || host != null || people != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    if (event.optString("set_list_id").isNotBlank()) SubBrandIconButton(SubBrand.Live, "Open in $liveModeName", open)
+                    if (openSetList != null) SubBrandIconButton(SubBrand.Live, "Open in $liveModeName", openSetList)
                     if (people != null) EventToolIconButton(Icons.Rounded.Groups, "People", people, peopleCount)
                     if (host != null) TextButton(onClick = host) { Text("Host", color = Cyan, fontWeight = FontWeight.Bold) }
                     if (edit != null) EventToolIconButton(Icons.Rounded.Edit, "Edit event", edit)
@@ -5382,6 +5468,29 @@ internal fun normalizedMediaLink(value: String): String? {
     return link.takeIf { scheme in setOf("http", "https", "spotify") }
 }
 
+internal fun venueAddress(venue: JSONObject?): String {
+    if (venue == null) return ""
+    val locality = listOf(venue.optString("city"), venue.optString("region"), venue.optString("postal_code"))
+        .filter(String::isNotBlank)
+        .joinToString(", ")
+    return listOf(
+        venue.optString("address_line1"),
+        venue.optString("address_line2"),
+        locality,
+        venue.optString("country"),
+    ).filter(String::isNotBlank).joinToString(", ")
+}
+
+internal fun sessionMapLink(event: JSONObject, venue: JSONObject?): String? {
+    venue?.optString("maps_url")?.let(::normalizedMediaLink)?.let { return it }
+    val address = venueAddress(venue)
+    val venueQuery = listOf(venue?.optString("name").orEmpty(), address).filter(String::isNotBlank).joinToString(", ")
+    val query = venueQuery.ifBlank { event.optString("location").trim() }
+    if (query.isBlank()) return null
+    val encoded = java.net.URLEncoder.encode(query, Charsets.UTF_8.name()).replace("+", "%20")
+    return "https://www.google.com/maps/search/?api=1&query=$encoded"
+}
+
 private fun openMediaLink(context: Context, link: String) {
     val intent = mediaIntent(link) ?: return
     try {
@@ -5390,6 +5499,17 @@ private fun openMediaLink(context: Context, link: String) {
         Toast.makeText(context, "No application is available to open this media link.", Toast.LENGTH_LONG).show()
     } catch (_: SecurityException) {
         Toast.makeText(context, "${context.getString(R.string.app_name)} could not open this media link.", Toast.LENGTH_LONG).show()
+    }
+}
+
+private fun openMapLink(context: Context, link: String) {
+    val safeLink = normalizedMediaLink(link) ?: return
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(safeLink)))
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "No map or navigation application is available.", Toast.LENGTH_LONG).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, "Directions are not available on this device.", Toast.LENGTH_LONG).show()
     }
 }
 

@@ -90,7 +90,7 @@ internal fun studioLeviathanHelpSections(
                 "Attach a set list, select kits and gear, and associate groups or individual contacts.",
                 "Configure the $agentName reminder and save. Copy an existing event when most details repeat.",
             )),
-            HelpTopic("Finding And Using Events", listOf("Search and filter by event details, type, and status. Event actions open $liveName, People, editing, copying, printing, sharing, and deletion. People can text or email direct participants, a selected band or group, venue contacts, everyone, or a custom selection, and still provides individual call, text, email, and profile actions.")),
+            HelpTopic("Finding And Using Events", listOf("Search and filter by event details, type, and status. Tap an event to review its session information, open directions in a map or navigation app, or open its set list for the performance. Event actions also provide $liveName, People, editing, copying, printing, sharing, and deletion. People can text or email direct participants, a selected band or group, venue contacts, everyone, or a custom selection, and still provides individual call, text, email, and profile actions.")),
             HelpTopic("Printed Event Packets", listOf("Packets include event and venue details, directions, people in readable columns, kit checklists, set and medley headings, song order and metadata, notes, and selected printable performance material.")),
         ),
     ),
