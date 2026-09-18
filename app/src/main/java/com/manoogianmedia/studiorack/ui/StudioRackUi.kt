@@ -1225,7 +1225,7 @@ private fun WorkspaceModulesPanel(model: StudioRackViewModel) {
         InfoCard {
             Text(profile?.optString("name")?.ifBlank { "Complete Studio" } ?: "Complete Studio", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
             profile?.optString("description")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft, lineHeight = 20.sp) }
-            Text("Module access and reference choices synchronize from the workspace. Existing records remain available offline and are never deleted when access changes.", color = TextSoft, fontSize = 13.sp, lineHeight = 19.sp)
+            Text("Module access and choices synchronize from the workspace. Records from an inactive paid module remain safely retained on the server, but are removed from operational views and offline storage until access is restored.", color = TextSoft, fontSize = 13.sp, lineHeight = 19.sp)
             if (workspaceRole == "owner") {
                 StudioButton(
                     onClick = { openMediaLink(context, context.getString(R.string.public_base_url) + "/billing") },
@@ -1250,12 +1250,21 @@ private fun WorkspaceModulesPanel(model: StudioRackViewModel) {
         } else {
             modules.map(::supportingJson).sortedBy { it.optString("name") }.forEach { module ->
                 val enabled = module.optBoolean("enabled")
+                val lockedCount = module.optInt("locked_record_count")
                 InfoCard {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(module.optString("name"), modifier = Modifier.weight(1f), color = if (enabled) Color.White else TextSoft, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                         Text(if (enabled) "ACTIVE" else "NOT INCLUDED", color = if (enabled) Color(0xFF58E99B) else TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Black)
                     }
-                    Text(if (enabled) "Available in this workspace" else "Existing information remains retained and exportable.", color = TextSoft, fontSize = 12.sp)
+                    Text(
+                        when {
+                            enabled -> "Available in this workspace"
+                            lockedCount > 0 -> "$lockedCount retained equipment record${if (lockedCount == 1) "" else "s"} locked until this module is restored"
+                            else -> "Not active for this workspace"
+                        },
+                        color = TextSoft,
+                        fontSize = 12.sp,
+                    )
                 }
             }
         }
