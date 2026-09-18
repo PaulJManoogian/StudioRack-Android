@@ -2632,9 +2632,23 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
 private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(model: StudioRackViewModel) {
     item {
         val categories by model.categories.collectAsState(); val types by model.itemTypes.collectAsState(); val locations by model.locations.collectAsState(); val statuses by model.statuses.collectAsState()
+        val modules by model.workspaceModules.collectAsState(); val profiles by model.workspaceProfiles.collectAsState()
+        val currentProfile = profiles.map(::supportingJson).firstOrNull { it.optBoolean("current") }
+        val activeModules = modules.map(::supportingJson).filter { it.optBoolean("enabled") }
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Reference Data", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            ReferenceGroup("Categories", categories); ReferenceGroup("Equipment Types", types); ReferenceGroup("Locations", locations); ReferenceGroup("Statuses", statuses)
+            Text("Modules focus the choices offered for new equipment. Workspace extensions and values used by existing records remain available.", color = TextSoft, fontSize = 13.sp, lineHeight = 18.sp)
+            InfoCard {
+                DetailLine("Workspace focus", currentProfile?.optString("name") ?: "Custom workspace")
+                DetailLine("Active modules", activeModules.size.toString())
+                if (activeModules.isNotEmpty()) {
+                    Text(activeModules.joinToString("  |  ") { it.optString("name") }, color = Cyan, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
+            ModuleReferenceGroup("Categories", categories)
+            ModuleReferenceGroup("Equipment Types", types)
+            ReferenceGroup("Workspace Locations", locations)
+            ReferenceGroup("Equipment Statuses", statuses)
         }
     }
 }
@@ -3302,6 +3316,33 @@ private fun loadCachedImage(context: Context, imageUrl: String): Bitmap? {
 private fun ReferenceGroup(title: String, rows: List<SupportingRecord>) {
     ExpandableRecordCard(title, "${rows.size} available", emptyList()) {
         rows.forEach { DetailLine(supportingJson(it).optString("name", it.entityId), supportingJson(it).optString("asset_code")) }
+    }
+}
+
+@Composable
+private fun ModuleReferenceGroup(title: String, rows: List<SupportingRecord>) {
+    val grouped = rows.map { it to supportingJson(it) }.groupBy { (_, json) ->
+        val moduleNames = json.optJSONArray("module_names")
+        when {
+            json.optString("reference_state") == "workspace" -> "Workspace extensions"
+            moduleNames != null && moduleNames.length() > 0 -> moduleNames.optString(0)
+            else -> "Shared reference data"
+        }
+    }.toSortedMap()
+    ExpandableRecordCard(title, "${rows.size} available", emptyList()) {
+        grouped.forEach { (groupName, entries) ->
+            Text(groupName, color = Amber, fontSize = 13.sp, fontWeight = FontWeight.Black)
+            entries.forEach { (record, json) ->
+                val state = json.optString("reference_state_label")
+                val usage = json.optInt("usage_count")
+                val detail = buildList {
+                    json.optString("asset_code").takeIf(String::isNotBlank)?.let(::add)
+                    state.takeIf(String::isNotBlank)?.let(::add)
+                    if (usage > 0) add("Used by $usage")
+                }.joinToString("  |  ")
+                DetailLine(json.optString("name", record.entityId), detail)
+            }
+        }
     }
 }
 
