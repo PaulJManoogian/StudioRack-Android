@@ -2553,7 +2553,7 @@ private fun WorkspaceAskPanel(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text("Ask Your Workspace", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Ask Crew", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("$agentName searches records you are allowed to see using approved, read-only filters.", color = TextSoft, fontSize = 12.sp)
             if (showDomainChooser) ChoiceStrip(listOf("Songs", "Equipment"), domain) { domain = it }
             DictationTextField(
