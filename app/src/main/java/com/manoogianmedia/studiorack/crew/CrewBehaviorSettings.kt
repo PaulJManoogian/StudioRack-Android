@@ -15,6 +15,10 @@ data class CrewBehaviorSettings(
     val phrasesToAvoid: String = "",
     val communicationNotes: String = "",
     val approvedExamples: String = "",
+    val postEventCheckinEnabled: Boolean = true,
+    val postEventCheckinDelayHours: Int = 1,
+    val postEventCheckinCloseDays: Int = 2,
+    val postEventCheckinFollowupDays: Int = 0,
 ) {
     fun toJson(pendingSync: Boolean = false): JSONObject = JSONObject()
         .put("crew_persistence_level", persistenceLevel.coerceIn(1, 5))
@@ -28,6 +32,10 @@ data class CrewBehaviorSettings(
         .put("crew_phrases_to_avoid", phrasesToAvoid)
         .put("crew_communication_notes", communicationNotes)
         .put("crew_approved_examples", approvedExamples)
+        .put("post_event_checkin_enabled", if (postEventCheckinEnabled) 1 else 0)
+        .put("post_event_checkin_delay_hours", postEventCheckinDelayHours.coerceIn(0, 72))
+        .put("post_event_checkin_close_days", postEventCheckinCloseDays.coerceIn(1, 30))
+        .put("post_event_checkin_followup_days", postEventCheckinFollowupDays.coerceIn(0, (postEventCheckinCloseDays - 1).coerceAtLeast(0)))
         .put("_mobile_pending", if (pendingSync) 1 else 0)
 
     companion object {
@@ -48,6 +56,10 @@ data class CrewBehaviorSettings(
                 phrasesToAvoid = json.optString("crew_phrases_to_avoid"),
                 communicationNotes = json.optString("crew_communication_notes"),
                 approvedExamples = json.optString("crew_approved_examples"),
+                postEventCheckinEnabled = json.optInt("post_event_checkin_enabled", 1) == 1,
+                postEventCheckinDelayHours = json.optInt("post_event_checkin_delay_hours", 1).coerceIn(0, 72),
+                postEventCheckinCloseDays = json.optInt("post_event_checkin_close_days", 2).coerceIn(1, 30),
+                postEventCheckinFollowupDays = json.optInt("post_event_checkin_followup_days", 0).coerceIn(0, 29),
             )
         }
     }

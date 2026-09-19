@@ -2714,6 +2714,46 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
             SettingToggle("Allow occasional, situational humor", settings.humorEnabled) { settings = settings.copy(humorEnabled = it) }
             SettingToggle("Offer relevant next steps", settings.proactiveSuggestions) { settings = settings.copy(proactiveSuggestions = it) }
 
+            Text("Post-performance check-in", color = Amber, fontWeight = FontWeight.Bold)
+            SettingToggle("Check in after completed performances", settings.postEventCheckinEnabled) {
+                settings = settings.copy(postEventCheckinEnabled = it)
+            }
+            if (settings.postEventCheckinEnabled) {
+                Text("Wait ${settings.postEventCheckinDelayHours} hour${if (settings.postEventCheckinDelayHours == 1) "" else "s"} after the performance", color = Color.White, fontSize = 13.sp)
+                Slider(
+                    value = settings.postEventCheckinDelayHours.toFloat(),
+                    onValueChange = { settings = settings.copy(postEventCheckinDelayHours = it.toInt().coerceIn(0, 72)) },
+                    valueRange = 0f..72f,
+                    steps = 71,
+                )
+                Text("Close after ${settings.postEventCheckinCloseDays} unanswered day${if (settings.postEventCheckinCloseDays == 1) "" else "s"}", color = Color.White, fontSize = 13.sp)
+                Slider(
+                    value = settings.postEventCheckinCloseDays.toFloat(),
+                    onValueChange = {
+                        val closeDays = it.toInt().coerceIn(1, 30)
+                        settings = settings.copy(
+                            postEventCheckinCloseDays = closeDays,
+                            postEventCheckinFollowupDays = settings.postEventCheckinFollowupDays.coerceAtMost((closeDays - 1).coerceAtLeast(0)),
+                        )
+                    },
+                    valueRange = 1f..30f,
+                    steps = 28,
+                )
+                SettingToggle("Send one additional follow-up", settings.postEventCheckinFollowupDays > 0) { enabled ->
+                    settings = settings.copy(postEventCheckinFollowupDays = if (enabled) 1.coerceAtMost(settings.postEventCheckinCloseDays - 1) else 0)
+                }
+                if (settings.postEventCheckinFollowupDays > 0) {
+                    Text("Follow up after ${settings.postEventCheckinFollowupDays} day${if (settings.postEventCheckinFollowupDays == 1) "" else "s"}", color = Color.White, fontSize = 13.sp)
+                    Slider(
+                        value = settings.postEventCheckinFollowupDays.toFloat(),
+                        onValueChange = { settings = settings.copy(postEventCheckinFollowupDays = it.toInt().coerceIn(1, (settings.postEventCheckinCloseDays - 1).coerceAtLeast(1))) },
+                        valueRange = 1f..(settings.postEventCheckinCloseDays - 1).coerceAtLeast(1).toFloat(),
+                        steps = (settings.postEventCheckinCloseDays - 3).coerceAtLeast(0),
+                    )
+                }
+                Text("Turning Crew off in the web settings remains the master stop for all Crew activity.", color = TextSoft, fontSize = 12.sp)
+            }
+
             Text("Preferred delivery", color = Amber, fontWeight = FontWeight.Bold)
             listOf("in_app" to "In-app", "mobile" to "Mobile notification", "email" to "Email").forEach { (key, label) ->
                 SettingToggle(label, key in settings.preferredChannels) { enabled ->
