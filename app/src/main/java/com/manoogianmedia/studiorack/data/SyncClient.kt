@@ -105,6 +105,13 @@ class SyncClient(
     suspend fun runAiReport(question: String): JSONObject =
         request("/reports/ai", "POST", JSONObject().put("question", question))
 
+    suspend fun askWorkspace(question: String, domain: String): JSONObject =
+        request(
+            "/workspace/ask",
+            "POST",
+            JSONObject().put("question", question).put("domain", domain),
+        )
+
     suspend fun searchSongMetadata(title: String, artist: String): JSONObject =
         request(
             "/song-metadata/search?title=${URLEncoder.encode(title, Charsets.UTF_8.name())}&artist=${URLEncoder.encode(artist, Charsets.UTF_8.name())}"

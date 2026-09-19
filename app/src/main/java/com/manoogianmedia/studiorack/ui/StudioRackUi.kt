@@ -935,6 +935,16 @@ private fun LibraryScreen(model: StudioRackViewModel) {
         }
         if (tab == "Songs") {
             item {
+                WorkspaceAskPanel(
+                    model = model,
+                    initialDomain = "songs",
+                    showDomainChooser = false,
+                    openSong = { songId ->
+                        songs.firstOrNull { it.entityId == songId }?.let { editingSong = EditorTarget(it.entityId, recordJson(it)) }
+                    },
+                )
+            }
+            item {
                 Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Crew: Fill Missing Song Lengths", color = Color.White, fontWeight = FontWeight.Bold)
@@ -2521,8 +2531,94 @@ private fun AiReportTab(
     }
 }
 
+@Composable
+private fun WorkspaceAskPanel(
+    model: StudioRackViewModel,
+    initialDomain: String = "songs",
+    showDomainChooser: Boolean = true,
+    openSong: ((String) -> Unit)? = null,
+) {
+    val state by model.reportState.collectAsState()
+    val recentQueries by model.workspaceQueries.collectAsState()
+    val online = rememberNetworkConnected()
+    val agentName = stringResource(R.string.agent_name)
+    var question by remember { mutableStateOf("") }
+    var domain by remember(initialDomain) { mutableStateOf(if (initialDomain == "equipment") "Equipment" else "Songs") }
+    val domainValue = if (domain == "Equipment") "equipment" else "songs"
+
+    Surface(
+        color = Cyan.copy(alpha = .045f),
+        border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text("Ask Your Workspace", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("$agentName searches records you are allowed to see using approved, read-only filters.", color = TextSoft, fontSize = 12.sp)
+            if (showDomainChooser) ChoiceStrip(listOf("Songs", "Equipment"), domain) { domain = it }
+            DictationTextField(
+                question,
+                { question = it },
+                if (domainValue == "songs") "Find songs in E with charts" else "Find microphones that need maintenance",
+                enabled = online && !state.busy,
+            )
+            StudioButton(
+                onClick = { model.askWorkspace(question, domainValue) },
+                enabled = online && question.isNotBlank() && !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (state.busy) "$agentName is searching..." else "Ask $agentName", color = Ink, fontWeight = FontWeight.Black)
+            }
+            if (!online) Text("Connect to ask a workspace question.", color = Amber, fontSize = 11.sp)
+            if (state.message.isNotBlank()) Text(state.message, color = TextSoft, fontSize = 12.sp)
+            state.workspaceResult?.let { result ->
+                Text(result.optString("title", "Workspace Results"), color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("${result.optInt("row_count")} result(s)", color = TextSoft)
+                result.optJSONArray("rows").jsonObjects().forEach { row ->
+                    if (result.optString("domain") == "songs") {
+                        ExpandableRecordCard(
+                            row.optString("title", "Song"),
+                            row.optString("artist"),
+                            listOf(displaySongKey(row.optString("song_key")), row.optString("style"), row.optString("genre"), row.optString("tempo").takeIf(String::isNotBlank)?.let { "$it BPM" }.orEmpty()).filter(String::isNotBlank),
+                            actionLabel = if (openSong != null) "Open" else null,
+                            action = openSong?.let { opener -> { opener(row.optString("id")) } },
+                        ) {
+                            DetailLine("Length", formatDuration(row.optInt("duration_seconds")))
+                            DetailLine("Performance material", row.optInt("attachment_count").toString())
+                            DetailLine("Last performed", row.optString("last_performed_date").ifBlank { "No completed performance found" })
+                            DetailLine("Notes", row.optString("notes"))
+                        }
+                    } else {
+                        ExpandableRecordCard(
+                            listOf(row.optString("brand"), row.optString("name", "Item")).filter(String::isNotBlank).joinToString(" "),
+                            listOf(row.optString("category"), row.optString("type")).filter(String::isNotBlank).joinToString(" / "),
+                            listOf(row.optString("status"), row.optString("maintenance_label")).filter(String::isNotBlank),
+                        ) {
+                            DetailLine("Asset number", row.optString("asset_number"))
+                            DetailLine("Location", row.optString("location"))
+                            DetailLine("Maintenance due", row.optString("maintenance_due"))
+                        }
+                    }
+                }
+            }
+            if (showDomainChooser && recentQueries.isNotEmpty()) {
+                Text("Recent Questions", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+                recentQueries.take(8).forEach { record ->
+                    val row = supportingJson(record)
+                    ReportCard(
+                        row.optString("title", "Workspace question"),
+                        row.optString("question"),
+                        "${row.optInt("row_count")} results - ${row.optString("created_utc")}",
+                    )
+                }
+            }
+        }
+    }
+}
+
 private fun androidx.compose.foundation.lazy.LazyListScope.buddyContent(model: StudioRackViewModel) {
     item { SubBrandSectionHeading(SubBrand.Crew) }
+    item { WorkspaceAskPanel(model) }
     item { CrewBehaviorPanel(model) }
     item { Text("Available Skills", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
     item {

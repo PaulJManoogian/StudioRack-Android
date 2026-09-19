@@ -62,6 +62,8 @@ class StudioRackRepository(
 
     suspend fun runAiReport(question: String): JSONObject = client.runAiReport(question)
 
+    suspend fun askWorkspace(question: String, domain: String): JSONObject = client.askWorkspace(question, domain)
+
     suspend fun searchSongMetadata(title: String, artist: String): JSONObject = client.searchSongMetadata(title, artist)
 
     suspend fun searchSongLyrics(title: String, artist: String, album: String): JSONObject = client.searchSongLyrics(title, artist, album)

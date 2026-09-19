@@ -87,6 +87,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val buddyActions: StateFlow<List<SupportingRecord>> = repository.supporting("studio_buddy_action")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val workspaceQueries: StateFlow<List<SupportingRecord>> = repository.supporting("crew_workspace_query")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val buddySkills: StateFlow<List<SupportingRecord>> = repository.supporting("studio_buddy_skill")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val reportRuns: StateFlow<List<SupportingRecord>> = repository.supporting("report_run")
@@ -564,6 +566,26 @@ class StudioRackViewModel(
         }
     }
 
+    fun askWorkspace(question: String, domain: String) {
+        _reportState.value = _reportState.value.copy(busy = true, message = "", workspaceResult = null)
+        viewModelScope.launch {
+            runCatching { repository.askWorkspace(question.trim(), domain.trim().lowercase()) }
+                .onSuccess { result ->
+                    _reportState.value = _reportState.value.copy(
+                        busy = false,
+                        workspaceResult = result,
+                        message = "Workspace search complete.",
+                    )
+                }
+                .onFailure {
+                    _reportState.value = _reportState.value.copy(
+                        busy = false,
+                        message = it.message ?: "Workspace questions are unavailable while offline.",
+                    )
+                }
+        }
+    }
+
     fun exportData(kind: String, format: String, ids: List<String> = emptyList(), done: (DataExport?) -> Unit) {
         _reportState.value = _reportState.value.copy(busy = true, message = "Preparing export...")
         viewModelScope.launch {
@@ -634,6 +656,7 @@ data class ReportUiState(
     val message: String = "",
     val onlineOverview: JSONObject? = null,
     val aiResult: JSONObject? = null,
+    val workspaceResult: JSONObject? = null,
 )
 
 data class WorkspaceMembersUiState(
