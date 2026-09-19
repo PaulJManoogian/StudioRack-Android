@@ -134,12 +134,14 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
         val actionIds = actions.mapTo(mutableSetOf()) { it.first }
         val output = actions.map { (id, row) ->
             val actionType = row.optString("action_type")
-            val eventId = id.removePrefix("sba_evt_").takeIf { id.startsWith("sba_evt_") }.orEmpty()
+            val eventId = id.removePrefix("sba_evt_").takeIf { id.startsWith("sba_evt_") }
+                ?: Regex("Event reference:\\s*(event_[A-Za-z0-9_]+)", RegexOption.IGNORE_CASE)
+                    .find(row.optString("body"))?.groupValues?.getOrNull(1).orEmpty()
             val itemId = row.optString("item_id")
             NotificationCandidate(
                 sourceId = id,
                 fingerprint = listOf(row.optString("updated_utc"), row.optString("status"), row.optString("last_reply_utc")).joinToString("|"),
-                channelId = when { actionType == "event_reminder" -> CHANNEL_SCHEDULE; itemId.isNotBlank() -> CHANNEL_MAINTENANCE; else -> CHANNEL_BUDDY },
+                channelId = when { actionType in setOf("event_reminder", "post_event_debrief") -> CHANNEL_SCHEDULE; itemId.isNotBlank() -> CHANNEL_MAINTENANCE; else -> CHANNEL_BUDDY },
                 title = cleanSubject(row.optString("subject").ifBlank { context.getString(R.string.agent_name) }),
                 body = row.optString("last_reply_body").ifBlank { row.optString("body") }.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(240),
                 destination = when { eventId.isNotBlank() -> "sessions"; itemId.isNotBlank() -> "equipment"; else -> "dashboard" },

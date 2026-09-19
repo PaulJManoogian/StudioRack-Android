@@ -586,6 +586,25 @@ class StudioRackViewModel(
         }
     }
 
+    fun replyCrewAction(actionId: String, reply: String) {
+        _reportState.value = _reportState.value.copy(busy = true, message = "Crew is reviewing your reply...")
+        viewModelScope.launch {
+            runCatching { repository.replyCrewAction(actionId, reply.trim()) }
+                .onSuccess { result ->
+                    _reportState.value = _reportState.value.copy(
+                        busy = false,
+                        message = result.optString("message", "Crew saved your reply."),
+                    )
+                }
+                .onFailure {
+                    _reportState.value = _reportState.value.copy(
+                        busy = false,
+                        message = it.message ?: "Crew could not process the reply.",
+                    )
+                }
+        }
+    }
+
     fun exportData(kind: String, format: String, ids: List<String> = emptyList(), done: (DataExport?) -> Unit) {
         _reportState.value = _reportState.value.copy(busy = true, message = "Preparing export...")
         viewModelScope.launch {

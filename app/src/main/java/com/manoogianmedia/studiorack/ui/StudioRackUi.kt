@@ -557,7 +557,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
         item { CareSummary(careRows, model) }
         item { SubBrandSectionHeading(SubBrand.Crew, "Recent activity.") }
         if (actions.isEmpty()) item { EmptyCard("No $agentName actions are stored on this device.") }
-        items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action)) }
+        items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action), model) }
         item { Spacer(Modifier.height(30.dp)) }
     }
     peopleEvent?.let { event ->
@@ -2636,7 +2636,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.buddyContent(model: S
     item { Text("Action History", color = Amber, fontWeight = FontWeight.Bold) }
     item {
         val actions by model.buddyActions.collectAsState()
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { actions.take(30).forEach { BuddyActionCard(supportingJson(it)) } }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { actions.take(30).forEach { BuddyActionCard(supportingJson(it), model) } }
     }
 }
 
@@ -3305,10 +3305,23 @@ private fun ReportCard(title: String, primary: String, secondary: String) {
 }
 
 @Composable
-private fun BuddyActionCard(row: JSONObject) {
+private fun BuddyActionCard(row: JSONObject, model: StudioRackViewModel) {
     val agentName = stringResource(R.string.agent_name)
+    val reportState by model.reportState.collectAsState()
+    var reply by remember(row.optString("id")) { mutableStateOf("") }
+    val actionType = row.optString("action_type")
+    val actionLabel = if (actionType == "post_event_debrief") "Post-performance check-in" else actionType.humanize()
     ExpandableRecordCard(row.optString("subject", "$agentName action"), row.optString("updated_utc"), listOf(row.optString("priority").humanize(), row.optString("status").humanize())) {
+        DetailLine("Type", actionLabel)
         DetailLine("Recipient", row.optString("recipient")); DetailLine("Due", row.optString("source_due_date")); DetailLine("Draft", row.optString("body")); DetailLine("Last reply", row.optString("last_reply_body"))
+        if (actionType == "post_event_debrief" && row.optString("status") in setOf("sent", "waiting")) {
+            DictationTextField(reply, { reply = it }, "Tell Crew how the performance went")
+            StudioButton(
+                onClick = { model.replyCrewAction(row.optString("id"), reply); reply = "" },
+                enabled = reply.isNotBlank() && !reportState.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Reply to Crew", color = Ink, fontWeight = FontWeight.Black) }
+        }
     }
 }
 

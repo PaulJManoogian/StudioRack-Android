@@ -112,6 +112,13 @@ class SyncClient(
             JSONObject().put("question", question).put("domain", domain),
         )
 
+    suspend fun replyCrewAction(actionId: String, reply: String): JSONObject =
+        request(
+            "/crew/actions/${URLEncoder.encode(actionId, Charsets.UTF_8.name())}/reply",
+            "POST",
+            JSONObject().put("reply", reply),
+        )
+
     suspend fun searchSongMetadata(title: String, artist: String): JSONObject =
         request(
             "/song-metadata/search?title=${URLEncoder.encode(title, Charsets.UTF_8.name())}&artist=${URLEncoder.encode(artist, Charsets.UTF_8.name())}"
