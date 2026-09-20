@@ -36,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -890,6 +891,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     val sections by model.sections.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
+    val cachedAttachments by model.cachedAttachments.collectAsState()
     val reportState by model.reportState.collectAsState()
     val online = rememberNetworkConnected()
     var tab by remember { mutableStateOf("Songs") }
@@ -906,6 +908,9 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     var durationResult by remember { mutableStateOf<JSONObject?>(null) }
     var durationMessage by remember { mutableStateOf("") }
     var appliedDurationSongs by remember { mutableStateOf(emptySet<String>()) }
+    var attachmentPreview by remember { mutableStateOf<CachedAttachment?>(null) }
+    var textAttachmentPreview by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val attachmentCacheById = cachedAttachments.associateBy(CachedAttachment::attachmentId)
     val filteredSongs = songs
         .filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
         .filter { favoriteScope == "All" || recordJson(it).optInt("is_favorite") == 1 }
@@ -1015,7 +1020,33 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     normalizedMediaLink(song.optString("media_ref"))?.let { link ->
                         Row(Modifier.fillMaxWidth()) { GigPill("Listen", onClick = { openMediaLink(context, link) }) }
                     }
-                    songAttachments.forEach { DetailLine("Attachment", attachmentLabel(recordJson(it))) }
+                    songAttachments.forEach { attachmentRecord ->
+                        val attachment = recordJson(attachmentRecord)
+                        val cached = attachmentCacheById[attachmentRecord.entityId]
+                        val remoteLink = normalizedMediaLink(attachment.optString("file_ref"))
+                        val textContent = attachment.optString("content_text").takeIf { attachment.optString("source_type") == "text" && it.isNotBlank() }
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Attachment", color = TextSoft, modifier = Modifier.weight(1f))
+                            when {
+                                textContent != null -> StudioButton(
+                                    onClick = { textAttachmentPreview = attachmentLabel(attachment) to textContent },
+                                    kind = StudioButtonKind.Secondary,
+                                ) { Text(attachmentLabel(attachment), color = Color.White) }
+                                cached?.status == "ready" && !cached.localPath.isNullOrBlank() -> StudioButton(
+                                    onClick = {
+                                        if (cachedAttachmentCanPreview(cached)) attachmentPreview = cached
+                                        else openCachedAttachment(context, cached)
+                                    },
+                                    kind = StudioButtonKind.Secondary,
+                                ) { Text(attachmentLabel(attachment), color = Color.White) }
+                                remoteLink != null -> StudioButton(
+                                    onClick = { openMediaLink(context, remoteLink) },
+                                    kind = StudioButtonKind.Secondary,
+                                ) { Text(attachmentLabel(attachment), color = Color.White) }
+                                else -> Text("${attachmentLabel(attachment)} - synchronize to open", color = Amber, fontSize = 12.sp)
+                            }
+                        }
+                    }
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = { editingSong = EditorTarget(record.entityId, song) }) { Text("Edit", color = Amber) }
                     }
@@ -1077,6 +1108,8 @@ private fun LibraryScreen(model: StudioRackViewModel) {
         }
     }
     exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
+    attachmentPreview?.let { attachment -> AttachmentPreviewDialog(attachment) { attachmentPreview = null } }
+    textAttachmentPreview?.let { (name, content) -> TextAttachmentPreviewDialog(name, content) { textAttachmentPreview = null } }
     }
 }
 
@@ -4087,6 +4120,47 @@ private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> U
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TextAttachmentPreviewDialog(name: String, content: String, close: () -> Unit) {
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Ink) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = close) { Text("Close", color = Cyan) }
+                }
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+                    ChordProDocument(content)
+                }
+            }
+        }
+    }
+}
+
+private fun cachedAttachmentCanPreview(attachment: CachedAttachment): Boolean {
+    val mime = attachment.mimeType.orEmpty().lowercase()
+    val path = attachment.localPath.orEmpty().lowercase()
+    return mime == "application/pdf" || mime.startsWith("image/") || path.endsWith(".pdf") || path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".webp")
+}
+
+private fun openCachedAttachment(context: Context, attachment: CachedAttachment) {
+    val file = attachment.localPath?.let(::File)?.takeIf(File::isFile)
+    if (file == null) {
+        Toast.makeText(context, "This attachment is not available offline. Synchronize and try again.", Toast.LENGTH_LONG).show()
+        return
+    }
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, attachment.mimeType ?: "application/octet-stream")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "No application is available to open this attachment.", Toast.LENGTH_LONG).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, "This attachment could not be opened.", Toast.LENGTH_LONG).show()
     }
 }
 
