@@ -67,7 +67,7 @@ internal fun studioLeviathanHelpSections(
                 "Choose the material type and a clear display name.",
                 "Mark the preferred $liveName default, print inclusion, and priority.",
                 "Search LRCLIB by title, artist, and album, then review imported text before saving.",
-                "Expand a song in the Songs list to open any synchronized or linked performance material directly.",
+                "Expand a song in the Songs list to open any synchronized or linked performance material directly. Use Night view for rendered PDF and image pages when a bright document would be distracting on stage.",
                 "Synchronize attachments before a performance so $liveName can read local copies without cellular service.",
             )),
             HelpTopic("Set Lists", listOf("Create sets, search and add songs, then drag to reorder. Rename, copy, print, share, favorite, or export a list. Named medley and tribute groups indent only their songs and show each song's position in Chart mode. Song lengths calculate estimated set time.")),
@@ -147,7 +147,7 @@ internal fun studioLeviathanHelpSections(
             HelpTopic("Performance Preparation", points = listOf(
                 "Synchronize before leaving for the venue.",
                 "Confirm the event's offline packet and attachments are ready.",
-                "Open $liveName and verify the set list and preferred material.",
+                "Open $liveName, verify the set list and preferred material, and choose Night view for bright PDF or image charts.",
                 "Use Local Host when devices share Wi-Fi but cannot reach the internet.",
             )),
         ),

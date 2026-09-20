@@ -75,6 +75,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
@@ -105,6 +106,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -119,6 +121,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -4094,6 +4098,8 @@ private fun AttachmentEditorRow(label: String, detail: String, view: (() -> Unit
 
 @Composable
 private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> Unit) {
+    val context = LocalContext.current
+    val nightMode = rememberDocumentNightMode()
     val path = attachment.localPath.orEmpty()
     val isPdf = attachment.mimeType == "application/pdf" || path.endsWith(".pdf", true)
     val pageCount = remember(path) { if (isPdf) pdfPageCount(path) else 1 }
@@ -4108,6 +4114,12 @@ private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> U
                     Text(attachment.displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     TextButton(onClick = close) { Text("Close", color = Cyan) }
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    DocumentNightModeToggle(nightMode.value) {
+                        nightMode.value = it
+                        saveDocumentNightMode(context, it)
+                    }
+                }
                 if (pageCount > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0) { Text("Previous", color = if (page > 0) Amber else TextSoft) }
                     Text("${page + 1} / $pageCount", color = TextSoft, modifier = Modifier.padding(12.dp))
@@ -4116,7 +4128,13 @@ private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> U
                 val rendered = bitmap
                 if (rendered == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Cyan) }
                 else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    Image(rendered.asImageBitmap(), attachment.displayName, Modifier.fillMaxWidth().aspectRatio(rendered.width.toFloat() / rendered.height.toFloat()), contentScale = ContentScale.FillWidth)
+                    Image(
+                        rendered.asImageBitmap(),
+                        attachment.displayName,
+                        Modifier.fillMaxWidth().aspectRatio(rendered.width.toFloat() / rendered.height.toFloat()),
+                        contentScale = ContentScale.FillWidth,
+                        colorFilter = if (nightMode.value) DOCUMENT_NIGHT_COLOR_FILTER else null,
+                    )
                 }
             }
         }
@@ -5315,6 +5333,7 @@ private fun PerformanceSongScreen(
     next: () -> Unit,
 ) {
     val context = LocalContext.current
+    val nightMode = rememberDocumentNightMode()
     val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
     val mediaLink = normalizedMediaLink(item.song?.optString("media_ref").orEmpty())
     val path = item.cache?.localPath.orEmpty()
@@ -5417,7 +5436,20 @@ private fun PerformanceSongScreen(
             }
         }
         if (item.attachment != null) {
-            Text(attachmentLabel(item.attachment) + if (pageCount > 1) "  |  Page ${page + 1} of $pageCount" else "", color = TextSoft, fontSize = 12.sp)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    attachmentLabel(item.attachment) + if (pageCount > 1) "  |  Page ${page + 1} of $pageCount" else "",
+                    color = TextSoft,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                if (item.attachment.optString("source_type") != "text") {
+                    DocumentNightModeToggle(nightMode.value) {
+                        nightMode.value = it
+                        saveDocumentNightMode(context, it)
+                    }
+                }
+            }
         }
         if (pageCount > 1) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -5443,11 +5475,49 @@ private fun PerformanceSongScreen(
                     contentDescription = item.attachment?.let(::attachmentLabel),
                     modifier = Modifier.fillMaxWidth(),
                     contentScale = ContentScale.FillWidth,
+                    colorFilter = if (nightMode.value) DOCUMENT_NIGHT_COLOR_FILTER else null,
                 )
             }
         }
     }
 }
+
+@Composable
+private fun DocumentNightModeToggle(enabled: Boolean, change: (Boolean) -> Unit) {
+    Row(
+        Modifier.clickable { change(!enabled) }.padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Text("Night view", color = if (enabled) Cyan else TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Switch(checked = enabled, onCheckedChange = change)
+    }
+}
+
+@Composable
+private fun rememberDocumentNightMode(): MutableState<Boolean> {
+    val context = LocalContext.current
+    return remember(context) {
+        mutableStateOf(context.getSharedPreferences(DOCUMENT_VIEW_PREFERENCES, Context.MODE_PRIVATE).getBoolean(DOCUMENT_NIGHT_MODE, false))
+    }
+}
+
+private fun saveDocumentNightMode(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(DOCUMENT_VIEW_PREFERENCES, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(DOCUMENT_NIGHT_MODE, enabled)
+        .apply()
+}
+
+private val DOCUMENT_NIGHT_COLOR_FILTER = ColorFilter.colorMatrix(ColorMatrix(floatArrayOf(
+    -1f, 0f, 0f, 0f, 255f,
+    0f, -1f, 0f, 0f, 255f,
+    0f, 0f, -1f, 0f, 255f,
+    0f, 0f, 0f, 1f, 0f,
+)))
+
+private const val DOCUMENT_VIEW_PREFERENCES = "studio_leviathan_document_view"
+private const val DOCUMENT_NIGHT_MODE = "night_mode"
 
 @Composable
 private fun ChordProDocument(source: String) {
