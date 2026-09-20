@@ -108,6 +108,7 @@ class StudioRackRepository(
         val songs = dao.records("song").filter { it.entityId in songIds }
         records += songs
         records += dao.records("song_attachment").filter { JSONObject(it.json).optString("song_id") in songIds }
+        records += dao.records("performance_cue").filter { JSONObject(it.json).optString("song_id") in songIds }
         eventJson.optString("venue_id").takeIf(String::isNotBlank)?.let { venueId -> dao.record("venue", venueId)?.let(records::add) }
         return JSONObject()
             .put("event_id", eventId)
@@ -846,7 +847,7 @@ private fun CachedRecord.toManifest(
 internal fun attachmentExtension(fileRef: String): String {
     val suffix = fileRef.substringBefore('?').substringAfterLast('.', "").lowercase()
     return when (suffix) {
-        "pdf", "png", "jpg", "jpeg", "gif", "webp", "txt", "doc", "docx" -> ".$suffix"
+        "pdf", "png", "jpg", "jpeg", "gif", "webp", "txt", "doc", "docx", "mp3", "m4a", "aac", "wav", "flac", "ogg" -> ".$suffix"
         else -> ".bin"
     }
 }
@@ -860,6 +861,12 @@ internal fun attachmentMime(fileRef: String): String? = when (attachmentExtensio
     ".txt" -> "text/plain"
     ".doc" -> "application/msword"
     ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ".mp3" -> "audio/mpeg"
+    ".m4a" -> "audio/mp4"
+    ".aac" -> "audio/aac"
+    ".wav" -> "audio/wav"
+    ".flac" -> "audio/flac"
+    ".ogg" -> "audio/ogg"
     else -> null
 }
 

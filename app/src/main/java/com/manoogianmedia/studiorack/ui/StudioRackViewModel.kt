@@ -49,6 +49,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val attachments: StateFlow<List<CachedRecord>> = repository.records("song_attachment")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val performanceCues: StateFlow<List<CachedRecord>> = repository.records("performance_cue")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val maintenanceNotes: StateFlow<List<CachedRecord>> = repository.records("maintenance_note")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val maintenanceHistory: StateFlow<List<CachedRecord>> = repository.records("maintenance_record")
@@ -505,6 +507,7 @@ class StudioRackViewModel(
             .put("description", draft.description.trim()).put("notes", draft.notes.trim())
             .put("print_charts", if (draft.attachmentPrintMode == "none") 0 else 1)
             .put("attachment_print_mode", draft.attachmentPrintMode).put("is_favorite", if (draft.favorite) 1 else 0)
+            .put("playback_mode", draft.playbackMode).put("stop_between_songs", if (draft.stopBetweenSongs) 1 else 0)
         val sections = JSONArray()
         val entries = JSONArray()
         draft.sections.forEachIndexed { index, section ->
@@ -527,7 +530,10 @@ class StudioRackViewModel(
                     .put("performance_group_id", groupId ?: JSONObject.NULL)
                     .put("performance_group_type", entry.performanceGroupType.takeIf { groupId != null } ?: JSONObject.NULL)
                     .put("performance_group_name", entry.performanceGroupName.trim().takeIf { groupId != null } ?: JSONObject.NULL)
-                    .put("performance_attachment_id", entry.performanceAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL))
+                    .put("performance_attachment_id", entry.performanceAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                    .put("playback_attachment_id", entry.playbackAttachmentId?.takeIf(String::isNotBlank) ?: JSONObject.NULL)
+                    .put("transition_mode", entry.transitionMode)
+                    .put("pre_roll_ms", entry.preRollMs.coerceIn(0, 60_000)))
             }
         }
         return JSONObject().put("set_list_id", draft.id).put("set_list", setList).put("sections", sections).put("entries", entries)
@@ -695,6 +701,8 @@ data class SetListDraft(
     val attachmentPrintMode: String = "none",
     val favorite: Boolean = false,
     val sections: List<SetSectionDraft> = emptyList(),
+    val playbackMode: String = "manual",
+    val stopBetweenSongs: Boolean = true,
 )
 
 data class SetSectionDraft(val id: String, val name: String = "", val notes: String = "", val entries: List<SetEntryDraft> = emptyList())
@@ -707,6 +715,9 @@ data class SetEntryDraft(
     val performanceGroupId: String? = null,
     val performanceGroupType: String = "",
     val performanceGroupName: String = "",
+    val playbackAttachmentId: String? = null,
+    val transitionMode: String = "manual",
+    val preRollMs: Int = 0,
 )
 
 class StudioRackViewModelFactory(

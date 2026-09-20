@@ -523,12 +523,19 @@ private fun setListDraft(original: CachedRecord?, allSections: List<CachedRecord
                 performanceGroup?.id?.let { if (copyMode) copiedGroups.getOrPut(it) { newId("grp") } else it },
                 performanceGroup?.type.orEmpty(),
                 performanceGroup?.name.orEmpty(),
+                entry.optString("playback_attachment_id").takeIf(String::isNotBlank),
+                entry.optString("transition_mode", "manual"),
+                entry.optInt("pre_roll_ms"),
             )
         }
         SetSectionDraft(if (copyMode) newId("sls") else sectionRecord.entityId, section.optString("name"), section.optString("notes"), entries)
     }
     val name = root.optString("name") + if (copyMode) " - Copy" else ""
-    return SetListDraft(id, name, root.optString("description"), root.optString("notes"), root.optString("attachment_print_mode", "none"), !copyMode && root.optInt("is_favorite") == 1, sections)
+    return SetListDraft(
+        id, name, root.optString("description"), root.optString("notes"),
+        root.optString("attachment_print_mode", "none"), !copyMode && root.optInt("is_favorite") == 1,
+        sections, root.optString("playback_mode", "manual"), root.optInt("stop_between_songs", 1) == 1,
+    )
 }
 
 private fun SetListDraft.updateSection(id: String, transform: (SetSectionDraft) -> SetSectionDraft) = copy(sections = sections.map { if (it.id == id) transform(it) else it })

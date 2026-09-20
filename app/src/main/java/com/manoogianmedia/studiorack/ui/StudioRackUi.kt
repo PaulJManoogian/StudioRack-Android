@@ -37,6 +37,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -4834,8 +4837,12 @@ private fun GigModeScreen(
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
+    val workspaceModules by model.workspaceModules.collectAsState()
     val syncState by model.syncState.collectAsState()
     val localLive by model.localLive.collectAsState()
+    val livePlaybackEnabled = remember(workspaceModules) {
+        workspaceModules.any { it.entityId == "live_playback" && JSONObject(it.json).optBoolean("enabled") }
+    }
     val settings = remember(syncState?.performanceSettingsJson) {
         PerformanceSettings.fromJson(syncState?.performanceSettingsJson ?: "{}")
     }
@@ -4851,14 +4858,25 @@ private fun GigModeScreen(
     val songMap = remember(songs) { songs.associate { it.entityId to recordJson(it) } }
     val sectionRows = remember(sections, setListId) { sections.map(::recordJson).filter { it.optString("set_list_id") == setListId }.sortedBy { it.optInt("position") } }
     val entryRows = remember(entries, setListId) { entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") } }
-    val attachmentsBySong = remember(attachments) { attachments.map(::recordJson).groupBy { it.optString("song_id") } }
+    val attachmentRows = remember(attachments) { attachments.map(::recordJson) }
+    val attachmentsBySong = remember(attachmentRows) { attachmentRows.filter { it.optInt("performance_audio") != 1 }.groupBy { it.optString("song_id") } }
+    val playbackBySong = remember(attachmentRows, livePlaybackEnabled) {
+        if (livePlaybackEnabled) attachmentRows.filter { it.optInt("performance_audio") == 1 }.groupBy { it.optString("song_id") } else emptyMap()
+    }
     val cacheById = remember(cachedAttachments) { cachedAttachments.associateBy(CachedAttachment::attachmentId) }
-    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, cacheById, settings.attachmentPreferences) {
+    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, cacheById, settings.attachmentPreferences) {
         sectionRows.flatMap { section ->
             entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
                 val song = songMap[entry.optString("song_id")]
                 val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty(), settings.attachmentPreferences)
-                GigSong(section.optString("name", "Set"), entry, song, attachment, attachment?.optString("id")?.let(cacheById::get))
+                val playback = playbackBySong[entry.optString("song_id")].orEmpty()
+                    .firstOrNull { it.optString("id") == entry.optString("playback_attachment_id") }
+                GigSong(
+                    section.optString("name", "Set"), entry, song, attachment,
+                    attachment?.optString("id")?.let(cacheById::get),
+                    playbackAudio = playback,
+                    playbackCache = playback?.optString("id")?.let(cacheById::get),
+                )
             }
         }
     }
@@ -5061,6 +5079,7 @@ private fun GigModeScreen(
             settings = settings,
             gigStartedAt = gigStartedAt,
             setRemainingSeconds = setRemainingSeconds,
+            autoAdvance = setList?.optString("playback_mode") == "assisted" && setList.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
             close = { detailOpen = false },
             previous = {
                 currentSong = (currentSong - 1).coerceAtLeast(0)
@@ -5328,6 +5347,7 @@ private fun PerformanceSongScreen(
     settings: PerformanceSettings,
     gigStartedAt: Long,
     setRemainingSeconds: Int,
+    autoAdvance: Boolean,
     close: () -> Unit,
     previous: () -> Unit,
     next: () -> Unit,
@@ -5435,6 +5455,9 @@ private fun PerformanceSongScreen(
                 }
             }
         }
+        if (item.playbackAudio != null) {
+            PerformanceAudioControls(item, autoAdvance, next)
+        }
         if (item.attachment != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -5481,6 +5504,100 @@ private fun PerformanceSongScreen(
         }
     }
 }
+
+@Composable
+private fun PerformanceAudioControls(item: GigSong, autoAdvance: Boolean, onFinished: () -> Unit) {
+    val context = LocalContext.current
+    val audio = item.playbackAudio ?: return
+    val cached = item.playbackCache
+    val path = cached?.localPath.orEmpty()
+    val ready = cached?.status == "ready" && path.isNotBlank() && File(path).isFile
+    val trimStart = audio.optLong("audio_trim_start_ms").coerceAtLeast(0L)
+    val trimEnd = audio.optLong("audio_trim_end_ms").takeIf { it > trimStart }
+    val player = remember(path) {
+        ExoPlayer.Builder(context).build().apply {
+            if (ready) {
+                setMediaItem(MediaItem.fromUri(Uri.fromFile(File(path))))
+                prepare()
+            }
+        }
+    }
+    var playing by remember(player) { mutableStateOf(false) }
+    var positionMs by remember(player) { mutableStateOf(0L) }
+    var durationMs by remember(player) { mutableStateOf(audio.optLong("audio_duration_ms").coerceAtLeast(0L)) }
+    var completed by remember(player) { mutableStateOf(false) }
+    DisposableEffect(player, autoAdvance) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY && trimStart > 0 && player.currentPosition < trimStart) player.seekTo(trimStart)
+                if (playbackState == Player.STATE_ENDED && !completed) {
+                    completed = true
+                    if (autoAdvance) onFinished()
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+    LaunchedEffect(player, ready, trimEnd) {
+        while (ready) {
+            positionMs = player.currentPosition.coerceAtLeast(0L)
+            durationMs = (trimEnd ?: player.duration.takeIf { it > 0 } ?: durationMs).coerceAtLeast(0L)
+            if (trimEnd != null && player.isPlaying && positionMs >= trimEnd) {
+                player.pause()
+                player.seekTo(trimEnd)
+                if (!completed) {
+                    completed = true
+                    if (autoAdvance) onFinished()
+                }
+            }
+            delay(200)
+        }
+    }
+    Surface(
+        color = Color(0xE8202635),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Cyan.copy(alpha = 0.45f)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(audio.optString("display_name", "Performance audio"), color = Color.White, fontWeight = FontWeight.Black)
+                    Text(
+                        if (ready) "${formatPlaybackTime(positionMs)} / ${formatPlaybackTime(durationMs)}" else "Audio is not available offline on this device.",
+                        color = if (ready) Cyan else TextSoft,
+                        fontSize = 12.sp,
+                    )
+                }
+                GigIconButton(
+                    if (playing) Icons.Rounded.Pause else Icons.Rounded.MusicNote,
+                    if (playing) "Pause performance audio" else "Play performance audio",
+                    onClick = {
+                        completed = false
+                        if (player.currentPosition >= (trimEnd ?: Long.MAX_VALUE)) player.seekTo(trimStart)
+                        if (playing) player.pause() else player.play()
+                    },
+                    enabled = ready,
+                    active = playing,
+                )
+            }
+            if (ready) {
+                Slider(
+                    value = positionMs.coerceAtMost(durationMs.coerceAtLeast(1L)).toFloat(),
+                    onValueChange = { player.seekTo(it.toLong().coerceAtLeast(trimStart)) },
+                    valueRange = trimStart.toFloat()..durationMs.coerceAtLeast(trimStart + 1).toFloat(),
+                )
+            }
+        }
+    }
+}
+
+private fun formatPlaybackTime(milliseconds: Long): String = formatDuration((milliseconds.coerceAtLeast(0L) / 1000L).toInt(), showZero = true)
 
 @Composable
 private fun DocumentNightModeToggle(enabled: Boolean, change: (Boolean) -> Unit) {
@@ -5880,6 +5997,8 @@ private data class GigSong(
     val song: JSONObject?,
     val attachment: JSONObject?,
     val cache: CachedAttachment?,
+    val playbackAudio: JSONObject? = null,
+    val playbackCache: CachedAttachment? = null,
     val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
@@ -5958,7 +6077,7 @@ private fun eventPacketReadiness(
 ): PacketReadiness {
     val setListId = event.optString("set_list_id")
     if (setListId.isBlank()) return PacketReadiness(0, 0)
-    val bySong = attachments.map(::recordJson).groupBy { it.optString("song_id") }
+    val bySong = attachments.map(::recordJson).filter { it.optInt("performance_audio") != 1 }.groupBy { it.optString("song_id") }
     val cacheById = cached.associateBy(CachedAttachment::attachmentId)
     val selectedIds = entries.asSequence()
         .map(::recordJson)

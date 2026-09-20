@@ -236,7 +236,7 @@ class SyncClient(
             connection.requestMethod = "GET"
             connection.connectTimeout = 15_000
             connection.readTimeout = 60_000
-            connection.setRequestProperty("Accept", "application/pdf,image/*,application/json")
+            connection.setRequestProperty("Accept", "application/pdf,image/*,audio/*,application/ogg,application/json")
             val token = tokenStore.token() ?: throw SyncException(401, "This device is signed out.")
             connection.setRequestProperty("Authorization", "Bearer $token")
             val status = connection.responseCode
