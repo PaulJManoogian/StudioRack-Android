@@ -32,6 +32,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
@@ -111,7 +112,12 @@ internal fun SetListEditor(
     var autosavePrimed by remember(original?.entityId) { mutableStateOf(false) }
     var autosaveState by remember(original?.entityId) { mutableStateOf("Saved") }
     val songRows = songs.associate { it.entityId to JSONObject(it.json) }
-    val attachmentsBySong = attachments.groupBy { JSONObject(it.json).optString("song_id") }
+    val attachmentRows = attachments.map { it to JSONObject(it.json) }
+    val attachmentsBySong = attachmentRows.filter { (_, data) -> data.optInt("performance_audio") != 1 }
+        .groupBy({ (_, data) -> data.optString("song_id") }, { (record, _) -> record })
+    val playbackBySong = attachmentRows.filter { (_, data) -> data.optInt("performance_audio") == 1 }
+        .groupBy({ (_, data) -> data.optString("song_id") }, { (record, _) -> record })
+    val hasPlaybackAudio = playbackBySong.values.any { it.isNotEmpty() }
     val estimatedSeconds = draft.sections.sumOf { section ->
         section.entries.sumOf { entry -> entry.songId?.let { songRows[it]?.optInt("duration_seconds") } ?: 0 }
     }
@@ -206,9 +212,34 @@ internal fun SetListEditor(
                             ) { Text(label, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) }
                         }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { draft = draft.copy(favorite = !draft.favorite) }) {
-                        Checkbox(draft.favorite, { draft = draft.copy(favorite = it) })
-                        Text("Favorite set list", color = Color.White)
+                    Row(Modifier.fillMaxWidth().clickable { draft = draft.copy(favorite = !draft.favorite) }, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Favorite set list", color = Color.White, modifier = Modifier.weight(1f))
+                        Switch(draft.favorite, { draft = draft.copy(favorite = it) })
+                    }
+                }
+            }
+            if (hasPlaybackAudio || draft.playbackMode != "manual") item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("LEVIATHAN LIVE PLAYBACK", color = EditorSoft, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    listOf(
+                        "off" to "Off",
+                        "manual" to "Manual controls",
+                        "automatic" to "Auto-start selected audio",
+                    ).forEach { (value, label) ->
+                        val normalizedMode = if (draft.playbackMode == "assisted") "manual" else draft.playbackMode
+                        Surface(
+                            color = if (normalizedMode == value) EditorAmber else EditorRaised,
+                            contentColor = if (normalizedMode == value) EditorInk else Color.White,
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.fillMaxWidth().clickable { draft = draft.copy(playbackMode = value) },
+                        ) { Text(label, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) }
+                    }
+                    Row(Modifier.fillMaxWidth().clickable { draft = draft.copy(stopBetweenSongs = !draft.stopBetweenSongs) }, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Stop between songs", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Do not advance automatically when playback finishes.", color = EditorSoft, fontSize = 11.sp)
+                        }
+                        Switch(draft.stopBetweenSongs, { draft = draft.copy(stopBetweenSongs = it) })
                     }
                 }
             }
@@ -421,6 +452,34 @@ internal fun SetListEditor(
                                         }
                                     }
                                 }
+                                val songPlayback = entry.songId?.let { playbackBySong[it] }.orEmpty()
+                                if (songPlayback.isNotEmpty()) {
+                                    Text("PLAYBACK AUDIO", color = EditorSoft, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 6.dp))
+                                    Text("Audio controls remain available in Leviathan Live. Select a track here only when it should be eligible for automatic start.", color = EditorSoft, fontSize = 11.sp)
+                                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        val choices = listOf(null to "Manual controls only") + songPlayback.map { record -> record.entityId to attachmentName(JSONObject(record.json)) }
+                                        choices.forEach { (id, label) ->
+                                            val active = entry.playbackAttachmentId == id
+                                            Surface(
+                                                color = if (active) EditorCyan else EditorRaised,
+                                                contentColor = if (active) EditorInk else Color.White,
+                                                shape = RoundedCornerShape(50),
+                                                modifier = Modifier.clickable { draft = draft.updateEntry(section.id, entry.id) { it.copy(playbackAttachmentId = id) } },
+                                            ) { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) }
+                                        }
+                                    }
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        listOf("manual" to "Stay on song", "auto" to "Advance when audio ends").forEach { (value, label) ->
+                                            val active = entry.transitionMode == value
+                                            Surface(
+                                                color = if (active) EditorAmber else EditorRaised,
+                                                contentColor = if (active) EditorInk else Color.White,
+                                                shape = RoundedCornerShape(50),
+                                                modifier = Modifier.weight(1f).clickable { draft = draft.updateEntry(section.id, entry.id) { it.copy(transitionMode = value) } },
+                                            ) { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp)) }
+                                        }
+                                    }
+                                }
                             }
                             }
                             HorizontalDivider(color = Color(0xFF30384A))
@@ -534,7 +593,7 @@ private fun setListDraft(original: CachedRecord?, allSections: List<CachedRecord
     return SetListDraft(
         id, name, root.optString("description"), root.optString("notes"),
         root.optString("attachment_print_mode", "none"), !copyMode && root.optInt("is_favorite") == 1,
-        sections, root.optString("playback_mode", "manual"), root.optInt("stop_between_songs", 1) == 1,
+        sections, root.optString("playback_mode", "manual").let { if (it == "assisted") "manual" else it }, root.optInt("stop_between_songs", 1) == 1,
     )
 }
 

@@ -98,6 +98,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NavigateBefore
 import androidx.compose.material.icons.rounded.NavigateNext
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WifiTethering
@@ -4869,13 +4870,17 @@ private fun GigModeScreen(
             entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
                 val song = songMap[entry.optString("song_id")]
                 val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty(), settings.attachmentPreferences)
-                val playback = playbackBySong[entry.optString("song_id")].orEmpty()
-                    .firstOrNull { it.optString("id") == entry.optString("playback_attachment_id") }
+                val songPlayback = playbackBySong[entry.optString("song_id")].orEmpty()
+                val selectedPlaybackId = entry.optString("playback_attachment_id")
+                val selectedPlayback = songPlayback.firstOrNull { it.optString("id") == selectedPlaybackId }
+                // An attached track may be started manually without becoming an automatic default.
+                val playback = selectedPlayback ?: songPlayback.firstOrNull()
                 GigSong(
                     section.optString("name", "Set"), entry, song, attachment,
                     attachment?.optString("id")?.let(cacheById::get),
                     playbackAudio = playback,
                     playbackCache = playback?.optString("id")?.let(cacheById::get),
+                    playbackExplicitlySelected = selectedPlayback != null,
                 )
             }
         }
@@ -4905,6 +4910,8 @@ private fun GigModeScreen(
     var liveUpdating by remember(eventId) { mutableStateOf(false) }
     var showLocalLive by remember(eventId) { mutableStateOf(false) }
     var lastWearCommandId by remember(eventId) { mutableStateOf("") }
+    val configuredPlaybackMode = setList?.optString("playback_mode", "manual")?.let { if (it == "assisted") "manual" else it } ?: "manual"
+    var livePlaybackActive by remember(eventId, setListId) { mutableStateOf(configuredPlaybackMode != "off") }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
     LaunchedEffect(performanceSongs.map { it.entry.optString("id") }) {
         if (performanceSongs.isEmpty()) {
@@ -5083,7 +5090,10 @@ private fun GigModeScreen(
             settings = settings,
             gigStartedAt = gigStartedAt,
             setRemainingSeconds = setRemainingSeconds,
-            autoAdvance = setList?.optString("playback_mode") == "assisted" && setList.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
+            playbackActive = livePlaybackActive,
+            setPlaybackActive = { livePlaybackActive = it },
+            autoStart = livePlaybackActive && configuredPlaybackMode == "automatic" && performanceSongs[currentSong].playbackExplicitlySelected,
+            autoAdvance = livePlaybackActive && setList?.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
             close = { detailOpen = false },
             previous = {
                 currentSong = (currentSong - 1).coerceAtLeast(0)
@@ -5139,7 +5149,7 @@ private fun GigModeScreen(
             }
         }
         if (livePlaybackEnabled) {
-            item { LivePlaybackReadiness(playbackAssignedCount, playbackOfflineCount) }
+            item { LivePlaybackReadiness(playbackAssignedCount, playbackOfflineCount, livePlaybackActive) { livePlaybackActive = it } }
         }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
             item { GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, activeGigSong?.sectionName.orEmpty()) }
@@ -5168,7 +5178,7 @@ private fun GigModeScreen(
                         }
                     }
                     val grouped = gigSong?.performanceGroup != null
-                    SongRow(entry, song, attachment, cached, displayPosition = entryIndex + 1, grouped = grouped, modifier = if (grouped) Modifier.padding(start = 32.dp) else Modifier) {
+                    SongRow(entry, song, attachment, cached, displayPosition = entryIndex + 1, grouped = grouped, hasPlayback = gigSong?.playbackAudio != null, modifier = if (grouped) Modifier.padding(start = 32.dp) else Modifier) {
                         currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
                         currentEntryId = performanceSongs[currentSong].entry.optString("id")
                         detailOpen = true
@@ -5181,7 +5191,7 @@ private fun GigModeScreen(
 }
 
 @Composable
-private fun LivePlaybackReadiness(assignedCount: Int, offlineCount: Int) {
+private fun LivePlaybackReadiness(assignedCount: Int, offlineCount: Int, active: Boolean, changeActive: (Boolean) -> Unit) {
     Surface(
         color = Color(0xE8202635),
         shape = RoundedCornerShape(7.dp),
@@ -5195,7 +5205,7 @@ private fun LivePlaybackReadiness(assignedCount: Int, offlineCount: Int) {
         ) {
             Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = Cyan, modifier = Modifier.size(24.dp))
             Column(Modifier.weight(1f)) {
-                Text("LIVE PLAYBACK", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                Text("LEVIATHAN LIVE PLAYBACK", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
                 Text(
                     if (assignedCount == 0) "Ready for setup" else "$offlineCount of $assignedCount tracks ready offline",
                     color = Color.White,
@@ -5203,7 +5213,7 @@ private fun LivePlaybackReadiness(assignedCount: Int, offlineCount: Int) {
                 )
                 Text(
                     if (assignedCount == 0) {
-                        "Add performance audio to a song on the web, assign it to this set list, then synchronize this device."
+                        "Add performance audio to a song in this set list, then synchronize this device."
                     } else if (offlineCount < assignedCount) {
                         "Synchronize before the performance to download the remaining audio."
                     } else {
@@ -5213,6 +5223,7 @@ private fun LivePlaybackReadiness(assignedCount: Int, offlineCount: Int) {
                     fontSize = 12.sp,
                 )
             }
+            Switch(checked = active, onCheckedChange = changeActive)
         }
     }
 }
@@ -5270,7 +5281,7 @@ private fun LiveUpdatingLight() {
 }
 
 @Composable
-private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, displayPosition: Int, grouped: Boolean, modifier: Modifier = Modifier, openAttachment: () -> Unit) {
+private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, displayPosition: Int, grouped: Boolean, hasPlayback: Boolean = false, modifier: Modifier = Modifier, openAttachment: () -> Unit) {
     val context = LocalContext.current
     val availableOffline = cached?.status == "ready" && cached.localPath != null
     val mediaLink = normalizedMediaLink(song?.optString("media_ref").orEmpty())
@@ -5295,7 +5306,7 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
             Text(song?.optString("artist").orEmpty(), color = TextSoft, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
             val patch = listOf(song?.optString("patch_name"), song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
             if (patch.isNotBlank()) Text("Patch: $patch", color = TextSoft, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
-            if (attachment != null || mediaLink != null) {
+            if (attachment != null || mediaLink != null || hasPlayback) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
                     if (attachment != null) {
                         GigIconButton(
@@ -5305,8 +5316,10 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
                             enabled = availableOffline,
                         )
                     }
-                    if (attachment != null && mediaLink != null) Spacer(Modifier.width(7.dp))
+                    if (attachment != null && (mediaLink != null || hasPlayback)) Spacer(Modifier.width(7.dp))
                     mediaLink?.let { link -> GigIconButton(Icons.Rounded.Headphones, "Listen", onClick = { openMediaLink(context, link) }) }
+                    if (mediaLink != null && hasPlayback) Spacer(Modifier.width(7.dp))
+                    if (hasPlayback) GigIconButton(Icons.Rounded.MusicNote, "Open playback controls", onClick = openAttachment, active = true)
                 }
             }
         }
@@ -5391,6 +5404,9 @@ private fun PerformanceSongScreen(
     settings: PerformanceSettings,
     gigStartedAt: Long,
     setRemainingSeconds: Int,
+    playbackActive: Boolean,
+    setPlaybackActive: (Boolean) -> Unit,
+    autoStart: Boolean,
     autoAdvance: Boolean,
     close: () -> Unit,
     previous: () -> Unit,
@@ -5500,7 +5516,25 @@ private fun PerformanceSongScreen(
             }
         }
         if (item.playbackAudio != null) {
-            PerformanceAudioControls(item, autoAdvance, next)
+            Row(
+                Modifier.fillMaxWidth().clickable { setPlaybackActive(!playbackActive) }.padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Leviathan Live playback", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (playbackActive) "Playback controls are active" else "Playback is disabled for this live session", color = TextSoft, fontSize = 11.sp)
+                }
+                Switch(checked = playbackActive, onCheckedChange = setPlaybackActive)
+            }
+        }
+        if (playbackActive && item.playbackAudio != null) {
+            PerformanceAudioControls(
+                item = item,
+                autoStart = autoStart,
+                autoStartDelayMs = item.entry.optInt("pre_roll_ms").coerceIn(0, 60_000),
+                autoAdvance = autoAdvance,
+                onFinished = next,
+            )
         }
         if (item.attachment != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -5550,7 +5584,13 @@ private fun PerformanceSongScreen(
 }
 
 @Composable
-private fun PerformanceAudioControls(item: GigSong, autoAdvance: Boolean, onFinished: () -> Unit) {
+private fun PerformanceAudioControls(
+    item: GigSong,
+    autoStart: Boolean,
+    autoStartDelayMs: Int,
+    autoAdvance: Boolean,
+    onFinished: () -> Unit,
+) {
     val context = LocalContext.current
     val audio = item.playbackAudio ?: return
     val cached = item.playbackCache
@@ -5558,7 +5598,7 @@ private fun PerformanceAudioControls(item: GigSong, autoAdvance: Boolean, onFini
     val ready = cached?.status == "ready" && path.isNotBlank() && File(path).isFile
     val trimStart = audio.optLong("audio_trim_start_ms").coerceAtLeast(0L)
     val trimEnd = audio.optLong("audio_trim_end_ms").takeIf { it > trimStart }
-    val player = remember(path) {
+    val player = remember(path, item.entry.optString("id")) {
         ExoPlayer.Builder(context).build().apply {
             if (ready) {
                 setMediaItem(MediaItem.fromUri(Uri.fromFile(File(path))))
@@ -5570,6 +5610,14 @@ private fun PerformanceAudioControls(item: GigSong, autoAdvance: Boolean, onFini
     var positionMs by remember(player) { mutableStateOf(0L) }
     var durationMs by remember(player) { mutableStateOf(audio.optLong("audio_duration_ms").coerceAtLeast(0L)) }
     var completed by remember(player) { mutableStateOf(false) }
+    LaunchedEffect(player, item.entry.optString("id"), ready, autoStart, autoStartDelayMs, trimStart) {
+        if (ready && autoStart) {
+            if (autoStartDelayMs > 0) delay(autoStartDelayMs.toLong())
+            completed = false
+            player.seekTo(trimStart)
+            player.play()
+        }
+    }
     DisposableEffect(player, autoAdvance) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
@@ -5628,6 +5676,17 @@ private fun PerformanceAudioControls(item: GigSong, autoAdvance: Boolean, onFini
                     },
                     enabled = ready,
                     active = playing,
+                )
+                Spacer(Modifier.width(7.dp))
+                GigIconButton(
+                    Icons.Rounded.Stop,
+                    "Stop performance audio",
+                    onClick = {
+                        player.pause()
+                        player.seekTo(trimStart)
+                        completed = false
+                    },
+                    enabled = ready,
                 )
             }
             if (ready) {
@@ -6043,6 +6102,7 @@ private data class GigSong(
     val cache: CachedAttachment?,
     val playbackAudio: JSONObject? = null,
     val playbackCache: CachedAttachment? = null,
+    val playbackExplicitlySelected: Boolean = false,
     val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
