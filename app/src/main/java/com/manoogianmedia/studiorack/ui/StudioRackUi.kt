@@ -5566,6 +5566,12 @@ private fun PerformanceSongScreen(
     val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
     val screenScrollState = rememberScrollState()
     var timelinePositionMs by remember(item.entry.optString("id")) { mutableLongStateOf(0L) }
+    var countInRemainingMs by remember(item.entry.optString("id")) { mutableLongStateOf(0L) }
+    val metronomeState by metronome.state.collectAsState()
+    val countInMeasures = item.song?.optInt("count_in_measures", 0)?.coerceIn(0, 16) ?: 0
+    val countInDurationMs = remember(countInMeasures, metronomeState.tempo, metronomeState.beatsPerMeasure) {
+        countInMeasures * metronomeState.beatsPerMeasure * (60_000L / metronomeState.tempo.coerceAtLeast(1))
+    }
     val songSections = remember(item.performanceCues) {
         item.performanceCues.filter { it.type == "section" && it.label.isNotBlank() }
             .map { TimedSongSection(it.atMs, it.endMs, it.label) }
@@ -5575,6 +5581,20 @@ private fun PerformanceSongScreen(
     var rendered by remember(path, attachmentVersion, page) { mutableStateOf(cachedPerformanceAttachment(path, attachmentVersion, page) ?: AttachmentRender()) }
     LaunchedEffect(path, attachmentVersion, isPdf, page) {
         if (!rendered.complete) rendered = withContext(Dispatchers.IO) { loadPerformanceAttachment(path, attachmentVersion, isPdf, page) }
+    }
+    LaunchedEffect(item.entry.optString("id"), item.playbackAudio, metronomeState.running, metronomeState.startedAtEpochMs, countInDurationMs) {
+        if (item.playbackAudio != null) return@LaunchedEffect
+        if (!metronomeState.running || metronomeState.startedAtEpochMs <= 0L) {
+            countInRemainingMs = 0L
+            return@LaunchedEffect
+        }
+        while (metronome.state.value.running) {
+            val elapsed = (System.currentTimeMillis() - metronome.state.value.startedAtEpochMs).coerceAtLeast(0L)
+            countInRemainingMs = (countInDurationMs - elapsed).coerceAtLeast(0L)
+            timelinePositionMs = (elapsed - countInDurationMs).coerceAtLeast(0L)
+            onPlaybackPosition(timelinePositionMs)
+            delay(50)
+        }
     }
     val pageCount = rendered.pageCount
     val pedalScrollFraction = when (settings.pedalScrollAmount) {
@@ -5684,6 +5704,7 @@ private fun PerformanceSongScreen(
                 positionMs = timelinePositionMs,
                 sections = songSections,
                 lyrics = item.synchronizedLyrics,
+                countInRemainingMs = countInRemainingMs,
             )
         }
         val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
@@ -5805,6 +5826,7 @@ private fun SongTimelineStatus(
     positionMs: Long,
     sections: List<TimedSongSection>,
     lyrics: List<TimedLyricLine>,
+    countInRemainingMs: Long = 0L,
 ) {
     val currentSection = activeSongSection(sections, positionMs)
     val nextSection = sections.firstOrNull { it.atMs > positionMs }
@@ -5821,9 +5843,14 @@ private fun SongTimelineStatus(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("SONG TIMELINE", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                    Text(currentSection?.name ?: nextSection?.let { "Next: ${it.name}" } ?: "Song Timeline", color = Amber, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        if (countInRemainingMs > 0L) "Count-in" else currentSection?.name ?: nextSection?.let { "Next: ${it.name}" } ?: "Song Timeline",
+                        color = Amber,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black,
+                    )
                 }
-                Text(formatPlaybackTime(positionMs), color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(if (countInRemainingMs > 0L) "-${formatPlaybackTime(countInRemainingMs)}" else formatPlaybackTime(positionMs), color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             currentLyric?.let { Text(it.text, color = Color.White, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
             nextLyric?.let { Text(it.text, color = TextSoft, fontSize = 13.sp, lineHeight = 17.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
