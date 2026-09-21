@@ -101,6 +101,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayDisabled
 import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.SettingsInputComponent
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -118,6 +119,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -171,6 +173,7 @@ import com.manoogianmedia.studiorack.data.cacheImageFile
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
+import com.manoogianmedia.studiorack.performance.MidiOutputRouter
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
 import com.manoogianmedia.studiorack.performance.isSupportedPedalKeyCode
 import com.manoogianmedia.studiorack.performance.resolvedPedalBindings
@@ -4843,6 +4846,7 @@ private fun GigModeScreen(
     val sections by model.sections.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
+    val performanceCues by model.performanceCues.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
     val workspaceModules by model.workspaceModules.collectAsState()
     val syncState by model.syncState.collectAsState()
@@ -4870,8 +4874,11 @@ private fun GigModeScreen(
     val playbackBySong = remember(attachmentRows, livePlaybackEnabled) {
         if (livePlaybackEnabled) attachmentRows.filter { it.optInt("performance_audio") == 1 }.groupBy { it.optString("song_id") } else emptyMap()
     }
+    val cuesBySong = remember(performanceCues, livePlaybackEnabled) {
+        if (livePlaybackEnabled) performanceCues.map(::recordJson).filter { it.optInt("enabled", 1) == 1 }.groupBy { it.optString("song_id") } else emptyMap()
+    }
     val cacheById = remember(cachedAttachments) { cachedAttachments.associateBy(CachedAttachment::attachmentId) }
-    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, cacheById, settings.attachmentPreferences) {
+    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, cuesBySong, cacheById, settings.attachmentPreferences) {
         sectionRows.flatMap { section ->
             entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
                 val song = songMap[entry.optString("song_id")]
@@ -4891,6 +4898,15 @@ private fun GigModeScreen(
                     playbackCache = playback?.optString("id")?.let(cacheById::get),
                     playbackAutoStartEligible = selectedPlayback != null || songPlayback.size == 1,
                     controlAssets = controlAssets,
+                    performanceCues = cuesBySong[entry.optString("song_id")].orEmpty().map { cue ->
+                        PerformanceCue(
+                            id = cue.optString("id"),
+                            type = cue.optString("cue_type", "marker"),
+                            atMs = cue.optLong("at_ms").coerceAtLeast(0L),
+                            label = cue.optString("label"),
+                            payload = runCatching { JSONObject(cue.optString("payload_json", "{}")) }.getOrDefault(JSONObject()),
+                        )
+                    }.sortedBy(PerformanceCue::atMs),
                 )
             }
         }
@@ -4921,6 +4937,13 @@ private fun GigModeScreen(
     var liveAutoPlayActive by remember(eventId, setListId) { mutableStateOf(configuredPlaybackMode == "automatic") }
     var playbackAutoStartRequest by remember(eventId, setListId) { mutableIntStateOf(0) }
     var pedalPerformanceCommand by remember(eventId) { mutableStateOf(PedalPerformanceCommand()) }
+    val midiRouter = remember(eventId) { MidiOutputRouter(context.applicationContext) }
+    var midiDestinations by remember(eventId) { mutableStateOf(midiRouter.destinations()) }
+    var selectedMidiKey by remember(eventId) { mutableStateOf(midiRouter.selectedKey()) }
+    var showControlArmed by remember(eventId) { mutableStateOf(false) }
+    var showMidiDestinations by remember(eventId) { mutableStateOf(false) }
+    val firedCueIds = remember(eventId) { mutableSetOf<String>() }
+    var previousCuePositionMs by remember(eventId) { mutableLongStateOf(-1L) }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
     fun moveToSong(targetIndex: Int) {
         if (performanceSongs.isEmpty()) return
@@ -4933,6 +4956,8 @@ private fun GigModeScreen(
             autoPlayEnabled = liveAutoPlayActive,
         )
         currentSong = target
+        firedCueIds.clear()
+        previousCuePositionMs = -1L
         currentEntryId = performanceSongs[target].entry.optString("id")
     }
     LaunchedEffect(performanceSongs.map { it.entry.optString("id") }) {
@@ -5039,6 +5064,7 @@ private fun GigModeScreen(
     }
 
     DisposableEffect(Unit) { onDispose { metronome.close() } }
+    DisposableEffect(midiRouter) { onDispose { midiRouter.close() } }
     LaunchedEffect(settings.metronomeMuted) { metronome.setMuted(settings.metronomeMuted) }
     LaunchedEffect(currentSong, performanceSongs.size, settings.metronomeMode, settings.metronomeSound) {
         performanceSongs.getOrNull(currentSong)?.song?.let { song ->
@@ -5108,6 +5134,35 @@ private fun GigModeScreen(
 
     if (showLocalLive) LocalLiveDialog(model, event) { showLocalLive = false }
 
+    if (showMidiDestinations) {
+        AlertDialog(
+            onDismissRequest = { showMidiDestinations = false },
+            title = { Text("Show control destination") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!midiRouter.supported) Text("MIDI output is not available on this device.", color = TextSoft)
+                    else if (midiDestinations.isEmpty()) Text("Connect or pair a MIDI device, then refresh this list.", color = TextSoft)
+                    midiDestinations.forEach { destination ->
+                        StudioButton(
+                            onClick = {
+                                midiRouter.select(destination)
+                                selectedMidiKey = destination.key
+                                showControlArmed = true
+                                showMidiDestinations = false
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            kind = if (destination.key == selectedMidiKey) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                        ) { Text(destination.label, color = if (destination.key == selectedMidiKey) Ink else Color.White, fontWeight = FontWeight.Bold) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { midiDestinations = midiRouter.destinations() }) { Text("Refresh") }
+            },
+            dismissButton = { TextButton(onClick = { showMidiDestinations = false }) { Text("Cancel") } },
+        )
+    }
+
     if (detailOpen && performanceSongs.isNotEmpty()) {
         PerformanceSongScreen(
             modifier = pedalInputModifier,
@@ -5128,6 +5183,33 @@ private fun GigModeScreen(
             autoStartRequest = if (performanceSongs[currentSong].playbackAutoStartEligible) playbackAutoStartRequest else 0,
             autoAdvance = livePlaybackActive && setList?.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
             pedalCommand = pedalPerformanceCommand,
+            showControlArmed = showControlArmed,
+            selectedMidiLabel = midiDestinations.firstOrNull { it.key == selectedMidiKey }?.label.orEmpty(),
+            onToggleShowControl = {
+                if (showControlArmed) showControlArmed = false
+                else {
+                    midiDestinations = midiRouter.destinations()
+                    val selected = midiDestinations.firstOrNull { it.key == selectedMidiKey }
+                    if (selected != null) showControlArmed = true else showMidiDestinations = true
+                }
+            },
+            onChooseMidiDestination = {
+                midiDestinations = midiRouter.destinations()
+                showMidiDestinations = true
+            },
+            onPlaybackPosition = { positionMs ->
+                if (positionMs + 250 < previousCuePositionMs) {
+                    firedCueIds.clear()
+                    previousCuePositionMs = positionMs - 1
+                }
+                performanceSongs.getOrNull(currentSong)?.performanceCues.orEmpty().forEach { cue ->
+                    if (cue.id !in firedCueIds && cue.atMs > previousCuePositionMs && cue.atMs <= positionMs) {
+                        firedCueIds += cue.id
+                        if (showControlArmed && cue.type in setOf("midi", "dmx_midi")) midiRouter.send(cue.payload)
+                    }
+                }
+                previousCuePositionMs = positionMs
+            },
             close = { detailOpen = false },
             previous = {
                 moveToSong(currentSong - 1)
@@ -5406,6 +5488,7 @@ private fun GigTimerCell(label: String, value: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PerformanceSongScreen(
     modifier: Modifier = Modifier,
@@ -5426,6 +5509,11 @@ private fun PerformanceSongScreen(
     autoStartRequest: Int,
     autoAdvance: Boolean,
     pedalCommand: PedalPerformanceCommand,
+    showControlArmed: Boolean,
+    selectedMidiLabel: String,
+    onToggleShowControl: () -> Unit,
+    onChooseMidiDestination: () -> Unit,
+    onPlaybackPosition: (Long) -> Unit,
     close: () -> Unit,
     previous: () -> Unit,
     next: () -> Unit,
@@ -5493,6 +5581,14 @@ private fun PerformanceSongScreen(
                         onClick = { setAutoPlayActive(!autoPlayActive) },
                         active = autoPlayActive,
                     )
+                    if (item.performanceCues.isNotEmpty()) {
+                        GigIconButton(
+                            Icons.Rounded.SettingsInputComponent,
+                            if (showControlArmed) "Disarm show control" else "Arm show control",
+                            onClick = onToggleShowControl,
+                            active = showControlArmed,
+                        )
+                    }
                 }
                 PerformanceMetronomeControls(mediaLink, context, metronome)
             }
@@ -5575,7 +5671,31 @@ private fun PerformanceSongScreen(
                 autoAdvance = autoAdvance,
                 onFinished = next,
                 pedalCommand = pedalCommand,
+                onPositionChanged = onPlaybackPosition,
             )
+        }
+        if (item.performanceCues.isNotEmpty()) {
+            Surface(
+                color = Color(0xE8070C17),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, if (showControlArmed) Color(0xFF58E99B) else Cyan.copy(alpha = .3f)),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable(onClick = onChooseMidiDestination),
+            ) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("SHOW CONTROL", color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Text(if (showControlArmed) "ARMED" else "DISARMED", color = if (showControlArmed) Color(0xFF58E99B) else Color(0xFFFF6B6B), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    }
+                    Text(selectedMidiLabel.ifBlank { "Tap to choose a MIDI destination" }, color = TextSoft, fontSize = 11.sp)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item.performanceCues.forEach { cue ->
+                            Surface(color = Color(0x16FFFFFF), shape = RoundedCornerShape(5.dp)) {
+                                Text("${formatPlaybackTime(cue.atMs)}  ${cue.label.ifBlank { cue.type.replace('_', ' ').replaceFirstChar(Char::uppercase) }}", color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp))
+                            }
+                        }
+                    }
+                }
+            }
         }
         if (item.attachment != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -5632,6 +5752,7 @@ private fun PerformanceAudioControls(
     autoAdvance: Boolean,
     onFinished: () -> Unit,
     pedalCommand: PedalPerformanceCommand,
+    onPositionChanged: (Long) -> Unit,
 ) {
     val context = LocalContext.current
     val audio = item.playbackAudio ?: return
@@ -5696,6 +5817,7 @@ private fun PerformanceAudioControls(
     LaunchedEffect(player, ready, trimEnd) {
         while (ready) {
             positionMs = player.currentPosition.coerceAtLeast(0L)
+            onPositionChanged(positionMs)
             durationMs = (trimEnd ?: player.duration.takeIf { it > 0 } ?: durationMs).coerceAtLeast(0L)
             if (trimEnd != null && player.isPlaying && positionMs >= trimEnd) {
                 player.pause()
@@ -6172,12 +6294,20 @@ private data class GigSong(
     val playbackCache: CachedAttachment? = null,
     val playbackAutoStartEligible: Boolean = false,
     val controlAssets: List<PerformanceControlAsset> = emptyList(),
+    val performanceCues: List<PerformanceCue> = emptyList(),
     val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
 )
 
 private data class PerformanceControlAsset(val attachment: JSONObject, val cache: CachedAttachment?)
+private data class PerformanceCue(
+    val id: String,
+    val type: String,
+    val atMs: Long,
+    val label: String,
+    val payload: JSONObject,
+)
 
 private data class PedalPerformanceCommand(
     val id: Int = 0,
