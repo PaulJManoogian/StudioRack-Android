@@ -3743,7 +3743,11 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             newAttachments = newAttachments + SongAttachmentInput(
                 uri = uri.toString(),
                 displayName = displayName,
-                attachmentType = attachmentType.lowercase().replace(' ', '_'),
+                attachmentType = when (attachmentType) {
+                    "DMX-MIDI" -> "dmx_midi"
+                    "MIDI" -> "midi"
+                    else -> attachmentType.lowercase().replace(' ', '_')
+                },
                 mimeType = context.contentResolver.getType(uri).orEmpty(),
             )
         }
@@ -3867,7 +3871,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
         StudioField("Notes", notes, singleLine = false) { notes = it }
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(favorite, { favorite = it }); Text("Favorite", color = Color.White) }
         Text("Attachments", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-        Text("Add charts, lyrics, tablature, or sheet music now. Files are copied to this device immediately and uploaded on the next sync.", color = TextSoft, fontSize = 11.sp)
+        Text("Add charts, lyrics, tablature, sheet music, MIDI, or DMX-MIDI control files now. Files are copied to this device immediately and uploaded on the next sync.", color = TextSoft, fontSize = 11.sp)
         Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Find Lyrics", color = Color.White, fontWeight = FontWeight.Bold)
@@ -3940,9 +3944,9 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                 }
             }
         }
-        ChoiceStrip(listOf("Chart", "Lyrics", "Tab", "Sheet Music", "Other"), attachmentType) { attachmentType = it }
+        ChoiceStrip(listOf("Chart", "Lyrics", "Tab", "Sheet Music", "MIDI", "DMX-MIDI", "Other"), attachmentType) { attachmentType = it }
         StudioButton(
-            onClick = { attachmentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
+            onClick = { attachmentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "audio/midi", "audio/x-midi", "application/x-midi")) },
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
         ) { Text("Add $attachmentType File", color = Color.White, fontWeight = FontWeight.Bold) }
@@ -4873,6 +4877,9 @@ private fun GigModeScreen(
                 val song = songMap[entry.optString("song_id")]
                 val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty(), settings.attachmentPreferences)
                 val songPlayback = playbackBySong[entry.optString("song_id")].orEmpty()
+                val controlAssets = attachmentsBySong[entry.optString("song_id")].orEmpty()
+                    .filter(::isPerformanceControlAttachment)
+                    .map { PerformanceControlAsset(it, it.optString("id").let(cacheById::get)) }
                 val selectedPlaybackId = entry.optString("playback_attachment_id")
                 val selectedPlayback = songPlayback.firstOrNull { it.optString("id") == selectedPlaybackId }
                 // An attached track may be started manually without becoming an automatic default.
@@ -4883,6 +4890,7 @@ private fun GigModeScreen(
                     playbackAudio = playback,
                     playbackCache = playback?.optString("id")?.let(cacheById::get),
                     playbackAutoStartEligible = selectedPlayback != null || songPlayback.size == 1,
+                    controlAssets = controlAssets,
                 )
             }
         }
@@ -5199,7 +5207,7 @@ private fun GigModeScreen(
                         }
                     }
                     val grouped = gigSong?.performanceGroup != null
-                    SongRow(entry, song, attachment, cached, displayPosition = entryIndex + 1, grouped = grouped, hasPlayback = gigSong?.playbackAudio != null, modifier = if (grouped) Modifier.padding(start = 32.dp) else Modifier) {
+                    SongRow(entry, song, attachment, cached, displayPosition = entryIndex + 1, grouped = grouped, hasPlayback = gigSong?.playbackAudio != null, controlAssets = gigSong?.controlAssets.orEmpty(), modifier = if (grouped) Modifier.padding(start = 32.dp) else Modifier) {
                         currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
                         currentEntryId = performanceSongs[currentSong].entry.optString("id")
                         playbackAutoStartRequest = 0
@@ -5264,8 +5272,9 @@ private fun LiveUpdatingLight() {
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, displayPosition: Int, grouped: Boolean, hasPlayback: Boolean = false, modifier: Modifier = Modifier, openAttachment: () -> Unit) {
+private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, displayPosition: Int, grouped: Boolean, hasPlayback: Boolean = false, controlAssets: List<PerformanceControlAsset> = emptyList(), modifier: Modifier = Modifier, openAttachment: () -> Unit) {
     val context = LocalContext.current
     val availableOffline = cached?.status == "ready" && cached.localPath != null
     val mediaLink = normalizedMediaLink(song?.optString("media_ref").orEmpty())
@@ -5290,8 +5299,8 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
             Text(song?.optString("artist").orEmpty(), color = TextSoft, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
             val patch = listOf(song?.optString("patch_name"), song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
             if (patch.isNotBlank()) Text("Patch: $patch", color = TextSoft, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
-            if (attachment != null || mediaLink != null || hasPlayback) {
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+            if (attachment != null || mediaLink != null || hasPlayback || controlAssets.isNotEmpty()) {
+                FlowRow(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     if (attachment != null) {
                         GigIconButton(
                             Icons.Rounded.Description,
@@ -5300,13 +5309,34 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
                             enabled = availableOffline,
                         )
                     }
-                    if (attachment != null && (mediaLink != null || hasPlayback)) Spacer(Modifier.width(7.dp))
                     mediaLink?.let { link -> GigIconButton(Icons.Rounded.Headphones, "Listen", onClick = { openMediaLink(context, link) }) }
-                    if (mediaLink != null && hasPlayback) Spacer(Modifier.width(7.dp))
-                    if (hasPlayback) GigIconButton(Icons.Rounded.MusicNote, "Open playback controls", onClick = openAttachment, active = true)
+                    if (hasPlayback) LiveAssetBadge("Audio", onClick = openAttachment)
+                    controlAssets.forEach { asset ->
+                        val ready = asset.cache?.status == "ready" && !asset.cache.localPath.isNullOrBlank()
+                        LiveAssetBadge(
+                            label = performanceControlLabel(asset.attachment),
+                            onClick = { asset.cache?.let { openCachedAttachment(context, it) } },
+                            enabled = ready,
+                            control = true,
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LiveAssetBadge(label: String, onClick: () -> Unit, enabled: Boolean = true, control: Boolean = false) {
+    val color = if (control) Amber else Cyan
+    Surface(
+        color = color.copy(alpha = .13f),
+        contentColor = color,
+        shape = CircleShape,
+        border = BorderStroke(1.dp, color.copy(alpha = if (enabled) .62f else .24f)),
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp), color = if (enabled) color else TextSoft)
     }
 }
 
@@ -6141,10 +6171,13 @@ private data class GigSong(
     val playbackAudio: JSONObject? = null,
     val playbackCache: CachedAttachment? = null,
     val playbackAutoStartEligible: Boolean = false,
+    val controlAssets: List<PerformanceControlAsset> = emptyList(),
     val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
 )
+
+private data class PerformanceControlAsset(val attachment: JSONObject, val cache: CachedAttachment?)
 
 private data class PedalPerformanceCommand(
     val id: Int = 0,
@@ -6241,14 +6274,23 @@ private fun selectPerformanceAttachment(
     attachments: List<JSONObject>,
     preferences: List<String> = listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
 ): JSONObject? {
-    if (attachments.isEmpty()) return null
+    val materials = attachments.filterNot(::isPerformanceControlAttachment)
+    if (materials.isEmpty()) return null
     val overrideId = entry.optString("performance_attachment_id")
-    if (overrideId.isNotBlank()) attachments.firstOrNull { it.optString("id") == overrideId }?.let { return it }
-    return attachments.firstOrNull { it.optInt("is_gig_default") == 1 }
+    if (overrideId.isNotBlank()) materials.firstOrNull { it.optString("id") == overrideId }?.let { return it }
+    return materials.firstOrNull { it.optInt("is_gig_default") == 1 }
         ?: preferences.firstNotNullOfOrNull { preferred ->
-            attachments.filter { it.optString("attachment_type") == preferred }.minByOrNull { it.optInt("position", Int.MAX_VALUE) }
+            materials.filter { it.optString("attachment_type") == preferred }.minByOrNull { it.optInt("position", Int.MAX_VALUE) }
         }
-        ?: attachments.minByOrNull { it.optInt("position", Int.MAX_VALUE) }
+        ?: materials.minByOrNull { it.optInt("position", Int.MAX_VALUE) }
+}
+
+private fun isPerformanceControlAttachment(attachment: JSONObject): Boolean =
+    attachment.optString("attachment_type") in setOf("midi", "dmx_midi")
+
+private fun performanceControlLabel(attachment: JSONObject): String = when (attachment.optString("attachment_type")) {
+    "dmx_midi" -> "DMX-MIDI"
+    else -> "MIDI"
 }
 
 private fun attachmentLabel(attachment: JSONObject): String = attachment.optString("display_name").ifBlank {

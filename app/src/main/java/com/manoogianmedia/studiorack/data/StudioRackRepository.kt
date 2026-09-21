@@ -847,7 +847,7 @@ private fun CachedRecord.toManifest(
 internal fun attachmentExtension(fileRef: String): String {
     val suffix = fileRef.substringBefore('?').substringAfterLast('.', "").lowercase()
     return when (suffix) {
-        "pdf", "png", "jpg", "jpeg", "gif", "webp", "txt", "doc", "docx", "mp3", "m4a", "aac", "wav", "flac", "ogg" -> ".$suffix"
+        "pdf", "png", "jpg", "jpeg", "gif", "webp", "txt", "doc", "docx", "mid", "midi", "mp3", "m4a", "aac", "wav", "flac", "ogg" -> ".$suffix"
         else -> ".bin"
     }
 }
@@ -861,6 +861,7 @@ internal fun attachmentMime(fileRef: String): String? = when (attachmentExtensio
     ".txt" -> "text/plain"
     ".doc" -> "application/msword"
     ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ".mid", ".midi" -> "audio/midi"
     ".mp3" -> "audio/mpeg"
     ".m4a" -> "audio/mp4"
     ".aac" -> "audio/aac"
