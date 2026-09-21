@@ -74,8 +74,8 @@ internal fun studioLeviathanHelpSections(
             HelpTopic(liveName, points = listOf(
                 "List mode provides a large, scannable running order.",
                 "Chart mode shows stage-critical song facts and the selected chart, lyrics, tab, or other material.",
-                "Playback audio is independent of charts, lyrics, PDFs, ChordPro, and other performance material. In chart view, the play icon enables or disables audio playback and the adjacent switch arms automatic start for tracks explicitly selected in the set list.",
-                "Autoplay never runs while playback is disabled. Playback can be stopped or disabled during a live session. The playback clock is the foundation for timed lyrics, document movement, markers, MIDI, and lighting cues as those capabilities become available.",
+                "Playback audio is independent of charts, lyrics, PDFs, ChordPro, and other performance material. In chart view, one button enables or disables playback and the adjacent button arms or disarms automatic start. A song's only playback track is used automatically; choose the intended track in the set list when a song has more than one.",
+                "The first song always waits for a manual start. With playback and autoplay both active, moving to another song starts its selected audio automatically. Autoplay never runs while playback is disabled. The playback clock is the foundation for timed lyrics, document movement, markers, MIDI, and lighting cues as those capabilities become available.",
                 "Edit mode deliberately enables immediate add, edit, reorder, and swipe-delete changes.",
                 "A paired Wear OS companion shows the current and next song, set and medley position, controls previous or next, and runs a synchronized haptic metronome while the phone or tablet remains the performance authority. Open Sessions > Leviathan Live > Settings > Wear OS to check the connection or install the companion on a connected watch.",
                 "Local Host synchronizes participating devices on shared Wi-Fi when internet service disappears.",

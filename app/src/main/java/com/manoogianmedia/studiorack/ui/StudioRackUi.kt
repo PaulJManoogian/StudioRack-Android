@@ -98,8 +98,10 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NavigateBefore
 import androidx.compose.material.icons.rounded.NavigateNext
 import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlayDisabled
+import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WifiTethering
@@ -4881,7 +4883,7 @@ private fun GigModeScreen(
                     attachment?.optString("id")?.let(cacheById::get),
                     playbackAudio = playback,
                     playbackCache = playback?.optString("id")?.let(cacheById::get),
-                    playbackExplicitlySelected = selectedPlayback != null,
+                    playbackAutoStartEligible = selectedPlayback != null || songPlayback.size == 1,
                 )
             }
         }
@@ -4910,7 +4912,21 @@ private fun GigModeScreen(
     val configuredPlaybackMode = setList?.optString("playback_mode", "manual")?.let { if (it == "assisted") "manual" else it } ?: "manual"
     var livePlaybackActive by remember(eventId, setListId) { mutableStateOf(configuredPlaybackMode != "off") }
     var liveAutoPlayActive by remember(eventId, setListId) { mutableStateOf(configuredPlaybackMode == "automatic") }
+    var playbackAutoStartRequest by remember(eventId, setListId) { mutableIntStateOf(0) }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
+    fun moveToSong(targetIndex: Int) {
+        if (performanceSongs.isEmpty()) return
+        val target = targetIndex.coerceIn(0, performanceSongs.lastIndex)
+        if (target == currentSong) return
+        playbackAutoStartRequest = nextPlaybackAutoStartRequest(
+            currentRequest = playbackAutoStartRequest,
+            songChanged = true,
+            playbackEnabled = livePlaybackActive,
+            autoPlayEnabled = liveAutoPlayActive,
+        )
+        currentSong = target
+        currentEntryId = performanceSongs[target].entry.optString("id")
+    }
     LaunchedEffect(performanceSongs.map { it.entry.optString("id") }) {
         if (performanceSongs.isEmpty()) {
             currentSong = 0
@@ -4943,12 +4959,10 @@ private fun GigModeScreen(
             if (command.id == lastWearCommandId) return@collect
             when (command.type) {
                 LiveCommandType.PREVIOUS -> if (performanceSongs.isNotEmpty()) {
-                    currentSong = (currentSong - 1).coerceAtLeast(0)
-                    currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                    moveToSong(currentSong - 1)
                 }
                 LiveCommandType.NEXT -> if (performanceSongs.isNotEmpty()) {
-                    currentSong = (currentSong + 1).coerceAtMost(performanceSongs.lastIndex)
-                    currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                    moveToSong(currentSong + 1)
                 }
                 LiveCommandType.TOGGLE_METRONOME -> metronome.toggle()
                 LiveCommandType.TOGGLE_MUTE -> metronome.toggleMuted()
@@ -5036,8 +5050,7 @@ private fun GigModeScreen(
                     val fraction = when (settings.pedalScrollAmount) { "small" -> 0.2f; "full" -> 0.85f; else -> 0.5f }
                     pedalScope.launch { listState.scrollBy(listState.layoutInfo.viewportSize.height * fraction * direction) }
                 } else if (performanceSongs.isNotEmpty()) {
-                    currentSong = (currentSong + direction).coerceIn(0, performanceSongs.lastIndex)
-                    currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                    moveToSong(currentSong + direction)
                     if (!detailOpen) pedalScope.launch { listState.animateScrollToItem(gigListItemIndex(currentSong, performanceSongs)) }
                 }
             }
@@ -5093,16 +5106,14 @@ private fun GigModeScreen(
             setPlaybackActive = { livePlaybackActive = it },
             autoPlayActive = liveAutoPlayActive,
             setAutoPlayActive = { liveAutoPlayActive = it },
-            autoStart = livePlaybackActive && liveAutoPlayActive && performanceSongs[currentSong].playbackExplicitlySelected,
+            autoStartRequest = if (performanceSongs[currentSong].playbackAutoStartEligible) playbackAutoStartRequest else 0,
             autoAdvance = livePlaybackActive && setList?.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
             close = { detailOpen = false },
             previous = {
-                currentSong = (currentSong - 1).coerceAtLeast(0)
-                currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                moveToSong(currentSong - 1)
             },
             next = {
-                currentSong = (currentSong + 1).coerceAtMost(performanceSongs.lastIndex)
-                currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                moveToSong(currentSong + 1)
             },
         )
         return
@@ -5179,6 +5190,7 @@ private fun GigModeScreen(
                     SongRow(entry, song, attachment, cached, displayPosition = entryIndex + 1, grouped = grouped, hasPlayback = gigSong?.playbackAudio != null, modifier = if (grouped) Modifier.padding(start = 32.dp) else Modifier) {
                         currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
                         currentEntryId = performanceSongs[currentSong].entry.optString("id")
+                        playbackAutoStartRequest = 0
                         detailOpen = true
                     }
                 }
@@ -5369,7 +5381,7 @@ private fun PerformanceSongScreen(
     setPlaybackActive: (Boolean) -> Unit,
     autoPlayActive: Boolean,
     setAutoPlayActive: (Boolean) -> Unit,
-    autoStart: Boolean,
+    autoStartRequest: Int,
     autoAdvance: Boolean,
     close: () -> Unit,
     previous: () -> Unit,
@@ -5407,15 +5419,16 @@ private fun PerformanceSongScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (showPlaybackTools) {
                     GigIconButton(
-                        Icons.Rounded.PlayArrow,
+                        if (playbackActive) Icons.Rounded.PlayArrow else Icons.Rounded.PlayDisabled,
                         if (playbackActive) "Disable performance audio" else "Enable performance audio",
                         onClick = { setPlaybackActive(!playbackActive) },
                         active = playbackActive,
                     )
-                    CompactAutoPlaySwitch(
-                        checked = autoPlayActive,
-                        enabled = playbackActive,
-                        onCheckedChange = setAutoPlayActive,
+                    GigIconButton(
+                        Icons.Rounded.PlaylistPlay,
+                        if (autoPlayActive) "Disable audio autoplay" else "Enable audio autoplay",
+                        onClick = { setAutoPlayActive(!autoPlayActive) },
+                        active = autoPlayActive,
                     )
                 }
                 PerformanceMetronomeControls(mediaLink, context, metronome)
@@ -5494,7 +5507,7 @@ private fun PerformanceSongScreen(
         if (playbackActive && item.playbackAudio != null) {
             PerformanceAudioControls(
                 item = item,
-                autoStart = autoStart,
+                autoStartRequest = autoStartRequest,
                 autoStartDelayMs = item.entry.optInt("pre_roll_ms").coerceIn(0, 60_000),
                 autoAdvance = autoAdvance,
                 onFinished = next,
@@ -5550,7 +5563,7 @@ private fun PerformanceSongScreen(
 @Composable
 private fun PerformanceAudioControls(
     item: GigSong,
-    autoStart: Boolean,
+    autoStartRequest: Int,
     autoStartDelayMs: Int,
     autoAdvance: Boolean,
     onFinished: () -> Unit,
@@ -5574,8 +5587,8 @@ private fun PerformanceAudioControls(
     var positionMs by remember(player) { mutableStateOf(0L) }
     var durationMs by remember(player) { mutableStateOf(audio.optLong("audio_duration_ms").coerceAtLeast(0L)) }
     var completed by remember(player) { mutableStateOf(false) }
-    LaunchedEffect(player, item.entry.optString("id"), ready, autoStart, autoStartDelayMs, trimStart) {
-        if (ready && autoStart) {
+    LaunchedEffect(player, item.entry.optString("id"), ready, autoStartRequest, autoStartDelayMs, trimStart) {
+        if (ready && autoStartRequest > 0) {
             if (autoStartDelayMs > 0) delay(autoStartDelayMs.toLong())
             completed = false
             player.seekTo(trimStart)
@@ -5665,6 +5678,16 @@ private fun PerformanceAudioControls(
 }
 
 private fun formatPlaybackTime(milliseconds: Long): String = formatDuration((milliseconds.coerceAtLeast(0L) / 1000L).toInt(), showZero = true)
+
+internal fun nextPlaybackAutoStartRequest(
+    currentRequest: Int,
+    songChanged: Boolean,
+    playbackEnabled: Boolean,
+    autoPlayEnabled: Boolean,
+): Int {
+    if (!songChanged || !playbackEnabled || !autoPlayEnabled) return 0
+    return if (currentRequest == Int.MAX_VALUE) 1 else currentRequest + 1
+}
 
 @Composable
 private fun DocumentNightModeToggle(enabled: Boolean, change: (Boolean) -> Unit) {
@@ -5823,27 +5846,6 @@ private fun PerformanceMetronomeControls(mediaLink: String?, context: Context, m
         if (state.muted) "Unmute metronome" else "Mute metronome",
         metronome::toggleMuted,
         active = state.muted,
-    )
-}
-
-@Composable
-private fun CompactAutoPlaySwitch(
-    checked: Boolean,
-    enabled: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        enabled = enabled,
-        modifier = Modifier.semantics {
-            stateDescription = when {
-                !enabled && checked -> "Audio autoplay armed; playback disabled"
-                !enabled -> "Audio autoplay off; playback disabled"
-                checked -> "Audio autoplay on"
-                else -> "Audio autoplay off"
-            }
-        },
     )
 }
 
@@ -6087,7 +6089,7 @@ private data class GigSong(
     val cache: CachedAttachment?,
     val playbackAudio: JSONObject? = null,
     val playbackCache: CachedAttachment? = null,
-    val playbackExplicitlySelected: Boolean = false,
+    val playbackAutoStartEligible: Boolean = false,
     val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
