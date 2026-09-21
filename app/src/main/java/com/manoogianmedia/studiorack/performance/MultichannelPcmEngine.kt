@@ -15,13 +15,14 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 
 data class PcmStemRoute(
+    val id: String,
     val file: File,
     val outputStartChannel: Int,
     val outputChannelCount: Int,
-    val gainDb: Float = 0f,
+    @Volatile var gainDb: Float = 0f,
     val pan: Float = 0f,
     val offsetMs: Long = 0,
-    val muted: Boolean = false,
+    @Volatile var muted: Boolean = false,
 )
 
 class MultichannelPcmEngine private constructor(
@@ -41,6 +42,13 @@ class MultichannelPcmEngine private constructor(
     val positionMs: Long get() = framePosition.get() * 1000L / sampleRate
     val durationMs: Long = stems.maxOfOrNull { it.durationFrames * 1000L / sampleRate } ?: 0L
     val isPlaying: Boolean get() = running.get()
+
+    fun updateStem(id: String, gainDb: Float, muted: Boolean) {
+        stems.firstOrNull { it.route.id == id }?.route?.let { route ->
+            route.gainDb = gainDb
+            route.muted = muted
+        }
+    }
 
     init {
         require(outputChannels in 2..24) { "Discrete output supports 2 through 24 channels." }

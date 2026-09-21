@@ -5821,23 +5821,27 @@ private fun PerformanceAudioControls(
         preferredDevice?.let { AudioDeviceCatalog.compatibleProfile(it, item.routingProfiles) }
     }
     var liveGains by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to it.audio.optDouble("audio_gain_db", 0.0).toFloat() }) }
+    var liveMutes by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to (it.audio.optInt("audio_muted") == 1) }) }
+    var liveSolos by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to (it.audio.optInt("audio_solo") == 1) }) }
     val preferredDeviceInfo = remember(preferredDevice?.id) { preferredDevice?.let { AudioDeviceCatalog.outputInfo(context, it.id) } }
-    val discreteEngine = remember(sourceKey, compatibleProfile?.id, preferredDevice?.id, liveGains) {
+    val discreteEngine = remember(sourceKey, compatibleProfile?.id, preferredDevice?.id) {
         val profile = compatibleProfile ?: return@remember null
         if (profile.outputChannelCount !in 2..24 || sources.any { !it.cache?.localPath.orEmpty().endsWith(".wav", true) }) return@remember null
         val routes = item.routesByProfile[profile.id].orEmpty().associateBy { it.optString("bus_id") }
-        val soloed = sources.any { it.audio.optInt("audio_solo") == 1 }
+        val soloed = liveSolos.values.any { it }
         val pcmRoutes = sources.map { source ->
             val busId = source.audio.optString("audio_bus_id")
             val route = routes[busId]
+            val stemId = source.audio.optString("id")
             PcmStemRoute(
+                id = stemId,
                 file = File(source.cache?.localPath.orEmpty()),
                 outputStartChannel = route?.optInt("output_start_channel", 1) ?: 1,
                 outputChannelCount = route?.optInt("output_channel_count", 2) ?: 2,
-                gainDb = (liveGains[source.audio.optString("id")] ?: 0f) + source.bus?.optDouble("gain_db", 0.0)?.toFloat().orZero() + item.playbackArrangement?.optDouble("master_gain_db", 0.0)?.toFloat().orZero(),
+                gainDb = (liveGains[stemId] ?: 0f) + source.bus?.optDouble("gain_db", 0.0)?.toFloat().orZero() + item.playbackArrangement?.optDouble("master_gain_db", 0.0)?.toFloat().orZero(),
                 pan = source.audio.optDouble("audio_pan", 0.0).toFloat(),
                 offsetMs = source.audio.optLong("audio_sync_offset_ms"),
-                muted = source.audio.optInt("audio_muted") == 1 || source.bus?.optInt("muted") == 1 || (soloed && source.audio.optInt("audio_solo") != 1),
+                muted = liveMutes[stemId] == true || source.bus?.optInt("muted") == 1 || (soloed && liveSolos[stemId] != true),
             )
         }
         MultichannelPcmEngine.open(pcmRoutes, profile.outputChannelCount, preferredDeviceInfo)
@@ -5861,14 +5865,25 @@ private fun PerformanceAudioControls(
             discreteEngine.play()
             return
         }
-        val soloed = sources.any { it.audio.optInt("audio_solo") == 1 }
+        val soloed = liveSolos.values.any { it }
         players.forEachIndexed { index, stemPlayer ->
             val source = sources[index]
             val stemId = source.audio.optString("id")
-            val muted = source.audio.optInt("audio_muted") == 1 || source.bus?.optInt("muted") == 1 || (soloed && source.audio.optInt("audio_solo") != 1)
+            val muted = liveMutes[stemId] == true || source.bus?.optInt("muted") == 1 || (soloed && liveSolos[stemId] != true)
             val totalGainDb = (liveGains[stemId] ?: 0f) + source.bus?.optDouble("gain_db", 0.0)?.toFloat().orZero() + item.playbackArrangement?.optDouble("master_gain_db", 0.0)?.toFloat().orZero()
             stemPlayer.volume = if (muted) 0f else Math.pow(10.0, totalGainDb.toDouble() / 20.0).toFloat().coerceIn(0f, 1f)
             stemPlayer.play()
+        }
+    }
+
+    LaunchedEffect(discreteEngine, liveGains, liveMutes, liveSolos) {
+        val soloed = liveSolos.values.any { it }
+        sources.forEachIndexed { index, source ->
+            val stemId = source.audio.optString("id")
+            val muted = liveMutes[stemId] == true || source.bus?.optInt("muted") == 1 || (soloed && liveSolos[stemId] != true)
+            val totalGainDb = (liveGains[stemId] ?: 0f) + source.bus?.optDouble("gain_db", 0.0)?.toFloat().orZero() + item.playbackArrangement?.optDouble("master_gain_db", 0.0)?.toFloat().orZero()
+            if (discreteEngine != null) discreteEngine.updateStem(stemId, totalGainDb, muted)
+            else players[index].volume = if (muted) 0f else Math.pow(10.0, totalGainDb.toDouble() / 20.0).toFloat().coerceIn(0f, 1f)
         }
     }
 
@@ -6016,8 +6031,9 @@ private fun PerformanceAudioControls(
                     }
                 }
             }
-            if (sources.size > 1) {
+            if (sources.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    Text("Live mixer", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Black)
                     sources.forEach { source ->
                         val stemId = source.audio.optString("id")
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -6027,6 +6043,18 @@ private fun PerformanceAudioControls(
                             }
                             Slider(value = liveGains[stemId] ?: 0f, onValueChange = { liveGains = liveGains + (stemId to it) }, valueRange = -60f..12f, modifier = Modifier.weight(.55f))
                             Text("${(liveGains[stemId] ?: 0f).toInt()} dB", color = TextSoft, fontSize = 10.sp)
+                            Box(
+                                Modifier.size(32.dp).background(if (liveMutes[stemId] == true) Amber.copy(alpha = .25f) else PanelRaised, RoundedCornerShape(6.dp)).clickable {
+                                    liveMutes = liveMutes + (stemId to !(liveMutes[stemId] ?: false))
+                                },
+                                contentAlignment = Alignment.Center,
+                            ) { Text("M", color = if (liveMutes[stemId] == true) Amber else TextSoft, fontWeight = FontWeight.Black) }
+                            Box(
+                                Modifier.size(32.dp).background(if (liveSolos[stemId] == true) Cyan.copy(alpha = .22f) else PanelRaised, RoundedCornerShape(6.dp)).clickable {
+                                    liveSolos = liveSolos + (stemId to !(liveSolos[stemId] ?: false))
+                                },
+                                contentAlignment = Alignment.Center,
+                            ) { Text("S", color = if (liveSolos[stemId] == true) Cyan else TextSoft, fontWeight = FontWeight.Black) }
                         }
                     }
                 }
