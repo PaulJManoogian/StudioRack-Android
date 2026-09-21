@@ -99,6 +99,7 @@ import androidx.compose.material.icons.rounded.NavigateBefore
 import androidx.compose.material.icons.rounded.NavigateNext
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WifiTethering
@@ -4897,10 +4898,6 @@ private fun GigModeScreen(
             )
         }
     }
-    val playbackAssignedCount = performanceSongs.count { it.playbackAudio != null }
-    val playbackOfflineCount = performanceSongs.count {
-        it.playbackAudio != null && it.playbackCache?.status == "ready" && it.playbackCache.localPath?.let(::File)?.isFile == true
-    }
     var currentSong by remember(eventId) { mutableIntStateOf(0) }
     var currentEntryId by remember(eventId) { mutableStateOf("") }
     var detailOpen by remember(eventId) { mutableStateOf(false) }
@@ -4912,6 +4909,7 @@ private fun GigModeScreen(
     var lastWearCommandId by remember(eventId) { mutableStateOf("") }
     val configuredPlaybackMode = setList?.optString("playback_mode", "manual")?.let { if (it == "assisted") "manual" else it } ?: "manual"
     var livePlaybackActive by remember(eventId, setListId) { mutableStateOf(configuredPlaybackMode != "off") }
+    var liveAutoPlayActive by remember(eventId, setListId) { mutableStateOf(configuredPlaybackMode == "automatic") }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
     LaunchedEffect(performanceSongs.map { it.entry.optString("id") }) {
         if (performanceSongs.isEmpty()) {
@@ -5090,9 +5088,12 @@ private fun GigModeScreen(
             settings = settings,
             gigStartedAt = gigStartedAt,
             setRemainingSeconds = setRemainingSeconds,
+            showPlaybackTools = livePlaybackEnabled,
             playbackActive = livePlaybackActive,
             setPlaybackActive = { livePlaybackActive = it },
-            autoStart = livePlaybackActive && configuredPlaybackMode == "automatic" && performanceSongs[currentSong].playbackExplicitlySelected,
+            autoPlayActive = liveAutoPlayActive,
+            setAutoPlayActive = { liveAutoPlayActive = it },
+            autoStart = livePlaybackActive && liveAutoPlayActive && performanceSongs[currentSong].playbackExplicitlySelected,
             autoAdvance = livePlaybackActive && setList?.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
             close = { detailOpen = false },
             previous = {
@@ -5148,9 +5149,6 @@ private fun GigModeScreen(
                 GigIconButton(Icons.Rounded.Description, "Chart view", onClick = { if (performanceSongs.isNotEmpty()) detailOpen = true })
             }
         }
-        if (livePlaybackEnabled) {
-            item { LivePlaybackReadiness(playbackAssignedCount, playbackOfflineCount, livePlaybackActive) { livePlaybackActive = it } }
-        }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
             item { GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, activeGigSong?.sectionName.orEmpty()) }
         }
@@ -5187,44 +5185,6 @@ private fun GigModeScreen(
             }
         }
         item { Spacer(Modifier.height(40.dp)) }
-    }
-}
-
-@Composable
-private fun LivePlaybackReadiness(assignedCount: Int, offlineCount: Int, active: Boolean, changeActive: (Boolean) -> Unit) {
-    Surface(
-        color = Color(0xE8202635),
-        shape = RoundedCornerShape(7.dp),
-        border = BorderStroke(1.dp, Cyan.copy(alpha = 0.42f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = Cyan, modifier = Modifier.size(24.dp))
-            Column(Modifier.weight(1f)) {
-                Text("LEVIATHAN LIVE PLAYBACK", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                Text(
-                    if (assignedCount == 0) "Ready for setup" else "$offlineCount of $assignedCount tracks ready offline",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    if (assignedCount == 0) {
-                        "Add performance audio to a song in this set list, then synchronize this device."
-                    } else if (offlineCount < assignedCount) {
-                        "Synchronize before the performance to download the remaining audio."
-                    } else {
-                        "Open a song to use its offline playback controls."
-                    },
-                    color = TextSoft,
-                    fontSize = 12.sp,
-                )
-            }
-            Switch(checked = active, onCheckedChange = changeActive)
-        }
     }
 }
 
@@ -5404,8 +5364,11 @@ private fun PerformanceSongScreen(
     settings: PerformanceSettings,
     gigStartedAt: Long,
     setRemainingSeconds: Int,
+    showPlaybackTools: Boolean,
     playbackActive: Boolean,
     setPlaybackActive: (Boolean) -> Unit,
+    autoPlayActive: Boolean,
+    setAutoPlayActive: (Boolean) -> Unit,
     autoStart: Boolean,
     autoAdvance: Boolean,
     close: () -> Unit,
@@ -5442,6 +5405,19 @@ private fun PerformanceSongScreen(
                 Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = if (tabletLayout) 13.sp else 9.sp, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (showPlaybackTools) {
+                    GigIconButton(
+                        Icons.Rounded.PlayArrow,
+                        if (playbackActive) "Disable performance audio" else "Enable performance audio",
+                        onClick = { setPlaybackActive(!playbackActive) },
+                        active = playbackActive,
+                    )
+                    CompactAutoPlaySwitch(
+                        checked = autoPlayActive,
+                        enabled = playbackActive,
+                        onCheckedChange = setAutoPlayActive,
+                    )
+                }
                 PerformanceMetronomeControls(mediaLink, context, metronome)
             }
         }
@@ -5513,18 +5489,6 @@ private fun PerformanceSongScreen(
                     if (entryNote.isNotBlank()) Text("Set Note: $entryNote", color = TextSoft)
                     if (songNote.isNotBlank()) Text("Song Note: $songNote", color = TextSoft)
                 }
-            }
-        }
-        if (item.playbackAudio != null) {
-            Row(
-                Modifier.fillMaxWidth().clickable { setPlaybackActive(!playbackActive) }.padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Leviathan Live playback", color = Color.White, fontWeight = FontWeight.Bold)
-                    Text(if (playbackActive) "Playback controls are active" else "Playback is disabled for this live session", color = TextSoft, fontSize = 11.sp)
-                }
-                Switch(checked = playbackActive, onCheckedChange = setPlaybackActive)
             }
         }
         if (playbackActive && item.playbackAudio != null) {
@@ -5859,6 +5823,27 @@ private fun PerformanceMetronomeControls(mediaLink: String?, context: Context, m
         if (state.muted) "Unmute metronome" else "Mute metronome",
         metronome::toggleMuted,
         active = state.muted,
+    )
+}
+
+@Composable
+private fun CompactAutoPlaySwitch(
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = Modifier.semantics {
+            stateDescription = when {
+                !enabled && checked -> "Audio autoplay armed; playback disabled"
+                !enabled -> "Audio autoplay off; playback disabled"
+                checked -> "Audio autoplay on"
+                else -> "Audio autoplay off"
+            }
+        },
     )
 }
 
