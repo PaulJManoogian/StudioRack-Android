@@ -174,6 +174,11 @@ import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.performance.MidiOutputRouter
+import com.manoogianmedia.studiorack.performance.AudioDeviceCatalog
+import com.manoogianmedia.studiorack.performance.LiveAudioDevice
+import com.manoogianmedia.studiorack.performance.CompatibleRoutingProfile
+import com.manoogianmedia.studiorack.performance.MultichannelPcmEngine
+import com.manoogianmedia.studiorack.performance.PcmStemRoute
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
 import com.manoogianmedia.studiorack.performance.isSupportedPedalKeyCode
 import com.manoogianmedia.studiorack.performance.resolvedPedalBindings
@@ -4847,6 +4852,10 @@ private fun GigModeScreen(
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val performanceCues by model.performanceCues.collectAsState()
+    val liveAudioBuses by model.liveAudioBuses.collectAsState()
+    val liveAudioArrangements by model.liveAudioArrangements.collectAsState()
+    val liveAudioRouteProfiles by model.liveAudioRouteProfiles.collectAsState()
+    val liveAudioRoutes by model.liveAudioRoutes.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
     val workspaceModules by model.workspaceModules.collectAsState()
     val syncState by model.syncState.collectAsState()
@@ -4874,11 +4883,15 @@ private fun GigModeScreen(
     val playbackBySong = remember(attachmentRows, livePlaybackEnabled) {
         if (livePlaybackEnabled) attachmentRows.filter { it.optInt("performance_audio") == 1 }.groupBy { it.optString("song_id") } else emptyMap()
     }
+    val arrangementById = remember(liveAudioArrangements) { liveAudioArrangements.associate { it.entityId to recordJson(it) } }
+    val busById = remember(liveAudioBuses) { liveAudioBuses.associate { it.entityId to recordJson(it) } }
+    val routingProfiles = remember(liveAudioRouteProfiles) { liveAudioRouteProfiles.map(::recordJson) }
+    val routesByProfile = remember(liveAudioRoutes) { liveAudioRoutes.map(::recordJson).groupBy { it.optString("profile_id") } }
     val cuesBySong = remember(performanceCues, livePlaybackEnabled) {
         if (livePlaybackEnabled) performanceCues.map(::recordJson).filter { it.optInt("enabled", 1) == 1 }.groupBy { it.optString("song_id") } else emptyMap()
     }
     val cacheById = remember(cachedAttachments) { cachedAttachments.associateBy(CachedAttachment::attachmentId) }
-    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, cuesBySong, cacheById, settings.attachmentPreferences) {
+    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, arrangementById, busById, routingProfiles, routesByProfile, cuesBySong, cacheById, settings.attachmentPreferences) {
         sectionRows.flatMap { section ->
             entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
                 val song = songMap[entry.optString("song_id")]
@@ -4889,6 +4902,10 @@ private fun GigModeScreen(
                     .map { PerformanceControlAsset(it, it.optString("id").let(cacheById::get)) }
                 val selectedPlaybackId = entry.optString("playback_attachment_id")
                 val selectedPlayback = songPlayback.firstOrNull { it.optString("id") == selectedPlaybackId }
+                val selectedArrangement = arrangementById[entry.optString("playback_arrangement_id")]
+                val arrangementStems = selectedArrangement?.let { arrangement ->
+                    songPlayback.filter { it.optString("audio_arrangement_id") == arrangement.optString("id") }
+                }.orEmpty()
                 // An attached track may be started manually without becoming an automatic default.
                 val playback = selectedPlayback ?: songPlayback.firstOrNull()
                 GigSong(
@@ -4896,7 +4913,17 @@ private fun GigModeScreen(
                     attachment?.optString("id")?.let(cacheById::get),
                     playbackAudio = playback,
                     playbackCache = playback?.optString("id")?.let(cacheById::get),
-                    playbackAutoStartEligible = selectedPlayback != null || songPlayback.size == 1,
+                    playbackStems = arrangementStems.map { stem ->
+                        PerformanceAudioStem(
+                            audio = stem,
+                            cache = stem.optString("id").let(cacheById::get),
+                            bus = busById[stem.optString("audio_bus_id")],
+                        )
+                    },
+                    playbackArrangement = selectedArrangement,
+                    routingProfiles = routingProfiles,
+                    routesByProfile = routesByProfile,
+                    playbackAutoStartEligible = selectedArrangement != null || selectedPlayback != null || songPlayback.size == 1,
                     controlAssets = controlAssets,
                     performanceCues = cuesBySong[entry.optString("song_id")].orEmpty().map { cue ->
                         PerformanceCue(
@@ -5755,49 +5782,121 @@ private fun PerformanceAudioControls(
     onPositionChanged: (Long) -> Unit,
 ) {
     val context = LocalContext.current
-    val audio = item.playbackAudio ?: return
-    val cached = item.playbackCache
-    val path = cached?.localPath.orEmpty()
-    val ready = cached?.status == "ready" && path.isNotBlank() && File(path).isFile
+    val sources = remember(item.entry.optString("id"), item.playbackStems, item.playbackAudio, item.playbackCache) {
+        item.playbackStems.ifEmpty {
+            listOfNotNull(item.playbackAudio?.let { PerformanceAudioStem(it, item.playbackCache, null) })
+        }
+    }
+    if (sources.isEmpty()) return
+    val audio = sources.first().audio
+    val sourceKey = sources.joinToString("|") { "${it.audio.optString("id")}:${it.cache?.localPath}" }
+    val ready = sources.all { source ->
+        val path = source.cache?.localPath.orEmpty()
+        source.cache?.status == "ready" && path.isNotBlank() && File(path).isFile
+    }
     val trimStart = audio.optLong("audio_trim_start_ms").coerceAtLeast(0L)
     val trimEnd = audio.optLong("audio_trim_end_ms").takeIf { it > trimStart }
-    val player = remember(path, item.entry.optString("id")) {
-        ExoPlayer.Builder(context).build().apply {
-            if (ready) {
-                setMediaItem(MediaItem.fromUri(Uri.fromFile(File(path))))
-                prepare()
+    val players = remember(sourceKey, item.entry.optString("id")) {
+        sources.map { source ->
+            ExoPlayer.Builder(context).build().apply {
+                val path = source.cache?.localPath.orEmpty()
+                if (path.isNotBlank() && File(path).isFile) {
+                    setMediaItem(MediaItem.fromUri(Uri.fromFile(File(path))))
+                    prepare()
+                }
             }
         }
     }
-    var playing by remember(player) { mutableStateOf(false) }
-    var positionMs by remember(player) { mutableStateOf(0L) }
-    var durationMs by remember(player) { mutableStateOf(audio.optLong("audio_duration_ms").coerceAtLeast(0L)) }
-    var completed by remember(player) { mutableStateOf(false) }
-    LaunchedEffect(player, item.entry.optString("id"), ready, autoStartRequest, autoStartDelayMs, trimStart) {
+    val player = players.first()
+    val audioPreferences = remember { context.getSharedPreferences(LIVE_AUDIO_PREFERENCES, Context.MODE_PRIVATE) }
+    var audioDeviceRefresh by remember(sourceKey) { mutableIntStateOf(0) }
+    val audioDevices = remember(sourceKey, audioDeviceRefresh) { AudioDeviceCatalog.outputs(context) }
+    var selectedAudioDeviceId by remember(sourceKey) {
+        mutableIntStateOf(audioPreferences.getInt(LIVE_AUDIO_DEVICE_ID, -1))
+    }
+    val preferredDevice = remember(audioDevices, selectedAudioDeviceId) {
+        audioDevices.firstOrNull { it.id == selectedAudioDeviceId } ?: audioDevices.firstOrNull()
+    }
+    val compatibleProfile = remember(preferredDevice, item.routingProfiles) {
+        preferredDevice?.let { AudioDeviceCatalog.compatibleProfile(it, item.routingProfiles) }
+    }
+    var liveGains by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to it.audio.optDouble("audio_gain_db", 0.0).toFloat() }) }
+    val preferredDeviceInfo = remember(preferredDevice?.id) { preferredDevice?.let { AudioDeviceCatalog.outputInfo(context, it.id) } }
+    val discreteEngine = remember(sourceKey, compatibleProfile?.id, preferredDevice?.id, liveGains) {
+        val profile = compatibleProfile ?: return@remember null
+        if (profile.outputChannelCount !in 2..24 || sources.any { !it.cache?.localPath.orEmpty().endsWith(".wav", true) }) return@remember null
+        val routes = item.routesByProfile[profile.id].orEmpty().associateBy { it.optString("bus_id") }
+        val soloed = sources.any { it.audio.optInt("audio_solo") == 1 }
+        val pcmRoutes = sources.map { source ->
+            val busId = source.audio.optString("audio_bus_id")
+            val route = routes[busId]
+            PcmStemRoute(
+                file = File(source.cache?.localPath.orEmpty()),
+                outputStartChannel = route?.optInt("output_start_channel", 1) ?: 1,
+                outputChannelCount = route?.optInt("output_channel_count", 2) ?: 2,
+                gainDb = (liveGains[source.audio.optString("id")] ?: 0f) + source.bus?.optDouble("gain_db", 0.0)?.toFloat().orZero() + item.playbackArrangement?.optDouble("master_gain_db", 0.0)?.toFloat().orZero(),
+                pan = source.audio.optDouble("audio_pan", 0.0).toFloat(),
+                offsetMs = source.audio.optLong("audio_sync_offset_ms"),
+                muted = source.audio.optInt("audio_muted") == 1 || source.bus?.optInt("muted") == 1 || (soloed && source.audio.optInt("audio_solo") != 1),
+            )
+        }
+        MultichannelPcmEngine.open(pcmRoutes, profile.outputChannelCount, preferredDeviceInfo)
+    }
+    var playing by remember(players) { mutableStateOf(false) }
+    var positionMs by remember(players) { mutableStateOf(0L) }
+    var durationMs by remember(players) { mutableStateOf(audio.optLong("audio_duration_ms").coerceAtLeast(0L)) }
+    var completed by remember(players) { mutableStateOf(false) }
+    var audioDeviceMenu by remember { mutableStateOf(false) }
+
+    fun seekAll(basePosition: Long) {
+        if (discreteEngine != null) discreteEngine.seekTo(basePosition)
+        else players.forEachIndexed { index, stemPlayer ->
+            val offset = sources[index].audio.optLong("audio_sync_offset_ms")
+            stemPlayer.seekTo((basePosition + offset).coerceAtLeast(0L))
+        }
+    }
+    fun pauseAll() { if (discreteEngine != null) discreteEngine.pause() else players.forEach(ExoPlayer::pause) }
+    fun playAll() {
+        if (discreteEngine != null) {
+            discreteEngine.play()
+            return
+        }
+        val soloed = sources.any { it.audio.optInt("audio_solo") == 1 }
+        players.forEachIndexed { index, stemPlayer ->
+            val source = sources[index]
+            val stemId = source.audio.optString("id")
+            val muted = source.audio.optInt("audio_muted") == 1 || source.bus?.optInt("muted") == 1 || (soloed && source.audio.optInt("audio_solo") != 1)
+            val totalGainDb = (liveGains[stemId] ?: 0f) + source.bus?.optDouble("gain_db", 0.0)?.toFloat().orZero() + item.playbackArrangement?.optDouble("master_gain_db", 0.0)?.toFloat().orZero()
+            stemPlayer.volume = if (muted) 0f else Math.pow(10.0, totalGainDb.toDouble() / 20.0).toFloat().coerceIn(0f, 1f)
+            stemPlayer.play()
+        }
+    }
+
+    LaunchedEffect(players, item.entry.optString("id"), ready, autoStartRequest, autoStartDelayMs, trimStart) {
         if (ready && autoStartRequest > 0) {
             if (autoStartDelayMs > 0) delay(autoStartDelayMs.toLong())
             completed = false
-            player.seekTo(trimStart)
-            player.play()
+            seekAll(trimStart)
+            playAll()
         }
     }
-    LaunchedEffect(player, pedalCommand.id) {
+    LaunchedEffect(players, pedalCommand.id) {
         if (!ready || pedalCommand.id <= 0) return@LaunchedEffect
         when (pedalCommand.action) {
             PedalAction.PLAY_PAUSE_AUDIO -> {
                 completed = false
-                if (player.currentPosition >= (trimEnd ?: Long.MAX_VALUE)) player.seekTo(trimStart)
-                if (player.isPlaying) player.pause() else player.play()
+                if (positionMs >= (trimEnd ?: Long.MAX_VALUE)) seekAll(trimStart)
+                if (playing) pauseAll() else playAll()
             }
             PedalAction.STOP_AUDIO -> {
-                player.pause()
-                player.seekTo(trimStart)
+                pauseAll()
+                seekAll(trimStart)
                 completed = false
             }
             else -> Unit
         }
     }
-    DisposableEffect(player, autoAdvance) {
+    DisposableEffect(players, discreteEngine, autoAdvance) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -5811,21 +5910,32 @@ private fun PerformanceAudioControls(
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
-            player.release()
+            players.forEach(ExoPlayer::release)
+            discreteEngine?.close()
         }
     }
-    LaunchedEffect(player, ready, trimEnd) {
+    LaunchedEffect(players, ready, trimEnd, liveGains) {
         while (ready) {
-            positionMs = player.currentPosition.coerceAtLeast(0L)
+            positionMs = discreteEngine?.positionMs ?: player.currentPosition.coerceAtLeast(0L)
+            playing = discreteEngine?.isPlaying ?: player.isPlaying
+            if (discreteEngine == null) players.drop(1).forEachIndexed { childIndex, stemPlayer ->
+                val target = (positionMs + sources[childIndex + 1].audio.optLong("audio_sync_offset_ms")).coerceAtLeast(0L)
+                if (player.isPlaying && kotlin.math.abs(stemPlayer.currentPosition - target) > 80L) stemPlayer.seekTo(target)
+            }
             onPositionChanged(positionMs)
-            durationMs = (trimEnd ?: player.duration.takeIf { it > 0 } ?: durationMs).coerceAtLeast(0L)
-            if (trimEnd != null && player.isPlaying && positionMs >= trimEnd) {
-                player.pause()
-                player.seekTo(trimEnd)
+            durationMs = (trimEnd ?: discreteEngine?.durationMs?.takeIf { it > 0 } ?: player.duration.takeIf { it > 0 } ?: durationMs).coerceAtLeast(0L)
+            if (trimEnd != null && playing && positionMs >= trimEnd) {
+                pauseAll()
+                seekAll(trimEnd)
                 if (!completed) {
                     completed = true
                     if (autoAdvance) onFinished()
                 }
+            }
+            if (discreteEngine != null && durationMs > 0 && positionMs >= durationMs - 20 && !completed) {
+                completed = true
+                pauseAll()
+                if (autoAdvance) onFinished()
             }
             delay(200)
         }
@@ -5839,9 +5949,9 @@ private fun PerformanceAudioControls(
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(audio.optString("display_name", "Performance audio"), color = Color.White, fontWeight = FontWeight.Black)
+                    Text(item.playbackArrangement?.optString("name")?.ifBlank { null } ?: audio.optString("display_name", "Performance audio"), color = Color.White, fontWeight = FontWeight.Black)
                     Text(
-                        if (ready) "${formatPlaybackTime(positionMs)} / ${formatPlaybackTime(durationMs)}" else "Audio is not available offline on this device.",
+                        if (ready) "${formatPlaybackTime(positionMs)} / ${formatPlaybackTime(durationMs)}  |  ${sources.size} track${if (sources.size == 1) "" else "s"}" else "One or more audio files are not available offline on this device.",
                         color = if (ready) Cyan else TextSoft,
                         fontSize = 12.sp,
                     )
@@ -5851,8 +5961,8 @@ private fun PerformanceAudioControls(
                     if (playing) "Pause performance audio" else "Play performance audio",
                     onClick = {
                         completed = false
-                        if (player.currentPosition >= (trimEnd ?: Long.MAX_VALUE)) player.seekTo(trimStart)
-                        if (playing) player.pause() else player.play()
+                        if (positionMs >= (trimEnd ?: Long.MAX_VALUE)) seekAll(trimStart)
+                        if (playing) pauseAll() else playAll()
                     },
                     enabled = ready,
                     active = playing,
@@ -5862,8 +5972,8 @@ private fun PerformanceAudioControls(
                     Icons.Rounded.Stop,
                     "Stop performance audio",
                     onClick = {
-                        player.pause()
-                        player.seekTo(trimStart)
+                        pauseAll()
+                        seekAll(trimStart)
                         completed = false
                     },
                     enabled = ready,
@@ -5872,13 +5982,60 @@ private fun PerformanceAudioControls(
             if (ready) {
                 Slider(
                     value = positionMs.coerceAtMost(durationMs.coerceAtLeast(1L)).toFloat(),
-                    onValueChange = { player.seekTo(it.toLong().coerceAtLeast(trimStart)) },
+                    onValueChange = { seekAll(it.toLong().coerceAtLeast(trimStart)) },
                     valueRange = trimStart.toFloat()..durationMs.coerceAtLeast(trimStart + 1).toFloat(),
                 )
+            }
+            preferredDevice?.let { device ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${device.name}  |  ${device.maximumOutputChannels} outputs", color = TextSoft, fontSize = 11.sp)
+                        Text("${compatibleProfile?.name ?: "Stereo fallback"}${if (discreteEngine != null) "  |  discrete routing" else ""}", color = if (discreteEngine != null) Cyan else TextSoft, fontSize = 10.sp)
+                    }
+                    Box {
+                        TextButton(onClick = { audioDeviceMenu = true }) { Text("Audio output", color = Cyan, fontSize = 11.sp) }
+                        DropdownMenu(expanded = audioDeviceMenu, onDismissRequest = { audioDeviceMenu = false }) {
+                            audioDevices.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text("${option.name} (${option.maximumOutputChannels} outputs)") },
+                                    onClick = {
+                                        selectedAudioDeviceId = option.id
+                                        audioPreferences.edit().putInt(LIVE_AUDIO_DEVICE_ID, option.id).apply()
+                                        audioDeviceMenu = false
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Refresh connected outputs") },
+                                onClick = {
+                                    audioDeviceRefresh += 1
+                                    audioDeviceMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            if (sources.size > 1) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    sources.forEach { source ->
+                        val stemId = source.audio.optString("id")
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.widthIn(min = 110.dp).weight(.45f)) {
+                                Text(source.audio.optString("display_name", "Stem"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(source.bus?.optString("name")?.ifBlank { null } ?: "Main Mix", color = TextSoft, fontSize = 10.sp)
+                            }
+                            Slider(value = liveGains[stemId] ?: 0f, onValueChange = { liveGains = liveGains + (stemId to it) }, valueRange = -60f..12f, modifier = Modifier.weight(.55f))
+                            Text("${(liveGains[stemId] ?: 0f).toInt()} dB", color = TextSoft, fontSize = 10.sp)
+                        }
+                    }
+                }
             }
         }
     }
 }
+
+private fun Float?.orZero(): Float = this ?: 0f
 
 private fun formatPlaybackTime(milliseconds: Long): String = formatDuration((milliseconds.coerceAtLeast(0L) / 1000L).toInt(), showZero = true)
 
@@ -5928,6 +6085,8 @@ private val DOCUMENT_NIGHT_COLOR_FILTER = ColorFilter.colorMatrix(ColorMatrix(fl
 
 private const val DOCUMENT_VIEW_PREFERENCES = "studio_leviathan_document_view"
 private const val DOCUMENT_NIGHT_MODE = "night_mode"
+private const val LIVE_AUDIO_PREFERENCES = "studio_leviathan_live_audio"
+private const val LIVE_AUDIO_DEVICE_ID = "output_device_id"
 
 @Composable
 private fun ChordProDocument(source: String) {
@@ -6292,12 +6451,22 @@ private data class GigSong(
     val cache: CachedAttachment?,
     val playbackAudio: JSONObject? = null,
     val playbackCache: CachedAttachment? = null,
+    val playbackStems: List<PerformanceAudioStem> = emptyList(),
+    val playbackArrangement: JSONObject? = null,
+    val routingProfiles: List<JSONObject> = emptyList(),
+    val routesByProfile: Map<String, List<JSONObject>> = emptyMap(),
     val playbackAutoStartEligible: Boolean = false,
     val controlAssets: List<PerformanceControlAsset> = emptyList(),
     val performanceCues: List<PerformanceCue> = emptyList(),
     val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
+)
+
+private data class PerformanceAudioStem(
+    val audio: JSONObject,
+    val cache: CachedAttachment?,
+    val bus: JSONObject?,
 )
 
 private data class PerformanceControlAsset(val attachment: JSONObject, val cache: CachedAttachment?)
