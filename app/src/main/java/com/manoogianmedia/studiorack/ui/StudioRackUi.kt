@@ -4036,6 +4036,7 @@ private fun ChordProEditor(value: TextFieldValue, onValueChange: (TextFieldValue
                 "Verse" to ("{start_of_verse}\n" to "\n{end_of_verse}"),
                 "Chorus" to ("{start_of_chorus}\n" to "\n{end_of_chorus}"),
                 "Bridge" to ("{start_of_bridge}\n" to "\n{end_of_bridge}"),
+                "Timing Mark" to ("{x_leviathan_time: 0:00}\n" to ""),
                 "Chord" to ("[" to "]"), "Bold" to ("**" to "**"), "Italic" to ("*" to "*"),
             ).forEach { (label, markers) ->
                 TextButton(onClick = { onValueChange(wrapTextSelection(value, markers.first, markers.second)) }) {
@@ -4901,7 +4902,7 @@ private fun GigModeScreen(
                 val controlAssets = songMaterials
                     .filter(::isPerformanceControlAttachment)
                     .map { PerformanceControlAsset(it, it.optString("id").let(cacheById::get)) }
-                val songCues = cuesBySong[entry.optString("song_id")].orEmpty().map { cue ->
+                val canonicalCues = cuesBySong[entry.optString("song_id")].orEmpty().map { cue ->
                     PerformanceCue(
                         id = cue.optString("id"),
                         type = cue.optString("cue_type", "marker"),
@@ -4910,7 +4911,20 @@ private fun GigModeScreen(
                         label = cue.optString("label"),
                         payload = runCatching { JSONObject(cue.optString("payload_json", "{}")) }.getOrDefault(JSONObject()),
                     )
-                }.sortedBy(PerformanceCue::atMs)
+                }
+                val timelineDurationMs = maxOf(
+                    (song?.optLong("duration_seconds") ?: 0L) * 1_000L,
+                    songPlayback.maxOfOrNull { it.optLong("audio_duration_ms") } ?: 0L,
+                ).takeIf { it > 0L }
+                val chordProCues = songMaterials
+                    .filter { it.optString("source_type") == "text" && it.optString("content_format") == "chordpro" }
+                    .flatMap { parseChordProTimeline(it.optString("content_text"), timelineDurationMs) }
+                    .mapIndexed { index, section ->
+                        PerformanceCue("chordpro:$index", "section", section.atMs, section.endMs, section.name, JSONObject())
+                    }
+                val songCues = (canonicalCues + chordProCues)
+                    .distinctBy { Triple(it.type, it.atMs, it.label.lowercase()) }
+                    .sortedBy(PerformanceCue::atMs)
                 val synchronizedLyrics = songMaterials
                     .filter { it.optString("source_type") == "text" && it.optString("content_format") == "lrc" }
                     .flatMap { parseLrcTimeline(it.optString("content_text")) }

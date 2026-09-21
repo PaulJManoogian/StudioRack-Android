@@ -25,4 +25,25 @@ class SongTimelineTest {
         assertEquals("Verse", activeSongSection(sections, 20_000)?.name)
         assertNull(activeSongSection(listOf(TimedSongSection(0, 10_000, "Count In")), 10_000))
     }
+
+    @Test
+    fun chordProSectionsUseLeviathanTimingWithoutChangingPortableSections() {
+        val content = """{x_leviathan_time: 0:00-0:12}
+{start_of_intro}
+Count in
+{end_of_intro}
+{x_leviathan_time: 0:12}
+{start_of_verse: label="Verse 1"}
+Line one
+{end_of_verse}
+{start_of_verse}
+Untimed line
+{end_of_verse}"""
+
+        val sections = parseChordProTimeline(content, 90_000)
+
+        assertEquals(listOf("Intro", "Verse 1"), sections.map(TimedSongSection::name))
+        assertEquals(listOf(0L, 12_000L), sections.map(TimedSongSection::atMs))
+        assertEquals(listOf(12_000L, 90_000L), sections.map(TimedSongSection::endMs))
+    }
 }
