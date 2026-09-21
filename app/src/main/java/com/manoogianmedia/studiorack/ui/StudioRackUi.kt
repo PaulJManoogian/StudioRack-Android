@@ -4892,6 +4892,10 @@ private fun GigModeScreen(
             )
         }
     }
+    val playbackAssignedCount = performanceSongs.count { it.playbackAudio != null }
+    val playbackOfflineCount = performanceSongs.count {
+        it.playbackAudio != null && it.playbackCache?.status == "ready" && it.playbackCache.localPath?.let(::File)?.isFile == true
+    }
     var currentSong by remember(eventId) { mutableIntStateOf(0) }
     var currentEntryId by remember(eventId) { mutableStateOf("") }
     var detailOpen by remember(eventId) { mutableStateOf(false) }
@@ -5134,6 +5138,9 @@ private fun GigModeScreen(
                 GigIconButton(Icons.Rounded.Description, "Chart view", onClick = { if (performanceSongs.isNotEmpty()) detailOpen = true })
             }
         }
+        if (livePlaybackEnabled) {
+            item { LivePlaybackReadiness(playbackAssignedCount, playbackOfflineCount) }
+        }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
             item { GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, activeGigSong?.sectionName.orEmpty()) }
         }
@@ -5170,6 +5177,43 @@ private fun GigModeScreen(
             }
         }
         item { Spacer(Modifier.height(40.dp)) }
+    }
+}
+
+@Composable
+private fun LivePlaybackReadiness(assignedCount: Int, offlineCount: Int) {
+    Surface(
+        color = Color(0xE8202635),
+        shape = RoundedCornerShape(7.dp),
+        border = BorderStroke(1.dp, Cyan.copy(alpha = 0.42f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = Cyan, modifier = Modifier.size(24.dp))
+            Column(Modifier.weight(1f)) {
+                Text("LIVE PLAYBACK", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                Text(
+                    if (assignedCount == 0) "Ready for setup" else "$offlineCount of $assignedCount tracks ready offline",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    if (assignedCount == 0) {
+                        "Add performance audio to a song on the web, assign it to this set list, then synchronize this device."
+                    } else if (offlineCount < assignedCount) {
+                        "Synchronize before the performance to download the remaining audio."
+                    } else {
+                        "Open a song to use its offline playback controls."
+                    },
+                    color = TextSoft,
+                    fontSize = 12.sp,
+                )
+            }
+        }
     }
 }
 
