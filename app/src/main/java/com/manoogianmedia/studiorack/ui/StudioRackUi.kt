@@ -5196,11 +5196,16 @@ private fun GigModeScreen(
     if (showLocalLive) LocalLiveDialog(model, event) { showLocalLive = false }
 
     if (showMidiDestinations) {
-        AlertDialog(
-            onDismissRequest = { showMidiDestinations = false },
-            title = { Text("Show control destination") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Dialog(onDismissRequest = { showMidiDestinations = false }) {
+            Surface(
+                color = PanelRaised,
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Amber.copy(alpha = .45f)),
+                modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("SHOW CONTROL", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text("MIDI destination", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     if (!midiRouter.supported) Text("MIDI output is not available on this device.", color = TextSoft)
                     else if (midiDestinations.isEmpty()) Text("Connect or pair a MIDI device, then refresh this list.", color = TextSoft)
                     midiDestinations.forEach { destination ->
@@ -5215,13 +5220,13 @@ private fun GigModeScreen(
                             kind = if (destination.key == selectedMidiKey) StudioButtonKind.Primary else StudioButtonKind.Secondary,
                         ) { Text(destination.label, color = if (destination.key == selectedMidiKey) Ink else Color.White, fontWeight = FontWeight.Bold) }
                     }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { showMidiDestinations = false }) { Text("Cancel", color = TextSoft) }
+                        TextButton(onClick = { midiDestinations = midiRouter.destinations() }) { Text("Refresh", color = Amber) }
+                    }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { midiDestinations = midiRouter.destinations() }) { Text("Refresh") }
-            },
-            dismissButton = { TextButton(onClick = { showMidiDestinations = false }) { Text("Cancel") } },
-        )
+            }
+        }
     }
 
     if (detailOpen && performanceSongs.isNotEmpty()) {
@@ -5245,7 +5250,6 @@ private fun GigModeScreen(
             autoAdvance = livePlaybackActive && setList?.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
             pedalCommand = pedalPerformanceCommand,
             showControlArmed = showControlArmed,
-            selectedMidiLabel = midiDestinations.firstOrNull { it.key == selectedMidiKey }?.label.orEmpty(),
             onToggleShowControl = {
                 if (showControlArmed) showControlArmed = false
                 else {
@@ -5253,10 +5257,6 @@ private fun GigModeScreen(
                     val selected = midiDestinations.firstOrNull { it.key == selectedMidiKey }
                     if (selected != null) showControlArmed = true else showMidiDestinations = true
                 }
-            },
-            onChooseMidiDestination = {
-                midiDestinations = midiRouter.destinations()
-                showMidiDestinations = true
             },
             onPlaybackPosition = { positionMs ->
                 if (positionMs + 250 < previousCuePositionMs) {
@@ -5571,9 +5571,7 @@ private fun PerformanceSongScreen(
     autoAdvance: Boolean,
     pedalCommand: PedalPerformanceCommand,
     showControlArmed: Boolean,
-    selectedMidiLabel: String,
     onToggleShowControl: () -> Unit,
-    onChooseMidiDestination: () -> Unit,
     onPlaybackPosition: (Long) -> Unit,
     close: () -> Unit,
     previous: () -> Unit,
@@ -5606,6 +5604,9 @@ private fun PerformanceSongScreen(
                 )
             }
             .sortedBy(TimedSongSection::atMs)
+    }
+    val showControlCues = remember(item.performanceCues) {
+        item.performanceCues.filter { it.type == "midi" || it.type == "dmx_midi" }
     }
     val activeTimelineSection = activeSongSection(songSections, timelinePositionMs)
     val timelineDurationMs = remember(item.entry.optString("id"), item.song, item.playbackAudio, item.playbackStems, songSections) {
@@ -5686,7 +5687,7 @@ private fun PerformanceSongScreen(
                         onClick = { setAutoPlayActive(!autoPlayActive) },
                         active = autoPlayActive,
                     )
-                    if (item.performanceCues.isNotEmpty()) {
+                    if (showControlCues.isNotEmpty()) {
                         GigIconButton(
                             Icons.Rounded.SettingsInputComponent,
                             if (showControlArmed) "Disarm show control" else "Arm show control",
@@ -5794,29 +5795,6 @@ private fun PerformanceSongScreen(
                 seekRequestMs = requestedSectionPosition,
                 onSeekConsumed = { requestedSectionPosition = null },
             )
-        }
-        if (item.performanceCues.isNotEmpty()) {
-            Surface(
-                color = Color(0xE8070C17),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, if (showControlArmed) Color(0xFF58E99B) else Cyan.copy(alpha = .3f)),
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable(onClick = onChooseMidiDestination),
-            ) {
-                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("SHOW CONTROL", color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                        Text(if (showControlArmed) "ARMED" else "DISARMED", color = if (showControlArmed) Color(0xFF58E99B) else Color(0xFFFF6B6B), fontSize = 10.sp, fontWeight = FontWeight.Black)
-                    }
-                    Text(selectedMidiLabel.ifBlank { "Tap to choose a MIDI destination" }, color = TextSoft, fontSize = 11.sp)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        item.performanceCues.forEach { cue ->
-                            Surface(color = Color(0x16FFFFFF), shape = RoundedCornerShape(5.dp)) {
-                                Text("${formatPlaybackTime(cue.atMs)}  ${cue.label.ifBlank { cue.type.replace('_', ' ').replaceFirstChar(Char::uppercase) }}", color = Color.White, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp))
-                            }
-                        }
-                    }
-                }
-            }
         }
         if (item.attachment != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
