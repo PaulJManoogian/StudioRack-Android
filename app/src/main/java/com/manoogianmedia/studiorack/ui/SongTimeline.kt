@@ -11,6 +11,8 @@ internal data class TimedSongSection(
     val atMs: Long,
     val endMs: Long?,
     val name: String,
+    val color: String = "#2f80ed",
+    val sourceIndex: Int? = null,
 )
 
 private data class ChordProSectionMarker(
@@ -18,7 +20,29 @@ private data class ChordProSectionMarker(
     val explicitName: String,
     val atMs: Long?,
     val endMs: Long?,
+    val color: String,
+    val sourceIndex: Int,
 )
+
+private val sectionColors = listOf("#2f80ed", "#18a999", "#2f9e44", "#9c6ade", "#e67e22", "#d64550", "#d4a017", "#247ba0")
+
+internal fun chordProArgumentValue(argument: String, key: String): String {
+    val match = Regex("(?:^|\\s)${Regex.escape(key)}\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s]+))", RegexOption.IGNORE_CASE).find(argument)
+    return match?.groupValues?.drop(1)?.firstOrNull(String::isNotBlank).orEmpty()
+}
+
+internal fun chordProSectionLabel(name: String, argument: String): String {
+    val explicit = chordProArgumentValue(argument, "label")
+        .ifBlank { argument.takeIf { it.isNotBlank() && '=' !in it }?.trim('"', '\'').orEmpty() }
+    if (explicit.isNotBlank()) return explicit
+    return when (name) {
+        "sov", "start_of_verse" -> "Verse"
+        "soc", "start_of_chorus" -> "Chorus"
+        "sob", "start_of_bridge" -> "Bridge"
+        "sot", "start_of_tab" -> "Tab"
+        else -> name.removePrefix("start_of_").replace('_', ' ').replaceFirstChar(Char::uppercase)
+    }
+}
 
 internal fun parseLrcTimeline(content: String): List<TimedLyricLine> = content.lineSequence()
     .flatMap { rawLine ->
@@ -42,14 +66,16 @@ internal fun parseChordProTimeline(content: String, durationMs: Long? = null): L
     val markers = mutableListOf<ChordProSectionMarker>()
     var pendingStart: Long? = null
     var pendingEnd: Long? = null
+    var pendingColor = ""
     content.replace("\r\n", "\n").lineSequence().forEach { rawLine ->
         val directive = parseChordProDirective(rawLine) ?: return@forEach
         val name = directive.first
         val argument = directive.second
         if (name == "x_leviathan_time") {
-            val timing = Regex("^\\s*(\\d+:\\d{2})(?:\\s*-\\s*(\\d+:\\d{2}))?\\s*$").matchEntire(argument)
+            val timing = Regex("^\\s*(\\d+:\\d{2})(?:\\s*-\\s*(\\d+:\\d{2}))?").find(argument)
             pendingStart = timing?.groupValues?.get(1)?.let(::chordProTimeMs)
             pendingEnd = timing?.groupValues?.get(2)?.takeIf(String::isNotBlank)?.let(::chordProTimeMs)
+            pendingColor = chordProArgumentValue(argument, "color")
             return@forEach
         }
         val type = when (name) {
@@ -64,12 +90,16 @@ internal fun parseChordProTimeline(content: String, durationMs: Long? = null): L
             pendingEnd = null
             return@forEach
         }
-        val labelMatch = Regex("(?:^|\\s)label\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s]+))", RegexOption.IGNORE_CASE).find(argument)
-        val explicitLabel = labelMatch?.groupValues?.drop(1)?.firstOrNull(String::isNotBlank)
-            ?: argument.takeIf { it.isNotBlank() && '=' !in it }?.trim('"', '\'').orEmpty()
-        markers += ChordProSectionMarker(type, explicitLabel, pendingStart, pendingEnd)
+        val explicitLabel = chordProArgumentValue(argument, "label")
+            .ifBlank { argument.takeIf { it.isNotBlank() && '=' !in it }?.trim('"', '\'').orEmpty() }
+        val markerIndex = markers.size
+        val color = (chordProArgumentValue(argument, "color").ifBlank { pendingColor })
+            .takeIf { Regex("#[0-9a-fA-F]{6}").matches(it) }
+            ?: sectionColors[markerIndex % sectionColors.size]
+        markers += ChordProSectionMarker(type, explicitLabel, pendingStart, pendingEnd, color.lowercase(), markerIndex)
         pendingStart = null
         pendingEnd = null
+        pendingColor = ""
     }
     val totals = markers.groupingBy(ChordProSectionMarker::type).eachCount()
     val seen = mutableMapOf<String, Int>()
@@ -82,7 +112,7 @@ internal fun parseChordProTimeline(content: String, durationMs: Long? = null): L
     }.filter { it.first.atMs != null }
     return named.mapIndexed { index, (marker, sectionName) ->
         val nextStart = named.getOrNull(index + 1)?.first?.atMs
-        TimedSongSection(marker.atMs!!, marker.endMs ?: nextStart ?: durationMs?.takeIf { it > marker.atMs }, sectionName)
+        TimedSongSection(marker.atMs!!, marker.endMs ?: nextStart ?: durationMs?.takeIf { it > marker.atMs }, sectionName, marker.color, marker.sourceIndex)
     }
 }
 

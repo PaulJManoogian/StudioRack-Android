@@ -24,6 +24,7 @@ import android.util.LruCache
 import android.widget.Toast
 import android.view.KeyEvent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -31,6 +32,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -4920,7 +4923,10 @@ private fun GigModeScreen(
                     .filter { it.optString("source_type") == "text" && it.optString("content_format") == "chordpro" }
                     .flatMap { parseChordProTimeline(it.optString("content_text"), timelineDurationMs) }
                     .mapIndexed { index, section ->
-                        PerformanceCue("chordpro:$index", "section", section.atMs, section.endMs, section.name, JSONObject())
+                        PerformanceCue(
+                            "chordpro:$index", "section", section.atMs, section.endMs, section.name,
+                            JSONObject().put("color", section.color).put("source_index", section.sourceIndex),
+                        )
                     }
                 val songCues = (canonicalCues + chordProCues)
                     .distinctBy { Triple(it.type, it.atMs, it.label.lowercase()) }
@@ -5588,9 +5594,19 @@ private fun PerformanceSongScreen(
     }
     val songSections = remember(item.performanceCues) {
         item.performanceCues.filter { it.type == "section" && it.label.isNotBlank() }
-            .map { TimedSongSection(it.atMs, it.endMs, it.label) }
+            .mapIndexed { index, cue ->
+                TimedSongSection(
+                    cue.atMs,
+                    cue.endMs,
+                    cue.label,
+                    cue.payload.optString("color").takeIf { Regex("#[0-9a-fA-F]{6}").matches(it) } ?: sectionTimelineColor(index),
+                    cue.payload.optInt("source_index", -1).takeIf { it >= 0 },
+                )
+            }
             .sortedBy(TimedSongSection::atMs)
     }
+    val activeTimelineSection = activeSongSection(songSections, timelinePositionMs)
+    var requestedSectionPosition by remember(item.entry.optString("id")) { mutableStateOf<Long?>(null) }
     var page by remember(path) { mutableIntStateOf(0) }
     var rendered by remember(path, attachmentVersion, page) { mutableStateOf(cachedPerformanceAttachment(path, attachmentVersion, page) ?: AttachmentRender()) }
     LaunchedEffect(path, attachmentVersion, isPdf, page) {
@@ -5690,6 +5706,17 @@ private fun PerformanceSongScreen(
             }
             GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
         }
+        if (songSections.isNotEmpty()) {
+            SongSectionStrip(
+                sections = songSections,
+                positionMs = timelinePositionMs,
+                durationMs = maxOf(songSections.maxOfOrNull { it.endMs ?: it.atMs } ?: 1L, 1L),
+                onSelect = { section ->
+                    timelinePositionMs = section.atMs
+                    requestedSectionPosition = section.atMs
+                },
+            )
+        }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
             GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, item.sectionName)
         }
@@ -5762,6 +5789,8 @@ private fun PerformanceSongScreen(
                     timelinePositionMs = it
                     onPlaybackPosition(it)
                 },
+                seekRequestMs = requestedSectionPosition,
+                onSeekConsumed = { requestedSectionPosition = null },
             )
         }
         if (item.performanceCues.isNotEmpty()) {
@@ -5819,7 +5848,7 @@ private fun PerformanceSongScreen(
         Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {
             val textMaterial = item.attachment?.takeIf { it.optString("source_type") == "text" }?.optString("content_text").orEmpty()
             when {
-                textMaterial.isNotBlank() -> ChordProDocument(textMaterial)
+                textMaterial.isNotBlank() -> ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs)
                 !rendered.complete -> CircularProgressIndicator()
                 renderedBitmap == null -> SongDetailFallback(item)
                 else -> Image(
@@ -5880,6 +5909,45 @@ private fun SongTimelineStatus(
     }
 }
 
+private fun sectionTimelineColor(index: Int): String = listOf(
+    "#2f80ed", "#18a999", "#2f9e44", "#9c6ade", "#e67e22", "#d64550", "#d4a017", "#247ba0",
+)[index.mod(8)]
+
+private fun sectionComposeColor(value: String): Color = runCatching {
+    Color(android.graphics.Color.parseColor(value))
+}.getOrDefault(Cyan)
+
+@Composable
+private fun SongSectionStrip(
+    sections: List<TimedSongSection>,
+    positionMs: Long,
+    durationMs: Long,
+    onSelect: (TimedSongSection) -> Unit,
+) {
+    val active = activeSongSection(sections, positionMs)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 5.dp).horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        sections.forEach { section ->
+            val sectionColor = sectionComposeColor(section.color)
+            val sectionDuration = ((section.endMs ?: durationMs) - section.atMs).coerceAtLeast(1L)
+            val sectionWidth = (82f + (sectionDuration.toFloat() / durationMs.coerceAtLeast(1L)) * 520f).coerceIn(82f, 220f).dp
+            Surface(
+                color = if (section == active) sectionColor.copy(alpha = .72f) else sectionColor.copy(alpha = .28f),
+                border = BorderStroke(if (section == active) 2.dp else 1.dp, if (section == active) Color.White else sectionColor),
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier.width(sectionWidth).clickable { onSelect(section) },
+            ) {
+                Column(Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) {
+                    Text(section.name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                    Text(formatPlaybackTime(section.atMs), color = Color.White.copy(alpha = .76f), fontSize = 9.sp)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun PerformanceAudioControls(
     item: GigSong,
@@ -5889,6 +5957,8 @@ private fun PerformanceAudioControls(
     onFinished: () -> Unit,
     pedalCommand: PedalPerformanceCommand,
     onPositionChanged: (Long) -> Unit,
+    seekRequestMs: Long? = null,
+    onSeekConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val sources = remember(item.entry.optString("id"), item.playbackStems, item.playbackAudio, item.playbackCache) {
@@ -5982,6 +6052,14 @@ private fun PerformanceAudioControls(
             val totalGainDb = (liveGains[stemId] ?: 0f) + source.bus?.optDouble("gain_db", 0.0)?.toFloat().orZero() + item.playbackArrangement?.optDouble("master_gain_db", 0.0)?.toFloat().orZero()
             stemPlayer.volume = if (muted) 0f else Math.pow(10.0, totalGainDb.toDouble() / 20.0).toFloat().coerceIn(0f, 1f)
             stemPlayer.play()
+        }
+    }
+
+    LaunchedEffect(seekRequestMs, ready) {
+        if (ready && seekRequestMs != null) {
+            seekAll(seekRequestMs)
+            onPositionChanged(seekRequestMs)
+            onSeekConsumed()
         }
     }
 
@@ -6225,19 +6303,94 @@ private const val DOCUMENT_NIGHT_MODE = "night_mode"
 private const val LIVE_AUDIO_PREFERENCES = "studio_leviathan_live_audio"
 private const val LIVE_AUDIO_DEVICE_ID = "output_device_id"
 
+private data class ChordProDisplayBlock(
+    val name: String?,
+    val color: String,
+    val sourceIndex: Int?,
+    val content: String,
+)
+
+private fun chordProDisplayBlocks(source: String): List<ChordProDisplayBlock> {
+    val rows = source.replace("\r\n", "\n").lines()
+    val rawSections = rows.mapNotNull { raw ->
+        val directive = parseChordProDirective(raw) ?: return@mapNotNull null
+        directive.takeIf { it.first in CHORDPRO_SECTION_DIRECTIVES }
+    }
+    val baseNames = rawSections.map { chordProSectionLabel(it.first, it.second) }
+    val totals = baseNames.groupingBy { it.lowercase() }.eachCount()
+    val seen = mutableMapOf<String, Int>()
+    val blocks = mutableListOf<ChordProDisplayBlock>()
+    val body = mutableListOf<String>()
+    var currentName: String? = null
+    var currentColor = "#2f80ed"
+    var currentIndex: Int? = null
+    var pendingColor = ""
+    fun flush() {
+        if (body.isNotEmpty() || currentName != null) blocks += ChordProDisplayBlock(currentName, currentColor, currentIndex, body.joinToString("\n"))
+        body.clear()
+    }
+    rows.forEach { raw ->
+        val directive = parseChordProDirective(raw)
+        if (directive?.first == "x_leviathan_time") {
+            pendingColor = chordProArgumentValue(directive.second, "color")
+            return@forEach
+        }
+        if (directive != null && directive.first in CHORDPRO_SECTION_DIRECTIVES) {
+            flush()
+            val index = (currentIndex ?: -1) + 1
+            val base = chordProSectionLabel(directive.first, directive.second)
+            val key = base.lowercase()
+            val count = seen.getOrDefault(key, 0) + 1
+            seen[key] = count
+            val explicit = chordProArgumentValue(directive.second, "label").isNotBlank() || (directive.second.isNotBlank() && '=' !in directive.second)
+            currentName = if (!explicit && (totals[key] ?: 0) > 1) "$base $count" else base
+            currentIndex = index
+            currentColor = chordProArgumentValue(directive.second, "color").ifBlank { pendingColor }
+                .takeIf { Regex("#[0-9a-fA-F]{6}").matches(it) } ?: sectionTimelineColor(index)
+            pendingColor = ""
+        } else {
+            body += raw
+        }
+    }
+    flush()
+    return blocks
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChordProDocument(source: String) {
+private fun ChordProDocument(source: String, activeSection: TimedSongSection? = null, positionMs: Long = 0L) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val tablet = maxWidth >= 600.dp
-        val document = remember(source, tablet) { buildChordProDocument(source, tablet) }
-        Text(
-            document,
-            color = Color.White,
-            fontFamily = FontFamily.Serif,
-            fontSize = if (tablet) 27.sp else 20.sp,
-            lineHeight = if (tablet) 36.sp else 28.sp,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = if (tablet) 34.dp else 12.dp, vertical = 18.dp),
-        )
+        val blocks = remember(source) { chordProDisplayBlocks(source) }
+        Column(Modifier.fillMaxWidth().padding(horizontal = if (tablet) 34.dp else 12.dp, vertical = 18.dp)) {
+            blocks.forEach { block ->
+                val requester = remember(block.sourceIndex, source) { BringIntoViewRequester() }
+                val active = activeSection != null && (
+                    (activeSection.sourceIndex != null && activeSection.sourceIndex == block.sourceIndex) ||
+                        (activeSection.sourceIndex == null && activeSection.name.equals(block.name, true))
+                    )
+                LaunchedEffect(active, positionMs > 0L) { if (active && positionMs > 0L) requester.bringIntoView() }
+                Column(Modifier.fillMaxWidth().bringIntoViewRequester(requester)) {
+                    block.name?.let { name ->
+                        Text(
+                            name.uppercase(),
+                            color = sectionComposeColor(block.color),
+                            fontSize = if (tablet) 18.sp else 14.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp),
+                        )
+                    }
+                    if (block.content.isNotBlank()) Text(
+                        buildChordProDocument(block.content, tablet),
+                        color = Color.White,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = if (tablet) 27.sp else 20.sp,
+                        lineHeight = if (tablet) 36.sp else 28.sp,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -6250,11 +6403,7 @@ private fun buildChordProDocument(source: String, tablet: Boolean) = buildAnnota
         when {
             name.startsWith("end_of_") || name in CHORDPRO_END_DIRECTIVES -> Unit
             name in CHORDPRO_SECTION_DIRECTIVES -> {
-                val label = argument.ifBlank {
-                    name.substringAfter("start_of_").ifBlank {
-                        when (name) { "sov" -> "verse"; "soc" -> "chorus"; "sob" -> "bridge"; else -> "tab" }
-                    }.humanize()
-                }
+                val label = chordProSectionLabel(name, argument)
                 if (length > 0) append('\n')
                 pushStyle(SpanStyle(color = Amber, fontSize = if (tablet) 18.sp else 14.sp, fontWeight = FontWeight.Black))
                 append(label.uppercase())
