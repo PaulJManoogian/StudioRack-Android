@@ -44,7 +44,7 @@ Untimed line
 
         assertEquals(listOf("Intro", "Verse 1"), sections.map(TimedSongSection::name))
         assertEquals(listOf(0L, 12_000L), sections.map(TimedSongSection::atMs))
-        assertEquals(listOf(12_000L, 90_000L), sections.map(TimedSongSection::endMs))
+        assertEquals(listOf(12_000L, null), sections.map(TimedSongSection::endMs))
         assertEquals(listOf("#ff5500", "#18a999"), sections.map(TimedSongSection::color))
         assertEquals("Verse 1", chordProSectionLabel("start_of_verse", "label=\"Verse 1\""))
     }

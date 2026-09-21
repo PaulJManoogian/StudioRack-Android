@@ -111,8 +111,11 @@ internal fun parseChordProTimeline(content: String, durationMs: Long? = null): L
         marker to sectionName
     }.filter { it.first.atMs != null }
     return named.mapIndexed { index, (marker, sectionName) ->
+        val sectionStart = marker.atMs!!
         val nextStart = named.getOrNull(index + 1)?.first?.atMs
-        TimedSongSection(marker.atMs!!, marker.endMs ?: nextStart ?: durationMs?.takeIf { it > marker.atMs }, sectionName, marker.color, marker.sourceIndex)
+        val hasUntimedLaterSection = markers.drop(marker.sourceIndex + 1).any { it.atMs == null }
+        val inferredEnd = nextStart ?: durationMs?.takeIf { !hasUntimedLaterSection && it > sectionStart }
+        TimedSongSection(sectionStart, marker.endMs ?: inferredEnd, sectionName, marker.color, marker.sourceIndex)
     }
 }
 

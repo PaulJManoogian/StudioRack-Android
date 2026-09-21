@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
@@ -61,6 +62,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -5584,7 +5586,7 @@ private fun PerformanceSongScreen(
     val path = item.cache?.localPath.orEmpty()
     val attachmentVersion = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
     val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
-    val screenScrollState = rememberScrollState()
+    val materialScrollState = rememberScrollState()
     var timelinePositionMs by remember(item.entry.optString("id")) { mutableLongStateOf(0L) }
     var countInRemainingMs by remember(item.entry.optString("id")) { mutableLongStateOf(0L) }
     val metronomeState by metronome.state.collectAsState()
@@ -5606,6 +5608,15 @@ private fun PerformanceSongScreen(
             .sortedBy(TimedSongSection::atMs)
     }
     val activeTimelineSection = activeSongSection(songSections, timelinePositionMs)
+    val timelineDurationMs = remember(item.entry.optString("id"), item.song, item.playbackAudio, item.playbackStems, songSections) {
+        maxOf(
+            (item.song?.optLong("duration_seconds") ?: 0L) * 1_000L,
+            item.playbackAudio?.optLong("audio_duration_ms") ?: 0L,
+            item.playbackStems.maxOfOrNull { it.audio.optLong("audio_duration_ms") } ?: 0L,
+            songSections.maxOfOrNull { it.endMs ?: it.atMs } ?: 0L,
+            1L,
+        )
+    }
     var requestedSectionPosition by remember(item.entry.optString("id")) { mutableStateOf<Long?>(null) }
     var page by remember(path) { mutableIntStateOf(0) }
     var rendered by remember(path, attachmentVersion, page) { mutableStateOf(cachedPerformanceAttachment(path, attachmentVersion, page) ?: AttachmentRender()) }
@@ -5637,11 +5648,11 @@ private fun PerformanceSongScreen(
         when (pedalCommand.action) {
             PedalAction.PREVIOUS_PAGE -> page = (page - 1).coerceAtLeast(0)
             PedalAction.NEXT_PAGE -> page = (page + 1).coerceAtMost((pageCount - 1).coerceAtLeast(0))
-            PedalAction.SCROLL_UP -> screenScrollState.animateScrollTo(
-                (screenScrollState.value - (screenScrollState.maxValue * pedalScrollFraction).toInt()).coerceAtLeast(0),
+            PedalAction.SCROLL_UP -> materialScrollState.animateScrollTo(
+                (materialScrollState.value - (materialScrollState.maxValue * pedalScrollFraction).toInt()).coerceAtLeast(0),
             )
-            PedalAction.SCROLL_DOWN -> screenScrollState.animateScrollTo(
-                (screenScrollState.value + (screenScrollState.maxValue * pedalScrollFraction).toInt()).coerceAtMost(screenScrollState.maxValue),
+            PedalAction.SCROLL_DOWN -> materialScrollState.animateScrollTo(
+                (materialScrollState.value + (materialScrollState.maxValue * pedalScrollFraction).toInt()).coerceAtMost(materialScrollState.maxValue),
             )
             else -> Unit
         }
@@ -5652,7 +5663,6 @@ private fun PerformanceSongScreen(
             .background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B))))
             .statusBarsPadding()
             .navigationBarsPadding()
-            .verticalScroll(screenScrollState)
             .padding(12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -5710,7 +5720,7 @@ private fun PerformanceSongScreen(
             SongSectionStrip(
                 sections = songSections,
                 positionMs = timelinePositionMs,
-                durationMs = maxOf(songSections.maxOfOrNull { it.endMs ?: it.atMs } ?: 1L, 1L),
+                durationMs = timelineDurationMs,
                 onSelect = { section ->
                     timelinePositionMs = section.atMs
                     requestedSectionPosition = section.atMs
@@ -5739,14 +5749,6 @@ private fun PerformanceSongScreen(
             contentAlignment = Alignment.Center,
         ) {
             PerformancePulseLine(metronome)
-        }
-        if (songSections.isNotEmpty() || item.synchronizedLyrics.isNotEmpty()) {
-            SongTimelineStatus(
-                positionMs = timelinePositionMs,
-                sections = songSections,
-                lyrics = item.synchronizedLyrics,
-                countInRemainingMs = countInRemainingMs,
-            )
         }
         val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -5845,19 +5847,24 @@ private fun PerformanceSongScreen(
         } else {
             Modifier.fillMaxWidth().heightIn(min = 320.dp)
         }
-        Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {
-            val textMaterial = item.attachment?.takeIf { it.optString("source_type") == "text" }?.optString("content_text").orEmpty()
-            when {
-                textMaterial.isNotBlank() -> ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs)
-                !rendered.complete -> CircularProgressIndicator()
-                renderedBitmap == null -> SongDetailFallback(item)
-                else -> Image(
-                    renderedBitmap.asImageBitmap(),
-                    contentDescription = item.attachment?.let(::attachmentLabel),
-                    modifier = Modifier.fillMaxWidth(),
-                    contentScale = ContentScale.FillWidth,
-                    colorFilter = if (nightMode.value) DOCUMENT_NIGHT_COLOR_FILTER else null,
-                )
+        Box(
+            Modifier.fillMaxWidth().weight(1f).verticalScroll(materialScrollState),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {
+                val textMaterial = item.attachment?.takeIf { it.optString("source_type") == "text" }?.optString("content_text").orEmpty()
+                when {
+                    textMaterial.isNotBlank() -> ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs)
+                    !rendered.complete -> CircularProgressIndicator()
+                    renderedBitmap == null -> SongDetailFallback(item)
+                    else -> Image(
+                        renderedBitmap.asImageBitmap(),
+                        contentDescription = item.attachment?.let(::attachmentLabel),
+                        modifier = Modifier.fillMaxWidth(),
+                        contentScale = ContentScale.FillWidth,
+                        colorFilter = if (nightMode.value) DOCUMENT_NIGHT_COLOR_FILTER else null,
+                    )
+                }
             }
         }
     }
@@ -5925,23 +5932,31 @@ private fun SongSectionStrip(
     onSelect: (TimedSongSection) -> Unit,
 ) {
     val active = activeSongSection(sections, positionMs)
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 5.dp).horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(54.dp).padding(vertical = 5.dp)) {
+        val safeDuration = durationMs.coerceAtLeast(1L)
+        Box(
+            Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF252B36)).border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(4.dp)),
+        )
         sections.forEach { section ->
             val sectionColor = sectionComposeColor(section.color)
-            val sectionDuration = ((section.endMs ?: durationMs) - section.atMs).coerceAtLeast(1L)
-            val sectionWidth = (82f + (sectionDuration.toFloat() / durationMs.coerceAtLeast(1L)) * 520f).coerceIn(82f, 220f).dp
-            Surface(
-                color = if (section == active) sectionColor.copy(alpha = .72f) else sectionColor.copy(alpha = .28f),
-                border = BorderStroke(if (section == active) 2.dp else 1.dp, if (section == active) Color.White else sectionColor),
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier.width(sectionWidth).clickable { onSelect(section) },
+            val sectionEnd = section.endMs?.coerceAtLeast(section.atMs) ?: section.atMs
+            val startFraction = (section.atMs.toFloat() / safeDuration).coerceIn(0f, 1f)
+            val widthFraction = ((sectionEnd - section.atMs).toFloat() / safeDuration).coerceAtLeast(.012f).coerceAtMost(1f - startFraction)
+            val progress = if (sectionEnd > section.atMs) {
+                ((positionMs - section.atMs).toFloat() / (sectionEnd - section.atMs)).coerceIn(0f, 1f)
+            } else 0f
+            Box(
+                Modifier.offset(x = maxWidth * startFraction).width(maxWidth * widthFraction).fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(sectionColor.copy(alpha = .24f))
+                    .border(if (section == active) 2.dp else 1.dp, if (section == active) Color.White else sectionColor, RoundedCornerShape(3.dp))
+                    .clickable { onSelect(section) },
             ) {
-                Column(Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) {
-                    Text(section.name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                    Text(formatPlaybackTime(section.atMs), color = Color.White.copy(alpha = .76f), fontSize = 9.sp)
+                if (progress > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(sectionColor.copy(alpha = .68f)))
+                Column(Modifier.padding(horizontal = 7.dp, vertical = 5.dp)) {
+                    Text(section.name, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                    Text(formatPlaybackTime(section.atMs), color = Color.White.copy(alpha = .78f), fontSize = 8.sp, maxLines = 1)
                 }
             }
         }
