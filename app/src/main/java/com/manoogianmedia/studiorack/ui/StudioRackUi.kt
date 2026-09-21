@@ -4895,11 +4895,30 @@ private fun GigModeScreen(
         sectionRows.flatMap { section ->
             entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
                 val song = songMap[entry.optString("song_id")]
-                val attachment = selectPerformanceAttachment(entry, attachmentsBySong[entry.optString("song_id")].orEmpty(), settings.attachmentPreferences)
+                val songMaterials = attachmentsBySong[entry.optString("song_id")].orEmpty()
+                val attachment = selectPerformanceAttachment(entry, songMaterials, settings.attachmentPreferences)
                 val songPlayback = playbackBySong[entry.optString("song_id")].orEmpty()
-                val controlAssets = attachmentsBySong[entry.optString("song_id")].orEmpty()
+                val controlAssets = songMaterials
                     .filter(::isPerformanceControlAttachment)
                     .map { PerformanceControlAsset(it, it.optString("id").let(cacheById::get)) }
+                val songCues = cuesBySong[entry.optString("song_id")].orEmpty().map { cue ->
+                    PerformanceCue(
+                        id = cue.optString("id"),
+                        type = cue.optString("cue_type", "marker"),
+                        atMs = cue.optLong("at_ms").coerceAtLeast(0L),
+                        endMs = cue.optLong("end_ms").takeIf { it > 0L },
+                        label = cue.optString("label"),
+                        payload = runCatching { JSONObject(cue.optString("payload_json", "{}")) }.getOrDefault(JSONObject()),
+                    )
+                }.sortedBy(PerformanceCue::atMs)
+                val synchronizedLyrics = songMaterials
+                    .filter { it.optString("source_type") == "text" && it.optString("content_format") == "lrc" }
+                    .flatMap { parseLrcTimeline(it.optString("content_text")) }
+                    .plus(songCues.filter { it.type == "lyric" }.mapNotNull { cue ->
+                        cue.payload.optString("text").ifBlank { cue.label }.takeIf(String::isNotBlank)?.let { TimedLyricLine(cue.atMs, it) }
+                    })
+                    .distinctBy { it.atMs to it.text }
+                    .sortedBy(TimedLyricLine::atMs)
                 val selectedPlaybackId = entry.optString("playback_attachment_id")
                 val selectedPlayback = songPlayback.firstOrNull { it.optString("id") == selectedPlaybackId }
                 val selectedArrangement = arrangementById[entry.optString("playback_arrangement_id")]
@@ -4925,15 +4944,8 @@ private fun GigModeScreen(
                     routesByProfile = routesByProfile,
                     playbackAutoStartEligible = selectedArrangement != null || selectedPlayback != null || songPlayback.size == 1,
                     controlAssets = controlAssets,
-                    performanceCues = cuesBySong[entry.optString("song_id")].orEmpty().map { cue ->
-                        PerformanceCue(
-                            id = cue.optString("id"),
-                            type = cue.optString("cue_type", "marker"),
-                            atMs = cue.optLong("at_ms").coerceAtLeast(0L),
-                            label = cue.optString("label"),
-                            payload = runCatching { JSONObject(cue.optString("payload_json", "{}")) }.getOrDefault(JSONObject()),
-                        )
-                    }.sortedBy(PerformanceCue::atMs),
+                    performanceCues = songCues,
+                    synchronizedLyrics = synchronizedLyrics,
                 )
             }
         }
@@ -5553,6 +5565,12 @@ private fun PerformanceSongScreen(
     val attachmentVersion = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
     val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
     val screenScrollState = rememberScrollState()
+    var timelinePositionMs by remember(item.entry.optString("id")) { mutableLongStateOf(0L) }
+    val songSections = remember(item.performanceCues) {
+        item.performanceCues.filter { it.type == "section" && it.label.isNotBlank() }
+            .map { TimedSongSection(it.atMs, it.endMs, it.label) }
+            .sortedBy(TimedSongSection::atMs)
+    }
     var page by remember(path) { mutableIntStateOf(0) }
     var rendered by remember(path, attachmentVersion, page) { mutableStateOf(cachedPerformanceAttachment(path, attachmentVersion, page) ?: AttachmentRender()) }
     LaunchedEffect(path, attachmentVersion, isPdf, page) {
@@ -5661,6 +5679,13 @@ private fun PerformanceSongScreen(
         ) {
             PerformancePulseLine(metronome)
         }
+        if (songSections.isNotEmpty() || item.synchronizedLyrics.isNotEmpty()) {
+            SongTimelineStatus(
+                positionMs = timelinePositionMs,
+                sections = songSections,
+                lyrics = item.synchronizedLyrics,
+            )
+        }
         val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val tablet = maxWidth >= 600.dp
@@ -5698,7 +5723,10 @@ private fun PerformanceSongScreen(
                 autoAdvance = autoAdvance,
                 onFinished = next,
                 pedalCommand = pedalCommand,
-                onPositionChanged = onPlaybackPosition,
+                onPositionChanged = {
+                    timelinePositionMs = it
+                    onPlaybackPosition(it)
+                },
             )
         }
         if (item.performanceCues.isNotEmpty()) {
@@ -5766,6 +5794,46 @@ private fun PerformanceSongScreen(
                     contentScale = ContentScale.FillWidth,
                     colorFilter = if (nightMode.value) DOCUMENT_NIGHT_COLOR_FILTER else null,
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SongTimelineStatus(
+    positionMs: Long,
+    sections: List<TimedSongSection>,
+    lyrics: List<TimedLyricLine>,
+) {
+    val currentSection = activeSongSection(sections, positionMs)
+    val nextSection = sections.firstOrNull { it.atMs > positionMs }
+    val lyricIndex = activeLyricIndex(lyrics, positionMs)
+    val currentLyric = lyrics.getOrNull(lyricIndex)
+    val nextLyric = lyrics.getOrNull(lyricIndex + 1)
+    Surface(
+        color = Color(0xE8070C17),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Amber.copy(alpha = .3f)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
+    ) {
+        Column(Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("SONG TIMELINE", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    Text(currentSection?.name ?: nextSection?.let { "Next: ${it.name}" } ?: "Song Timeline", color = Amber, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                }
+                Text(formatPlaybackTime(positionMs), color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            currentLyric?.let { Text(it.text, color = Color.White, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+            nextLyric?.let { Text(it.text, color = TextSoft, fontSize = 13.sp, lineHeight = 17.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+            if (sections.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                sections.forEach { section ->
+                    val active = section == currentSection
+                    Surface(color = if (active) Amber.copy(alpha = .24f) else Color(0x14FFFFFF), shape = RoundedCornerShape(5.dp)) {
+                        Text(section.name, color = if (active) Amber else TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp))
+                    }
+                }
             }
         }
     }
@@ -6486,6 +6554,7 @@ private data class GigSong(
     val playbackAutoStartEligible: Boolean = false,
     val controlAssets: List<PerformanceControlAsset> = emptyList(),
     val performanceCues: List<PerformanceCue> = emptyList(),
+    val synchronizedLyrics: List<TimedLyricLine> = emptyList(),
     val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
@@ -6502,6 +6571,7 @@ private data class PerformanceCue(
     val id: String,
     val type: String,
     val atMs: Long,
+    val endMs: Long?,
     val label: String,
     val payload: JSONObject,
 )
