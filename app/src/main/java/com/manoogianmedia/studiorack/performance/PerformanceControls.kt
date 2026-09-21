@@ -34,6 +34,8 @@ data class PerformanceSettings(
     val nextKey: String = "ArrowRight",
     val metronomeKey: String = "ArrowUp",
     val muteKey: String = "ArrowDown",
+    val pedalButtonCount: Int = 4,
+    val pedalBindings: List<PedalBinding> = emptyList(),
     val showClock: Boolean = true,
     val showElapsed: Boolean = true,
     val showSetRemaining: Boolean = true,
@@ -52,6 +54,12 @@ data class PerformanceSettings(
         .put("gig_pedal_next_key", nextKey)
         .put("gig_pedal_metronome_key", metronomeKey)
         .put("gig_pedal_mute_key", muteKey)
+        .put("gig_pedal_button_count", pedalButtonCount.coerceIn(2, 6))
+        .put("gig_pedal_bindings", JSONArray().apply {
+            pedalBindings.forEach { binding ->
+                put(JSONObject().put("key", binding.key).put("action", binding.action.wireName))
+            }
+        })
         .put("gig_show_clock", if (showClock) 1 else 0)
         .put("gig_show_elapsed", if (showElapsed) 1 else 0)
         .put("gig_show_set_remaining", if (showSetRemaining) 1 else 0)
@@ -74,6 +82,16 @@ data class PerformanceSettings(
                 nextKey = json.optString("gig_pedal_next_key", "ArrowRight"),
                 metronomeKey = json.optString("gig_pedal_metronome_key", "ArrowUp"),
                 muteKey = json.optString("gig_pedal_mute_key", "ArrowDown"),
+                pedalButtonCount = json.optInt("gig_pedal_button_count", 4).let { if (it in setOf(2, 4, 6)) it else 4 },
+                pedalBindings = json.optJSONArray("gig_pedal_bindings")?.let { values ->
+                    (0 until values.length()).mapNotNull { index ->
+                        values.optJSONObject(index)?.let { binding ->
+                            val key = binding.optString("key")
+                            val action = PedalAction.fromWireName(binding.optString("action"))
+                            if (key.isBlank() || action == null) null else PedalBinding(key, action)
+                        }
+                    }
+                }.orEmpty(),
                 showClock = json.optInt("gig_show_clock", 1) == 1,
                 showElapsed = json.optInt("gig_show_elapsed", 1) == 1,
                 showSetRemaining = json.optInt("gig_show_set_remaining", 1) == 1,
@@ -85,16 +103,80 @@ data class PerformanceSettings(
     }
 }
 
-enum class PedalAction { PREVIOUS, NEXT, METRONOME, MUTE }
+data class PedalBinding(val key: String, val action: PedalAction)
+
+enum class PedalAction(val wireName: String, val label: String) {
+    IGNORE("ignore", "Ignore"),
+    PREVIOUS("previous_song", "Previous song"),
+    NEXT("next_song", "Next song"),
+    PREVIOUS_PAGE("previous_page", "Previous page"),
+    NEXT_PAGE("next_page", "Next page"),
+    SCROLL_UP("scroll_up", "Scroll up"),
+    SCROLL_DOWN("scroll_down", "Scroll down"),
+    TOGGLE_PLAYBACK("toggle_playback", "Toggle audio playback"),
+    TOGGLE_AUTOPLAY("toggle_autoplay", "Toggle audio autoplay"),
+    PLAY_PAUSE_AUDIO("play_pause_audio", "Play / pause current audio"),
+    STOP_AUDIO("stop_audio", "Stop current audio"),
+    METRONOME("toggle_metronome", "Metronome start / stop"),
+    MUTE("toggle_metronome_mute", "Metronome mute / unmute");
+
+    companion object {
+        fun fromWireName(value: String): PedalAction? = entries.firstOrNull { it.wireName == value }
+    }
+}
+
+fun PerformanceSettings.resolvedPedalBindings(): List<PedalBinding> {
+    val configured = pedalBindings.ifEmpty {
+        listOf(
+            PedalBinding(previousKey, PedalAction.PREVIOUS),
+            PedalBinding(nextKey, PedalAction.NEXT),
+            PedalBinding(metronomeKey, PedalAction.METRONOME),
+            PedalBinding(muteKey, PedalAction.MUTE),
+        )
+    }
+    val availableKeys = listOf("ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown")
+    return (0 until pedalButtonCount.coerceIn(2, 6)).map { index ->
+        configured.getOrNull(index) ?: PedalBinding(availableKeys[index], PedalAction.IGNORE)
+    }
+}
+
+fun PerformanceSettings.withPedalBinding(index: Int, binding: PedalBinding): PerformanceSettings {
+    val bindings = pedalBindings.ifEmpty {
+        listOf(
+            PedalBinding(previousKey, PedalAction.PREVIOUS),
+            PedalBinding(nextKey, PedalAction.NEXT),
+            PedalBinding(metronomeKey, PedalAction.METRONOME),
+            PedalBinding(muteKey, PedalAction.MUTE),
+        )
+    }.toMutableList()
+    val availableKeys = listOf("ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown")
+    while (bindings.size <= index && bindings.size < 6) {
+        bindings += PedalBinding(availableKeys[bindings.size], PedalAction.IGNORE)
+    }
+    if (index in bindings.indices) bindings[index] = binding
+    return copy(pedalBindings = bindings)
+}
 
 fun mappedPedalAction(keyCode: Int, settings: PerformanceSettings): PedalAction? {
-    val mappings = listOf(
-        settings.previousKey to PedalAction.PREVIOUS,
-        settings.nextKey to PedalAction.NEXT,
-        settings.metronomeKey to PedalAction.METRONOME,
-        settings.muteKey to PedalAction.MUTE,
-    )
-    val action = mappings.firstOrNull { keyCodeMatchesName(keyCode, it.first) }?.second ?: return null
+    val action = if (settings.pedalBindings.isEmpty()) {
+        when {
+            settings.pedalButtonCount >= 1 && keyCodeMatchesName(keyCode, settings.previousKey) -> PedalAction.PREVIOUS
+            settings.pedalButtonCount >= 2 && keyCodeMatchesName(keyCode, settings.nextKey) -> PedalAction.NEXT
+            settings.pedalButtonCount >= 3 && keyCodeMatchesName(keyCode, settings.metronomeKey) -> PedalAction.METRONOME
+            settings.pedalButtonCount >= 4 && keyCodeMatchesName(keyCode, settings.muteKey) -> PedalAction.MUTE
+            else -> null
+        }
+    } else {
+        var matched: PedalAction? = null
+        var index = 0
+        val limit = minOf(settings.pedalButtonCount, settings.pedalBindings.size)
+        while (index < limit && matched == null) {
+            val binding = settings.pedalBindings[index]
+            if (keyCodeMatchesName(keyCode, binding.key)) matched = binding.action
+            index += 1
+        }
+        matched
+    }?.takeUnless { it == PedalAction.IGNORE } ?: return null
     if (!settings.pedalReverse) return action
     return when (action) {
         PedalAction.PREVIOUS -> PedalAction.NEXT
@@ -113,6 +195,18 @@ internal fun keyCodeForName(name: String): Int = when (name) {
     "Space" -> KeyEvent.KEYCODE_SPACE
     "Enter" -> KeyEvent.KEYCODE_ENTER
     else -> KeyEvent.KEYCODE_UNKNOWN
+}
+
+fun pedalKeyName(keyCode: Int): String? = when (keyCode) {
+    KeyEvent.KEYCODE_DPAD_LEFT -> "ArrowLeft"
+    KeyEvent.KEYCODE_DPAD_RIGHT -> "ArrowRight"
+    KeyEvent.KEYCODE_DPAD_UP -> "ArrowUp"
+    KeyEvent.KEYCODE_DPAD_DOWN -> "ArrowDown"
+    KeyEvent.KEYCODE_PAGE_UP -> "PageUp"
+    KeyEvent.KEYCODE_PAGE_DOWN -> "PageDown"
+    KeyEvent.KEYCODE_SPACE -> "Space"
+    KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> "Enter"
+    else -> null
 }
 
 private fun keyCodeMatchesName(keyCode: Int, name: String): Boolean =

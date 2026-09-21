@@ -170,9 +170,13 @@ import com.manoogianmedia.studiorack.data.LocalLiveRole
 import com.manoogianmedia.studiorack.data.cacheImageFile
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
+import com.manoogianmedia.studiorack.performance.PedalBinding
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
 import com.manoogianmedia.studiorack.performance.isSupportedPedalKeyCode
+import com.manoogianmedia.studiorack.performance.pedalKeyName
+import com.manoogianmedia.studiorack.performance.resolvedPedalBindings
+import com.manoogianmedia.studiorack.performance.withPedalBinding
 import com.manoogianmedia.studiorack.R
 import com.manoogianmedia.studiorack.liveprotocol.LiveCommandType
 import com.manoogianmedia.studiorack.liveprotocol.LiveSnapshot
@@ -182,6 +186,7 @@ import com.manoogianmedia.studiorack.wear.WearCompanionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -218,6 +223,7 @@ fun StudioRackApp(
     hardwareKeys: Flow<Int>,
     notificationRoutes: Flow<NotificationRoute>,
     onGigModeActive: (Boolean) -> Unit,
+    onPedalCaptureActive: (Boolean) -> Unit,
 ) {
     val uiState by model.uiState.collectAsState()
     val context = LocalContext.current
@@ -248,7 +254,7 @@ fun StudioRackApp(
                 uiState.starting -> StudioRackSplash()
                 !uiState.signedIn -> LoginScreen(model, uiState)
                 selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys) { selectedEvent = null }
-                else -> MainShell(model, uiState, notificationRoutes) { selectedEvent = it }
+                else -> MainShell(model, uiState, notificationRoutes, hardwareKeys, onPedalCaptureActive) { selectedEvent = it }
             }
         }
     }
@@ -268,6 +274,8 @@ private fun MainShell(
     model: StudioRackViewModel,
     uiState: StudioRackUiState,
     notificationRoutes: Flow<NotificationRoute>,
+    hardwareKeys: Flow<Int>,
+    onPedalCaptureActive: (Boolean) -> Unit,
     openGig: (String) -> Unit,
 ) {
     var section by remember { mutableStateOf(AppSection.DASHBOARD) }
@@ -364,7 +372,7 @@ private fun MainShell(
                     AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
                     AppSection.EQUIPMENT -> EquipmentScreen(model)
                     AppSection.KITS -> KitsScreen(model)
-                    AppSection.SESSIONS -> SessionsScreen(model, openGig)
+                    AppSection.SESSIONS -> SessionsScreen(model, hardwareKeys, onPedalCaptureActive, openGig)
                     AppSection.LIBRARY -> LibraryScreen(model)
                     AppSection.MORE -> MoreScreen(model, uiState)
                 }
@@ -793,7 +801,12 @@ private fun KitsScreen(model: StudioRackViewModel) {
 }
 
 @Composable
-private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit) {
+private fun SessionsScreen(
+    model: StudioRackViewModel,
+    hardwareKeys: Flow<Int>,
+    onPedalCaptureActive: (Boolean) -> Unit,
+    openGig: (String) -> Unit,
+) {
     val events by model.events.collectAsState()
     val venues by model.venues.collectAsState()
     val contacts by model.contacts.collectAsState()
@@ -833,7 +846,7 @@ private fun SessionsScreen(model: StudioRackViewModel, openGig: (String) -> Unit
         }
         item { SessionChoiceStrip(sessionTab) { sessionTab = it } }
         if (sessionTab == "Leviathan Live") {
-            item { LeviathanLiveSettingsPanel(model) }
+            item { LeviathanLiveSettingsPanel(model, hardwareKeys, onPedalCaptureActive) }
         } else {
             item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
             item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = Color.White, fontWeight = FontWeight.Bold) } }
@@ -2921,13 +2934,30 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
 }
 
 @Composable
-private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
+private fun LeviathanLiveSettingsPanel(
+    model: StudioRackViewModel,
+    hardwareKeys: Flow<Int>,
+    onPedalCaptureActive: (Boolean) -> Unit,
+) {
     val state by model.syncState.collectAsState()
     val loadedSettings = remember(state?.performanceSettingsJson) {
         PerformanceSettings.fromJson(state?.performanceSettingsJson ?: "{}")
     }
     var settings by remember(state?.performanceSettingsJson) { mutableStateOf(loadedSettings) }
     var section by remember { mutableStateOf("Live Settings") }
+    var learningPedalButton by remember { mutableStateOf<Int?>(null) }
+    DisposableEffect(learningPedalButton) {
+        onPedalCaptureActive(learningPedalButton != null)
+        onDispose { onPedalCaptureActive(false) }
+    }
+    LaunchedEffect(learningPedalButton) {
+        val index = learningPedalButton ?: return@LaunchedEffect
+        val key = pedalKeyName(hardwareKeys.first()) ?: return@LaunchedEffect
+        val bindings = settings.resolvedPedalBindings().toMutableList()
+        val current = bindings.getOrElse(index) { PedalBinding(key, PedalAction.IGNORE) }
+        settings = settings.withPedalBinding(index, current.copy(key = key))
+        learningPedalButton = null
+    }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ChoiceStrip(listOf("Live Settings", "Performance Material", "Page Turner", "Wear OS"), section) { section = it }
         when (section) {
@@ -2969,10 +2999,28 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
                 LabeledChoice("Page scroll distance", listOf("Small", "Half", "Full"), settings.pedalScrollAmount.replaceFirstChar(Char::uppercase)) {
                     settings = settings.copy(pedalScrollAmount = it.lowercase())
                 }
-                PedalKeyChoice("Previous Song", settings.previousKey) { settings = settings.copy(previousKey = it) }
-                PedalKeyChoice("Next Song", settings.nextKey) { settings = settings.copy(nextKey = it) }
-                PedalKeyChoice("Metronome Start / Stop", settings.metronomeKey) { settings = settings.copy(metronomeKey = it) }
-                PedalKeyChoice("Metronome Mute / Unmute", settings.muteKey) { settings = settings.copy(muteKey = it) }
+                LabeledChoice("Pedal buttons", listOf("2", "4", "6"), settings.pedalButtonCount.toString()) { selected ->
+                    val count = selected.toInt()
+                    settings = settings.copy(pedalButtonCount = count)
+                    learningPedalButton = null
+                }
+                Text("Assign each physical button, or choose Ignore. Learn captures the code sent by the next pedal press.", color = TextSoft, fontSize = 12.sp, lineHeight = 17.sp)
+                val bindings = settings.resolvedPedalBindings()
+                bindings.forEachIndexed { index, binding ->
+                    PedalBindingEditor(
+                        index = index,
+                        binding = binding,
+                        learning = learningPedalButton == index,
+                        learn = { learningPedalButton = if (learningPedalButton == index) null else index },
+                        chooseAction = { action ->
+                            settings = settings.withPedalBinding(index, binding.copy(action = action))
+                        },
+                    )
+                }
+                val duplicates = bindings.filter { it.action != PedalAction.IGNORE }.groupBy(PedalBinding::key).filterValues { it.size > 1 }.keys
+                if (duplicates.isNotEmpty()) {
+                    Text("Assign a different pedal code to each active action: ${duplicates.joinToString { pedalKeyLabel(it) }}.", color = Color(0xFFFF8A80), fontSize = 12.sp)
+                }
             }
             else -> WearCompanionPanel()
         }
@@ -3134,8 +3182,8 @@ private fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boo
         Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        Text(label, color = Color.White, fontSize = 16.sp)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label, color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(start = 10.dp))
     }
 }
 
@@ -3148,20 +3196,46 @@ private fun LabeledChoice(label: String, options: List<String>, selected: String
 }
 
 @Composable
-private fun PedalKeyChoice(label: String, selected: String, choose: (String) -> Unit) {
-    val keys = linkedMapOf(
-        "Left" to "ArrowLeft",
-        "Right" to "ArrowRight",
-        "Up" to "ArrowUp",
-        "Down" to "ArrowDown",
-        "Page Up" to "PageUp",
-        "Page Down" to "PageDown",
-        "Space" to "Space",
-        "Enter" to "Enter",
-    )
-    LabeledChoice(label, keys.keys.toList(), keys.entries.firstOrNull { it.value == selected }?.key ?: "Left") {
-        choose(keys.getValue(it))
+private fun PedalBindingEditor(
+    index: Int,
+    binding: PedalBinding,
+    learning: Boolean,
+    learn: () -> Unit,
+    chooseAction: (PedalAction) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Surface(color = Color(0x0FFFFFFF), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, Color(0x24FFFFFF))) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Button ${index + 1}", color = Color.White, fontWeight = FontWeight.Black)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(pedalKeyLabel(binding.key), color = if (learning) Amber else Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                StudioButton(onClick = learn, kind = StudioButtonKind.Secondary) {
+                    Text(if (learning) "Cancel" else "Learn", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (learning) Text("Press this button on the pedal now.", color = Amber, fontSize = 12.sp)
+            Box(Modifier.fillMaxWidth()) {
+                StudioButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                    Text(binding.action.label, color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.background(PanelRaised)) {
+                    PedalAction.entries.forEach { action ->
+                        DropdownMenuItem(text = { Text(action.label) }, onClick = { chooseAction(action); expanded = false })
+                    }
+                }
+            }
+        }
     }
+}
+
+private fun pedalKeyLabel(value: String): String = when (value) {
+    "ArrowLeft" -> "Left"
+    "ArrowRight" -> "Right"
+    "ArrowUp" -> "Up"
+    "ArrowDown" -> "Down"
+    "PageUp" -> "Page Up"
+    "PageDown" -> "Page Down"
+    else -> value
 }
 
 @Composable
@@ -4913,6 +4987,7 @@ private fun GigModeScreen(
     var livePlaybackActive by remember(eventId, setListId) { mutableStateOf(configuredPlaybackMode != "off") }
     var liveAutoPlayActive by remember(eventId, setListId) { mutableStateOf(configuredPlaybackMode == "automatic") }
     var playbackAutoStartRequest by remember(eventId, setListId) { mutableIntStateOf(0) }
+    var pedalPerformanceCommand by remember(eventId) { mutableStateOf(PedalPerformanceCommand()) }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
     fun moveToSong(targetIndex: Int) {
         if (performanceSongs.isEmpty()) return
@@ -5040,11 +5115,21 @@ private fun GigModeScreen(
     }
 
     fun handlePedalKey(keyCode: Int) {
-        when (mappedPedalAction(keyCode, settings)) {
+        val action = mappedPedalAction(keyCode, settings)
+        when (action) {
             PedalAction.METRONOME -> metronome.toggle()
             PedalAction.MUTE -> metronome.toggleMuted()
+            PedalAction.TOGGLE_PLAYBACK -> livePlaybackActive = !livePlaybackActive
+            PedalAction.TOGGLE_AUTOPLAY -> liveAutoPlayActive = !liveAutoPlayActive
+            PedalAction.PREVIOUS_PAGE,
+            PedalAction.NEXT_PAGE,
+            PedalAction.SCROLL_UP,
+            PedalAction.SCROLL_DOWN,
+            PedalAction.PLAY_PAUSE_AUDIO,
+            PedalAction.STOP_AUDIO -> if (detailOpen) {
+                pedalPerformanceCommand = PedalPerformanceCommand(pedalPerformanceCommand.id + 1, action)
+            }
             PedalAction.PREVIOUS, PedalAction.NEXT -> {
-                val action = mappedPedalAction(keyCode, settings) ?: return
                 val direction = if (action == PedalAction.PREVIOUS) -1 else 1
                 if (!detailOpen && settings.pedalMode == "scroll") {
                     val fraction = when (settings.pedalScrollAmount) { "small" -> 0.2f; "full" -> 0.85f; else -> 0.5f }
@@ -5054,6 +5139,7 @@ private fun GigModeScreen(
                     if (!detailOpen) pedalScope.launch { listState.animateScrollToItem(gigListItemIndex(currentSong, performanceSongs)) }
                 }
             }
+            PedalAction.IGNORE -> Unit
             null -> Unit
         }
     }
@@ -5108,6 +5194,7 @@ private fun GigModeScreen(
             setAutoPlayActive = { liveAutoPlayActive = it },
             autoStartRequest = if (performanceSongs[currentSong].playbackAutoStartEligible) playbackAutoStartRequest else 0,
             autoAdvance = livePlaybackActive && setList?.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
+            pedalCommand = pedalPerformanceCommand,
             close = { detailOpen = false },
             previous = {
                 moveToSong(currentSong - 1)
@@ -5383,6 +5470,7 @@ private fun PerformanceSongScreen(
     setAutoPlayActive: (Boolean) -> Unit,
     autoStartRequest: Int,
     autoAdvance: Boolean,
+    pedalCommand: PedalPerformanceCommand,
     close: () -> Unit,
     previous: () -> Unit,
     next: () -> Unit,
@@ -5394,19 +5482,39 @@ private fun PerformanceSongScreen(
     val path = item.cache?.localPath.orEmpty()
     val attachmentVersion = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
     val isPdf = item.cache?.mimeType == "application/pdf" || path.endsWith(".pdf", true)
+    val screenScrollState = rememberScrollState()
     var page by remember(path) { mutableIntStateOf(0) }
     var rendered by remember(path, attachmentVersion, page) { mutableStateOf(cachedPerformanceAttachment(path, attachmentVersion, page) ?: AttachmentRender()) }
     LaunchedEffect(path, attachmentVersion, isPdf, page) {
         if (!rendered.complete) rendered = withContext(Dispatchers.IO) { loadPerformanceAttachment(path, attachmentVersion, isPdf, page) }
     }
     val pageCount = rendered.pageCount
+    val pedalScrollFraction = when (settings.pedalScrollAmount) {
+        "small" -> 0.2f
+        "full" -> 0.85f
+        else -> 0.5f
+    }
+    LaunchedEffect(pedalCommand.id) {
+        if (pedalCommand.id <= 0) return@LaunchedEffect
+        when (pedalCommand.action) {
+            PedalAction.PREVIOUS_PAGE -> page = (page - 1).coerceAtLeast(0)
+            PedalAction.NEXT_PAGE -> page = (page + 1).coerceAtMost((pageCount - 1).coerceAtLeast(0))
+            PedalAction.SCROLL_UP -> screenScrollState.animateScrollTo(
+                (screenScrollState.value - (screenScrollState.maxValue * pedalScrollFraction).toInt()).coerceAtLeast(0),
+            )
+            PedalAction.SCROLL_DOWN -> screenScrollState.animateScrollTo(
+                (screenScrollState.value + (screenScrollState.maxValue * pedalScrollFraction).toInt()).coerceAtMost(screenScrollState.maxValue),
+            )
+            else -> Unit
+        }
+    }
     Column(
         modifier
             .fillMaxSize()
             .background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B))))
             .statusBarsPadding()
             .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(screenScrollState)
             .padding(12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -5511,6 +5619,7 @@ private fun PerformanceSongScreen(
                 autoStartDelayMs = item.entry.optInt("pre_roll_ms").coerceIn(0, 60_000),
                 autoAdvance = autoAdvance,
                 onFinished = next,
+                pedalCommand = pedalCommand,
             )
         }
         if (item.attachment != null) {
@@ -5567,6 +5676,7 @@ private fun PerformanceAudioControls(
     autoStartDelayMs: Int,
     autoAdvance: Boolean,
     onFinished: () -> Unit,
+    pedalCommand: PedalPerformanceCommand,
 ) {
     val context = LocalContext.current
     val audio = item.playbackAudio ?: return
@@ -5593,6 +5703,22 @@ private fun PerformanceAudioControls(
             completed = false
             player.seekTo(trimStart)
             player.play()
+        }
+    }
+    LaunchedEffect(player, pedalCommand.id) {
+        if (!ready || pedalCommand.id <= 0) return@LaunchedEffect
+        when (pedalCommand.action) {
+            PedalAction.PLAY_PAUSE_AUDIO -> {
+                completed = false
+                if (player.currentPosition >= (trimEnd ?: Long.MAX_VALUE)) player.seekTo(trimStart)
+                if (player.isPlaying) player.pause() else player.play()
+            }
+            PedalAction.STOP_AUDIO -> {
+                player.pause()
+                player.seekTo(trimStart)
+                completed = false
+            }
+            else -> Unit
         }
     }
     DisposableEffect(player, autoAdvance) {
@@ -6093,6 +6219,11 @@ private data class GigSong(
     val performanceGroup: PerformanceGroup? = null,
     val performanceGroupPosition: Int = 0,
     val performanceGroupCount: Int = 0,
+)
+
+private data class PedalPerformanceCommand(
+    val id: Int = 0,
+    val action: PedalAction? = null,
 )
 private data class PacketReadiness(val ready: Int, val total: Int)
 private data class AttachmentRender(val bitmap: Bitmap? = null, val complete: Boolean = false, val pageCount: Int = 1)

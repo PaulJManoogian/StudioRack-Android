@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
     private val hardwareKeys = MutableSharedFlow<Int>(extraBufferCapacity = 8)
     private val notificationRoutes = MutableSharedFlow<NotificationRoute>(replay = 1, extraBufferCapacity = 1)
     private var gigModeActive = false
+    private var pedalCaptureActive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -31,7 +32,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             val repository = (application as StudioRackApplication).repository
             val model: StudioRackViewModel = viewModel(factory = StudioRackViewModelFactory(repository, (application as StudioRackApplication).localLive))
-            StudioRackApp(model, hardwareKeys, notificationRoutes) { gigModeActive = it }
+            StudioRackApp(
+                model,
+                hardwareKeys,
+                notificationRoutes,
+                onGigModeActive = { gigModeActive = it },
+                onPedalCaptureActive = { pedalCaptureActive = it },
+            )
         }
     }
 
@@ -52,7 +59,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (gigModeActive && isSupportedPedalKeyCode(event.keyCode)) {
+        if ((gigModeActive || pedalCaptureActive) && isSupportedPedalKeyCode(event.keyCode)) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 hardwareKeys.tryEmit(event.keyCode)
             }
