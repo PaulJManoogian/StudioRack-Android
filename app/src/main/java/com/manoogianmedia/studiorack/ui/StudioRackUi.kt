@@ -27,6 +27,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -123,6 +124,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.produceState
@@ -146,6 +148,8 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
@@ -208,6 +212,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 import java.time.temporal.ChronoUnit
 import java.util.Date
+import kotlin.math.roundToInt
 
 private val Ink = Color(0xFF07090F)
 private val Panel = Color(0xFF121621)
@@ -5002,7 +5007,11 @@ private fun GigModeScreen(
     var midiDestinations by remember(eventId) { mutableStateOf(midiRouter.destinations()) }
     var selectedMidiKey by remember(eventId) { mutableStateOf(midiRouter.selectedKey()) }
     var showControlArmed by remember(eventId) { mutableStateOf(false) }
-    var showMidiDestinations by remember(eventId) { mutableStateOf(false) }
+    var showLiveHardware by remember(eventId) { mutableStateOf(false) }
+    val audioPreferences = remember { context.getSharedPreferences(LIVE_AUDIO_PREFERENCES, Context.MODE_PRIVATE) }
+    var selectedAudioDeviceId by remember(eventId) { mutableIntStateOf(audioPreferences.getInt(LIVE_AUDIO_DEVICE_ID, -1)) }
+    var audioHardwareRevision by remember(eventId) { mutableIntStateOf(0) }
+    val liveAudioDevices = remember(showLiveHardware, audioHardwareRevision) { AudioDeviceCatalog.outputs(context) }
     val firedCueIds = remember(eventId) { mutableSetOf<String>() }
     var previousCuePositionMs by remember(eventId) { mutableLongStateOf(-1L) }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
@@ -5195,8 +5204,8 @@ private fun GigModeScreen(
 
     if (showLocalLive) LocalLiveDialog(model, event) { showLocalLive = false }
 
-    if (showMidiDestinations) {
-        Dialog(onDismissRequest = { showMidiDestinations = false }) {
+    if (showLiveHardware) {
+        Dialog(onDismissRequest = { showLiveHardware = false }) {
             Surface(
                 color = PanelRaised,
                 shape = RoundedCornerShape(8.dp),
@@ -5204,25 +5213,61 @@ private fun GigModeScreen(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("SHOW CONTROL", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                    Text("MIDI destination", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("LEVIATHAN LIVE", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text("Live Hardware", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("Audio Out", color = Cyan, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    StudioButton(
+                        onClick = {
+                            selectedAudioDeviceId = -1
+                            audioPreferences.edit().remove(LIVE_AUDIO_DEVICE_ID).apply()
+                            audioHardwareRevision += 1
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        kind = if (selectedAudioDeviceId < 0) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                    ) { Text("Automatic output", color = if (selectedAudioDeviceId < 0) Ink else Color.White, fontWeight = FontWeight.Bold) }
+                    liveAudioDevices.forEach { device ->
+                        StudioButton(
+                            onClick = {
+                                selectedAudioDeviceId = device.id
+                                audioPreferences.edit().putInt(LIVE_AUDIO_DEVICE_ID, device.id).apply()
+                                audioHardwareRevision += 1
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            kind = if (device.id == selectedAudioDeviceId) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                        ) {
+                            Text("${device.name}  |  ${device.maximumOutputChannels} outputs", color = if (device.id == selectedAudioDeviceId) Ink else Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Text("MIDI / DMX-MIDI Out", color = Cyan, fontSize = 16.sp, fontWeight = FontWeight.Black)
                     if (!midiRouter.supported) Text("MIDI output is not available on this device.", color = TextSoft)
                     else if (midiDestinations.isEmpty()) Text("Connect or pair a MIDI device, then refresh this list.", color = TextSoft)
+                    if (midiRouter.supported) StudioButton(
+                        onClick = {
+                            midiRouter.select(null)
+                            selectedMidiKey = ""
+                            showControlArmed = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        kind = if (selectedMidiKey.isBlank()) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                    ) { Text("No MIDI output", color = if (selectedMidiKey.isBlank()) Ink else Color.White, fontWeight = FontWeight.Bold) }
                     midiDestinations.forEach { destination ->
                         StudioButton(
                             onClick = {
                                 midiRouter.select(destination)
                                 selectedMidiKey = destination.key
                                 showControlArmed = true
-                                showMidiDestinations = false
                             },
                             modifier = Modifier.fillMaxWidth(),
                             kind = if (destination.key == selectedMidiKey) StudioButtonKind.Primary else StudioButtonKind.Secondary,
                         ) { Text(destination.label, color = if (destination.key == selectedMidiKey) Ink else Color.White, fontWeight = FontWeight.Bold) }
                     }
+                    if (selectedMidiKey.isNotBlank()) SettingToggle("Send timed MIDI / DMX-MIDI cues", showControlArmed) { showControlArmed = it }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { showMidiDestinations = false }) { Text("Cancel", color = TextSoft) }
-                        TextButton(onClick = { midiDestinations = midiRouter.destinations() }) { Text("Refresh", color = Amber) }
+                        TextButton(onClick = {
+                            midiDestinations = midiRouter.destinations()
+                            audioHardwareRevision += 1
+                        }) { Text("Refresh", color = TextSoft) }
+                        TextButton(onClick = { showLiveHardware = false }) { Text("Done", color = Amber) }
                     }
                 }
             }
@@ -5250,13 +5295,10 @@ private fun GigModeScreen(
             autoAdvance = livePlaybackActive && setList?.optInt("stop_between_songs", 1) == 0 && performanceSongs[currentSong].entry.optString("transition_mode") == "auto",
             pedalCommand = pedalPerformanceCommand,
             showControlArmed = showControlArmed,
-            onToggleShowControl = {
-                if (showControlArmed) showControlArmed = false
-                else {
-                    midiDestinations = midiRouter.destinations()
-                    val selected = midiDestinations.firstOrNull { it.key == selectedMidiKey }
-                    if (selected != null) showControlArmed = true else showMidiDestinations = true
-                }
+            audioHardwareRevision = audioHardwareRevision,
+            onOpenLiveHardware = {
+                midiDestinations = midiRouter.destinations()
+                showLiveHardware = true
             },
             onPlaybackPosition = { positionMs ->
                 if (positionMs + 250 < previousCuePositionMs) {
@@ -5571,7 +5613,8 @@ private fun PerformanceSongScreen(
     autoAdvance: Boolean,
     pedalCommand: PedalPerformanceCommand,
     showControlArmed: Boolean,
-    onToggleShowControl: () -> Unit,
+    audioHardwareRevision: Int,
+    onOpenLiveHardware: () -> Unit,
     onPlaybackPosition: (Long) -> Unit,
     close: () -> Unit,
     previous: () -> Unit,
@@ -5604,9 +5647,6 @@ private fun PerformanceSongScreen(
                 )
             }
             .sortedBy(TimedSongSection::atMs)
-    }
-    val showControlCues = remember(item.performanceCues) {
-        item.performanceCues.filter { it.type == "midi" || it.type == "dmx_midi" }
     }
     val activeTimelineSection = activeSongSection(songSections, timelinePositionMs)
     val timelineDurationMs = remember(item.entry.optString("id"), item.song, item.playbackAudio, item.playbackStems, songSections) {
@@ -5687,14 +5727,12 @@ private fun PerformanceSongScreen(
                         onClick = { setAutoPlayActive(!autoPlayActive) },
                         active = autoPlayActive,
                     )
-                    if (showControlCues.isNotEmpty()) {
-                        GigIconButton(
-                            Icons.Rounded.SettingsInputComponent,
-                            if (showControlArmed) "Disarm show control" else "Arm show control",
-                            onClick = onToggleShowControl,
-                            active = showControlArmed,
-                        )
-                    }
+                    GigIconButton(
+                        Icons.Rounded.SettingsInputComponent,
+                        "Choose live audio and MIDI hardware",
+                        onClick = onOpenLiveHardware,
+                        active = showControlArmed,
+                    )
                 }
                 PerformanceMetronomeControls(mediaLink, context, metronome)
             }
@@ -5794,6 +5832,7 @@ private fun PerformanceSongScreen(
                 },
                 seekRequestMs = requestedSectionPosition,
                 onSeekConsumed = { requestedSectionPosition = null },
+                audioHardwareRevision = audioHardwareRevision,
             )
         }
         if (item.attachment != null) {
@@ -5832,7 +5871,7 @@ private fun PerformanceSongScreen(
             Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {
                 val textMaterial = item.attachment?.takeIf { it.optString("source_type") == "text" }?.optString("content_text").orEmpty()
                 when {
-                    textMaterial.isNotBlank() -> ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs)
+                    textMaterial.isNotBlank() -> ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs, materialScrollState)
                     !rendered.complete -> CircularProgressIndicator()
                     renderedBitmap == null -> SongDetailFallback(item)
                     else -> Image(
@@ -5952,6 +5991,7 @@ private fun PerformanceAudioControls(
     onPositionChanged: (Long) -> Unit,
     seekRequestMs: Long? = null,
     onSeekConsumed: () -> Unit = {},
+    audioHardwareRevision: Int = 0,
 ) {
     val context = LocalContext.current
     val sources = remember(item.entry.optString("id"), item.playbackStems, item.playbackAudio, item.playbackCache) {
@@ -5981,9 +6021,9 @@ private fun PerformanceAudioControls(
     }
     val player = players.first()
     val audioPreferences = remember { context.getSharedPreferences(LIVE_AUDIO_PREFERENCES, Context.MODE_PRIVATE) }
-    var audioDeviceRefresh by remember(sourceKey) { mutableIntStateOf(0) }
-    val audioDevices = remember(sourceKey, audioDeviceRefresh) { AudioDeviceCatalog.outputs(context) }
-    var selectedAudioDeviceId by remember(sourceKey) {
+    var audioDeviceRefresh by remember(sourceKey, audioHardwareRevision) { mutableIntStateOf(0) }
+    val audioDevices = remember(sourceKey, audioHardwareRevision, audioDeviceRefresh) { AudioDeviceCatalog.outputs(context) }
+    var selectedAudioDeviceId by remember(sourceKey, audioHardwareRevision) {
         mutableIntStateOf(audioPreferences.getInt(LIVE_AUDIO_DEVICE_ID, -1))
     }
     val preferredDevice = remember(audioDevices, selectedAudioDeviceId) {
@@ -6351,10 +6391,16 @@ private fun chordProDisplayBlocks(source: String): List<ChordProDisplayBlock> {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChordProDocument(source: String, activeSection: TimedSongSection? = null, positionMs: Long = 0L) {
+private fun ChordProDocument(
+    source: String,
+    activeSection: TimedSongSection? = null,
+    positionMs: Long = 0L,
+    scrollState: ScrollState? = null,
+) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val tablet = maxWidth >= 600.dp
         val blocks = remember(source) { chordProDisplayBlocks(source) }
+        val sectionOffsets = remember(source) { mutableStateMapOf<Int, Int>() }
         Column(Modifier.fillMaxWidth().padding(horizontal = if (tablet) 34.dp else 12.dp, vertical = 18.dp)) {
             blocks.forEach { block ->
                 val requester = remember(block.sourceIndex, source) { BringIntoViewRequester() }
@@ -6362,8 +6408,23 @@ private fun ChordProDocument(source: String, activeSection: TimedSongSection? = 
                     (activeSection.sourceIndex != null && activeSection.sourceIndex == block.sourceIndex) ||
                         (activeSection.sourceIndex == null && activeSection.name.equals(block.name, true))
                     )
-                LaunchedEffect(active, positionMs > 0L) { if (active && positionMs > 0L) requester.bringIntoView() }
-                Column(Modifier.fillMaxWidth().bringIntoViewRequester(requester)) {
+                val sectionOffset = block.sourceIndex?.let(sectionOffsets::get)
+                LaunchedEffect(active, positionMs > 0L, sectionOffset) {
+                    if (active && positionMs > 0L) {
+                        if (scrollState != null && sectionOffset != null) {
+                            scrollState.animateScrollTo(sectionOffset.coerceIn(0, scrollState.maxValue))
+                        } else {
+                            requester.bringIntoView()
+                        }
+                    }
+                }
+                Column(
+                    Modifier.fillMaxWidth()
+                        .bringIntoViewRequester(requester)
+                        .onGloballyPositioned { coordinates ->
+                            block.sourceIndex?.let { sectionOffsets[it] = coordinates.positionInParent().y.roundToInt() }
+                        },
+                ) {
                     block.name?.let { name ->
                         Text(
                             name.uppercase(),
