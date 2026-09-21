@@ -170,13 +170,10 @@ import com.manoogianmedia.studiorack.data.LocalLiveRole
 import com.manoogianmedia.studiorack.data.cacheImageFile
 import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
-import com.manoogianmedia.studiorack.performance.PedalBinding
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
 import com.manoogianmedia.studiorack.performance.isSupportedPedalKeyCode
-import com.manoogianmedia.studiorack.performance.pedalKeyName
 import com.manoogianmedia.studiorack.performance.resolvedPedalBindings
-import com.manoogianmedia.studiorack.performance.withPedalBinding
 import com.manoogianmedia.studiorack.R
 import com.manoogianmedia.studiorack.liveprotocol.LiveCommandType
 import com.manoogianmedia.studiorack.liveprotocol.LiveSnapshot
@@ -186,7 +183,6 @@ import com.manoogianmedia.studiorack.wear.WearCompanionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -223,7 +219,6 @@ fun StudioRackApp(
     hardwareKeys: Flow<Int>,
     notificationRoutes: Flow<NotificationRoute>,
     onGigModeActive: (Boolean) -> Unit,
-    onPedalCaptureActive: (Boolean) -> Unit,
 ) {
     val uiState by model.uiState.collectAsState()
     val context = LocalContext.current
@@ -254,7 +249,7 @@ fun StudioRackApp(
                 uiState.starting -> StudioRackSplash()
                 !uiState.signedIn -> LoginScreen(model, uiState)
                 selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys) { selectedEvent = null }
-                else -> MainShell(model, uiState, notificationRoutes, hardwareKeys, onPedalCaptureActive) { selectedEvent = it }
+                else -> MainShell(model, uiState, notificationRoutes) { selectedEvent = it }
             }
         }
     }
@@ -274,8 +269,6 @@ private fun MainShell(
     model: StudioRackViewModel,
     uiState: StudioRackUiState,
     notificationRoutes: Flow<NotificationRoute>,
-    hardwareKeys: Flow<Int>,
-    onPedalCaptureActive: (Boolean) -> Unit,
     openGig: (String) -> Unit,
 ) {
     var section by remember { mutableStateOf(AppSection.DASHBOARD) }
@@ -372,7 +365,7 @@ private fun MainShell(
                     AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
                     AppSection.EQUIPMENT -> EquipmentScreen(model)
                     AppSection.KITS -> KitsScreen(model)
-                    AppSection.SESSIONS -> SessionsScreen(model, hardwareKeys, onPedalCaptureActive, openGig)
+                    AppSection.SESSIONS -> SessionsScreen(model, openGig)
                     AppSection.LIBRARY -> LibraryScreen(model)
                     AppSection.MORE -> MoreScreen(model, uiState)
                 }
@@ -803,8 +796,6 @@ private fun KitsScreen(model: StudioRackViewModel) {
 @Composable
 private fun SessionsScreen(
     model: StudioRackViewModel,
-    hardwareKeys: Flow<Int>,
-    onPedalCaptureActive: (Boolean) -> Unit,
     openGig: (String) -> Unit,
 ) {
     val events by model.events.collectAsState()
@@ -846,7 +837,7 @@ private fun SessionsScreen(
         }
         item { SessionChoiceStrip(sessionTab) { sessionTab = it } }
         if (sessionTab == "Leviathan Live") {
-            item { LeviathanLiveSettingsPanel(model, hardwareKeys, onPedalCaptureActive) }
+            item { LeviathanLiveSettingsPanel(model) }
         } else {
             item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
             item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = Color.White, fontWeight = FontWeight.Bold) } }
@@ -2934,30 +2925,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
 }
 
 @Composable
-private fun LeviathanLiveSettingsPanel(
-    model: StudioRackViewModel,
-    hardwareKeys: Flow<Int>,
-    onPedalCaptureActive: (Boolean) -> Unit,
-) {
+private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
+    val context = LocalContext.current
     val state by model.syncState.collectAsState()
     val loadedSettings = remember(state?.performanceSettingsJson) {
         PerformanceSettings.fromJson(state?.performanceSettingsJson ?: "{}")
     }
     var settings by remember(state?.performanceSettingsJson) { mutableStateOf(loadedSettings) }
     var section by remember { mutableStateOf("Live Settings") }
-    var learningPedalButton by remember { mutableStateOf<Int?>(null) }
-    DisposableEffect(learningPedalButton) {
-        onPedalCaptureActive(learningPedalButton != null)
-        onDispose { onPedalCaptureActive(false) }
-    }
-    LaunchedEffect(learningPedalButton) {
-        val index = learningPedalButton ?: return@LaunchedEffect
-        val key = pedalKeyName(hardwareKeys.first()) ?: return@LaunchedEffect
-        val bindings = settings.resolvedPedalBindings().toMutableList()
-        val current = bindings.getOrElse(index) { PedalBinding(key, PedalAction.IGNORE) }
-        settings = settings.withPedalBinding(index, current.copy(key = key))
-        learningPedalButton = null
-    }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ChoiceStrip(listOf("Live Settings", "Performance Material", "Page Turner", "Wear OS"), section) { section = it }
         when (section) {
@@ -2990,41 +2965,24 @@ private fun LeviathanLiveSettingsPanel(
             }
             "Page Turner" -> {
                 Text("Bluetooth Page Turner", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                Text("Supports keyboard-mode pedals including AirTurn and Donner devices.", color = TextSoft, fontSize = 13.sp)
-                SettingToggle("Enable pedal controls", settings.pedalEnabled) { settings = settings.copy(pedalEnabled = it) }
-                SettingToggle("Reverse previous and next", settings.pedalReverse) { settings = settings.copy(pedalReverse = it) }
-                LabeledChoice("Pedal mode", listOf("Hybrid", "Song", "Scroll"), settings.pedalMode.replaceFirstChar(Char::uppercase)) {
-                    settings = settings.copy(pedalMode = it.lowercase())
-                }
-                LabeledChoice("Page scroll distance", listOf("Small", "Half", "Full"), settings.pedalScrollAmount.replaceFirstChar(Char::uppercase)) {
-                    settings = settings.copy(pedalScrollAmount = it.lowercase())
-                }
-                LabeledChoice("Pedal buttons", listOf("2", "4", "6"), settings.pedalButtonCount.toString()) { selected ->
-                    val count = selected.toInt()
-                    settings = settings.copy(pedalButtonCount = count)
-                    learningPedalButton = null
-                }
-                Text("Assign each physical button, or choose Ignore. Learn captures the code sent by the next pedal press.", color = TextSoft, fontSize = 12.sp, lineHeight = 17.sp)
+                Text("This device uses the canonical page-turner configuration synchronized from the web application.", color = TextSoft, fontSize = 13.sp, lineHeight = 18.sp)
+                Text(if (settings.pedalEnabled) "Enabled" else "Disabled", color = if (settings.pedalEnabled) Color(0xFF58E99B) else TextSoft, fontWeight = FontWeight.Black)
+                Text("${settings.pedalButtonCount} buttons  |  ${settings.pedalMode.replaceFirstChar(Char::uppercase)} mode  |  ${settings.pedalScrollAmount.replaceFirstChar(Char::uppercase)} scroll", color = Color.White, fontSize = 14.sp)
                 val bindings = settings.resolvedPedalBindings()
                 bindings.forEachIndexed { index, binding ->
-                    PedalBindingEditor(
-                        index = index,
-                        binding = binding,
-                        learning = learningPedalButton == index,
-                        learn = { learningPedalButton = if (learningPedalButton == index) null else index },
-                        chooseAction = { action ->
-                            settings = settings.withPedalBinding(index, binding.copy(action = action))
-                        },
-                    )
+                    Text("Button ${index + 1}: ${pedalKeyLabel(binding.key)} - ${binding.action.label}", color = if (binding.action == PedalAction.IGNORE) TextSoft else Cyan, fontSize = 13.sp)
                 }
-                val duplicates = bindings.filter { it.action != PedalAction.IGNORE }.groupBy(PedalBinding::key).filterValues { it.size > 1 }.keys
-                if (duplicates.isNotEmpty()) {
-                    Text("Assign a different pedal code to each active action: ${duplicates.joinToString { pedalKeyLabel(it) }}.", color = Color(0xFFFF8A80), fontSize = 12.sp)
+                StudioButton(
+                    onClick = { openMediaLink(context, context.getString(R.string.public_base_url) + "/schedule/?tab=settings") },
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = StudioButtonKind.Secondary,
+                ) {
+                    Text("Manage Page Turner on Web", color = Color.White, fontWeight = FontWeight.Black)
                 }
             }
             else -> WearCompanionPanel()
         }
-        if (section != "Wear OS") {
+        if (section != "Wear OS" && section != "Page Turner") {
             StudioButton(onClick = { model.savePerformanceSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Save Leviathan Live Settings", color = Ink, fontWeight = FontWeight.Black)
             }
@@ -3192,39 +3150,6 @@ private fun LabeledChoice(label: String, options: List<String>, selected: String
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         ChoiceStrip(options, selected, choose)
-    }
-}
-
-@Composable
-private fun PedalBindingEditor(
-    index: Int,
-    binding: PedalBinding,
-    learning: Boolean,
-    learn: () -> Unit,
-    chooseAction: (PedalAction) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Surface(color = Color(0x0FFFFFFF), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, Color(0x24FFFFFF))) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Button ${index + 1}", color = Color.White, fontWeight = FontWeight.Black)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(pedalKeyLabel(binding.key), color = if (learning) Amber else Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                StudioButton(onClick = learn, kind = StudioButtonKind.Secondary) {
-                    Text(if (learning) "Cancel" else "Learn", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
-            if (learning) Text("Press this button on the pedal now.", color = Amber, fontSize = 12.sp)
-            Box(Modifier.fillMaxWidth()) {
-                StudioButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                    Text(binding.action.label, color = Color.White, fontWeight = FontWeight.Bold)
-                }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.background(PanelRaised)) {
-                    PedalAction.entries.forEach { action ->
-                        DropdownMenuItem(text = { Text(action.label) }, onClick = { chooseAction(action); expanded = false })
-                    }
-                }
-            }
-        }
     }
 }
 

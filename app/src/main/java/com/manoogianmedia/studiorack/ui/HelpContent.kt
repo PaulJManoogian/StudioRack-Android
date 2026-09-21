@@ -163,7 +163,7 @@ internal fun studioLeviathanHelpSections(
             HelpTopic("$liveName Settings", points = listOf(
                 "Performance Material controls preferred attachment types and priority.",
                 "Metronome controls autostart, mute state, tempo behavior, and sound.",
-                "Bluetooth Page Turner preserves the classic previous, next, metronome, and mute defaults. Choose a 2-, 4-, or 6-button layout, use Learn to capture each physical pedal code, and assign an action or Ignore.",
+                "Bluetooth Page Turner preserves the classic previous, next, metronome, and mute defaults. Configure the canonical 2-, 4-, or 6-button layout and learned actions in the web application; Android synchronizes and applies them locally in Leviathan Live.",
                 "Assignable actions include song and page navigation, manual scrolling, playback and autoplay toggles, current-audio play/pause or stop, and metronome controls. Pedal presses are handled locally without database or network work.",
                 "Clocks independently control wall time, elapsed performance time, and estimated set time remaining.",
             )),
