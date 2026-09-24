@@ -5700,7 +5700,8 @@ private fun PerformanceSongScreen(
     val context = LocalContext.current
     val nightMode = rememberDocumentNightMode()
     val phoneFormat = rememberLivePhoneFormat()
-    val tabletLayout = !phoneFormat.value
+    val narrowDevice = LocalConfiguration.current.screenWidthDp < 600
+    val compactPhoneLayout = narrowDevice || phoneFormat.value
     val mediaLink = normalizedMediaLink(item.song?.optString("media_ref").orEmpty())
     val path = item.cache?.localPath.orEmpty()
     val attachmentVersion = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
@@ -5800,22 +5801,67 @@ private fun PerformanceSongScreen(
             onToggleView = close,
         )
         Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            GigIconButton(Icons.Rounded.Close, "Return to set list", close)
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(item.sectionName, color = Color.White, fontSize = if (tabletLayout) 24.sp else 16.sp, fontWeight = FontWeight.Bold)
-                item.performanceGroup?.let { group -> Text("${group.type.replaceFirstChar(Char::uppercase)}: ${group.name}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = Amber, fontSize = if (tabletLayout) 16.sp else 10.sp, fontWeight = FontWeight.Black) }
-                Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = if (tabletLayout) 13.sp else 9.sp, fontWeight = FontWeight.Black)
+        if (compactPhoneLayout) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                GigIconButton(Icons.Rounded.NavigateBefore, "Previous song", previous, position > 0)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
+                        color = Amber,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 38.sp,
+                        lineHeight = 42.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                    )
+                    Text(
+                        item.song?.optString("artist").orEmpty(),
+                        color = TextSoft,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 22.sp,
+                        lineHeight = 25.sp,
+                        maxLines = 1,
+                    )
+                    Text(
+                        "${item.sectionName}  •  SONG ${position + 1} OF $total",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                    )
+                    Text(
+                        nextItem?.let { "NEXT: ${gigSongTitle(it)}" } ?: "END OF SET LIST",
+                        color = TextSoft,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                }
+                GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 7.dp).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GigIconButton(Icons.Rounded.Close, "Return to set list", close)
                 GigIconButton(
-                    if (phoneFormat.value) Icons.Rounded.TabletAndroid else Icons.Rounded.PhoneAndroid,
-                    if (phoneFormat.value) "Use standard format" else "Use phone format",
+                    Icons.Rounded.PhoneAndroid,
+                    "Phone layout is active",
                     onClick = {
-                        phoneFormat.value = !phoneFormat.value
-                        saveLivePhoneFormat(context, phoneFormat.value)
+                        if (narrowDevice) {
+                            Toast.makeText(context, "Phone layout is automatic on this screen.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            phoneFormat.value = false
+                            saveLivePhoneFormat(context, false)
+                        }
                     },
-                    active = phoneFormat.value,
+                    active = true,
                 )
                 GigIconButton(
                     if (nightMode.value) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
@@ -5869,24 +5915,89 @@ private fun PerformanceSongScreen(
                 }
                 PerformanceMetronomeControls(mediaLink, context, metronome)
             }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            GigIconButton(Icons.Rounded.NavigateBefore, "Previous song", previous, position > 0)
-            Column(Modifier.weight(1f)) {
-                if (nextItem != null) {
-                    Text("> ${gigSongTitle(nextItem)}", color = Color.White, fontSize = if (tabletLayout) 28.sp else 14.sp, lineHeight = if (tabletLayout) 32.sp else 17.sp, fontWeight = FontWeight.Black, maxLines = 2)
-                    val nextCue = gigSongCue(nextItem)
-                    if (nextCue.isNotBlank()) Text(nextCue, color = TextSoft, fontSize = if (tabletLayout) 27.sp else 11.sp, lineHeight = if (tabletLayout) 31.sp else 14.sp, maxLines = 2)
-                } else {
-                    Text("> END OF SET LIST", color = TextSoft, fontSize = if (tabletLayout) 26.sp else 12.sp, fontWeight = FontWeight.Black)
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                GigIconButton(Icons.Rounded.Close, "Return to set list", close)
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                    Text(item.sectionName, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    item.performanceGroup?.let { group -> Text("${group.type.replaceFirstChar(Char::uppercase)}: ${group.name}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = Amber, fontSize = 16.sp, fontWeight = FontWeight.Black) }
+                    Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 13.sp, fontWeight = FontWeight.Black)
                 }
-                previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = if (tabletLayout) 16.sp else 10.sp, maxLines = 2) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    GigIconButton(
+                        Icons.Rounded.PhoneAndroid,
+                        "Use phone format",
+                        onClick = {
+                            phoneFormat.value = true
+                            saveLivePhoneFormat(context, true)
+                        },
+                    )
+                    GigIconButton(
+                        if (nightMode.value) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                        if (nightMode.value) "Use light appearance" else "Use night appearance",
+                        onClick = {
+                            nightMode.value = !nightMode.value
+                            saveDocumentNightMode(context, nightMode.value)
+                        },
+                        active = nightMode.value,
+                    )
+                    if (showPlaybackTools) {
+                        GigIconButton(
+                            if (playbackActive) Icons.Rounded.PlayArrow else Icons.Rounded.PlayDisabled,
+                            if (playbackActive) "Disable performance audio" else "Enable performance audio",
+                            onClick = {
+                                val enabled = !playbackActive
+                                setPlaybackActive(enabled)
+                                val unavailable = item.playbackAudio == null && item.playbackStems.isEmpty()
+                                Toast.makeText(
+                                    context,
+                                    when {
+                                        !enabled -> "Performance audio disabled."
+                                        unavailable -> "Performance audio enabled. This song has no playback track."
+                                        else -> "Performance audio enabled."
+                                    },
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                            active = playbackActive,
+                        )
+                        GigIconButton(
+                            Icons.Rounded.PlaylistPlay,
+                            if (autoPlayActive) "Disable audio autoplay" else "Enable audio autoplay",
+                            onClick = {
+                                val enabled = !autoPlayActive
+                                setAutoPlayActive(enabled)
+                                Toast.makeText(
+                                    context,
+                                    if (enabled) "Autoplay armed for eligible tracks after the first song." else "Audio autoplay disarmed.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                            active = autoPlayActive,
+                        )
+                        GigIconButton(Icons.Rounded.SettingsInputComponent, "Choose live audio and MIDI hardware", onClick = onOpenLiveHardware, active = showControlArmed)
+                    }
+                    PerformanceMetronomeControls(mediaLink, context, metronome)
+                }
             }
-            GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                GigIconButton(Icons.Rounded.NavigateBefore, "Previous song", previous, position > 0)
+                Column(Modifier.weight(1f)) {
+                    if (nextItem != null) {
+                        Text("> ${gigSongTitle(nextItem)}", color = Color.White, fontSize = 28.sp, lineHeight = 32.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                        val nextCue = gigSongCue(nextItem)
+                        if (nextCue.isNotBlank()) Text(nextCue, color = TextSoft, fontSize = 27.sp, lineHeight = 31.sp, maxLines = 2)
+                    } else {
+                        Text("> END OF SET LIST", color = TextSoft, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                    }
+                    previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = 16.sp, maxLines = 2) }
+                }
+                GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
+            }
         }
         if (item.playbackAudio == null && (songSections.isNotEmpty() || item.synchronizedLyrics.isNotEmpty())) {
             TimedSongGuideControls(
@@ -5934,18 +6045,20 @@ private fun PerformanceSongScreen(
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
             GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, item.sectionName)
         }
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val tablet = maxWidth >= 600.dp
-            Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
-                    color = Amber,
-                    fontFamily = FontFamily.Serif,
-                    fontSize = if (tablet) 56.sp else 38.sp,
-                    lineHeight = if (tablet) 62.sp else 44.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-                Text(item.song?.optString("artist").orEmpty(), color = TextSoft, fontFamily = FontFamily.Serif, fontSize = if (tablet) 28.sp else 23.sp)
+        if (!compactPhoneLayout) {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val tablet = maxWidth >= 600.dp
+                Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
+                        color = Amber,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = if (tablet) 56.sp else 38.sp,
+                        lineHeight = if (tablet) 62.sp else 44.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    Text(item.song?.optString("artist").orEmpty(), color = TextSoft, fontFamily = FontFamily.Serif, fontSize = if (tablet) 28.sp else 23.sp)
+                }
             }
         }
         Box(
