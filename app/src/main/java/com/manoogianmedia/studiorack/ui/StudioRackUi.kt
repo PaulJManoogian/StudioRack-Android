@@ -5365,14 +5365,12 @@ private fun GigModeScreen(
                 updating = liveUpdating,
                 liveLabel = performanceLiveLabel,
                 localLiveActive = localForEvent,
-                listActive = true,
-                chartActive = false,
+                chartView = false,
                 canEdit = setListRecord != null,
                 onBack = back,
                 onLocalLive = { showLocalLive = true },
                 onEdit = { editingLiveSet = true },
-                onList = {},
-                onChart = { if (performanceSongs.isNotEmpty()) detailOpen = true },
+                onToggleView = { if (performanceSongs.isNotEmpty()) detailOpen = true },
             )
         }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
@@ -5447,14 +5445,12 @@ private fun LeviathanLivePerformanceHeader(
     updating: Boolean,
     liveLabel: String?,
     localLiveActive: Boolean,
-    listActive: Boolean,
-    chartActive: Boolean,
+    chartView: Boolean,
     canEdit: Boolean,
     onBack: () -> Unit,
     onLocalLive: () -> Unit,
     onEdit: () -> Unit,
-    onList: () -> Unit,
-    onChart: () -> Unit,
+    onToggleView: () -> Unit,
 ) {
     Surface(
         color = Color(0xF207090F),
@@ -5499,9 +5495,12 @@ private fun LeviathanLivePerformanceHeader(
                     Spacer(Modifier.width(7.dp))
                     GigIconButton(Icons.Rounded.Edit, "Edit live set list", onClick = onEdit, enabled = canEdit)
                     Spacer(Modifier.width(7.dp))
-                    GigIconButton(Icons.Rounded.ListIcon, "List view", onClick = onList, active = listActive)
-                    Spacer(Modifier.width(7.dp))
-                    GigIconButton(Icons.Rounded.Description, "Chart view", onClick = onChart, active = chartActive)
+                    GigIconButton(
+                        if (chartView) Icons.Rounded.ListIcon else Icons.Rounded.Description,
+                        if (chartView) "Switch to list view" else "Switch to chart view",
+                        onClick = onToggleView,
+                        active = true,
+                    )
                 }
             }
         }
@@ -5541,6 +5540,7 @@ private fun LiveUpdatingLight() {
 @Composable
 private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject?, cached: CachedAttachment?, displayPosition: Int, grouped: Boolean, hasPlayback: Boolean = false, controlAssets: List<PerformanceControlAsset> = emptyList(), modifier: Modifier = Modifier, openAttachment: () -> Unit) {
     val context = LocalContext.current
+    val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
     val availableOffline = cached?.status == "ready" && cached.localPath != null
     val mediaLink = normalizedMediaLink(song?.optString("media_ref").orEmpty())
     Card(
@@ -5552,16 +5552,18 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val compact = maxWidth < 650.dp
+                val rowNumberSize = if (compact) 18.sp else 22.sp
+                val titleSize = if (compact) 27.sp else 32.sp
                 Column {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(displayPosition.toString(), color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
-                        Text(song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.optString("manual_title", "Untitled"), color = Amber, fontFamily = FontFamily.Serif, fontSize = 27.sp, modifier = Modifier.weight(1f))
+                        Text(displayPosition.toString(), color = Color.White, fontSize = rowNumberSize, modifier = Modifier.padding(end = 12.dp))
+                        Text(song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.optString("manual_title", "Untitled"), color = Amber, fontFamily = FontFamily.Serif, fontSize = titleSize, modifier = Modifier.weight(1f))
                         if (!compact) GigSongCues(song, compact = false)
                     }
                     if (compact) GigSongCues(song, compact = true)
                 }
             }
-            Text(song?.optString("artist").orEmpty(), color = TextSoft, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
+            Text(song?.optString("artist").orEmpty(), color = TextSoft, fontSize = if (tabletLayout) 17.sp else 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
             val patch = listOf(song?.optString("patch_name"), song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
             if (patch.isNotBlank()) Text("Patch: $patch", color = TextSoft, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
             if (attachment != null || mediaLink != null || hasPlayback || controlAssets.isNotEmpty()) {
@@ -5608,13 +5610,15 @@ private fun LiveAssetBadge(label: String, onClick: () -> Unit, enabled: Boolean 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GigSongCues(song: JSONObject?, compact: Boolean) {
+    val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
+    val cueSize = if (tabletLayout) 15.sp else 12.sp
     val cues = listOf(song?.optString("starts_by"), song?.optString("style")).filterNotNull().filter(String::isNotBlank)
     val facts = listOf(displaySongKey(song?.optString("song_key").orEmpty()), song?.optString("tempo"), song?.optString("time_signature"), formatDuration(song?.optInt("duration_seconds") ?: 0)).filterNotNull().filter(String::isNotBlank)
     if (compact) {
         Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.End) {
             if (cues.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    cues.forEach { Text(it, color = Color.White, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
+                    cues.forEach { Text(it, color = Color.White, fontSize = cueSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
                 }
             }
             FlowRow(
@@ -5627,7 +5631,7 @@ private fun GigSongCues(song: JSONObject?, compact: Boolean) {
         }
     } else {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            cues.forEach { Text(it, color = Color.White, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
+            cues.forEach { Text(it, color = Color.White, fontSize = cueSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
             facts.forEach { GigValueChip(it) }
         }
     }
@@ -5805,14 +5809,12 @@ private fun PerformanceSongScreen(
             updating = liveUpdating,
             liveLabel = liveLabel,
             localLiveActive = liveLabel == "LOCAL HOST" || liveLabel == "LOCAL LIVE",
-            listActive = false,
-            chartActive = true,
+            chartView = true,
             canEdit = canEditLiveSet,
             onBack = onBackToSchedule,
             onLocalLive = onOpenLocalLive,
             onEdit = onEditLiveSet,
-            onList = close,
-            onChart = {},
+            onToggleView = close,
         )
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -6845,8 +6847,9 @@ private fun GigIconButton(
 
 @Composable
 private fun GigValueChip(value: String) {
+    val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
     Surface(color = Amber.copy(alpha = 0.13f), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0x2FFFFFFF))) {
-        Text(value, color = Color.White, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+        Text(value, color = Color.White, fontSize = if (tabletLayout) 16.sp else 14.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
     }
 }
 
