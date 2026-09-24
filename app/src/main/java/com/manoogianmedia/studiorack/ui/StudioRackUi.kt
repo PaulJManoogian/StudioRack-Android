@@ -4891,6 +4891,12 @@ private fun GigModeScreen(
     val setListId = event.optString("set_list_id")
     val setListRecord = remember(setLists, setListId) { setLists.firstOrNull { it.entityId == setListId } }
     val setList = remember(setListRecord) { setListRecord?.let(::recordJson) }
+    val performanceSetListName = setList?.optString("name")?.ifBlank { null } ?: event.optString("title", "Set List")
+    val venueName = remember(venues, event) {
+        venues.firstOrNull { it.entityId == event.optString("venue_id") }?.let { recordJson(it).optString("name") }.orEmpty()
+    }
+    val performanceLocation = listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - ").ifBlank { "Not set" }
+    val performanceDateTime = listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString("  ").ifBlank { "Not set" }
     val songMap = remember(songs) { songs.associate { it.entityId to recordJson(it) } }
     val sectionRows = remember(sections, setListId) { sections.map(::recordJson).filter { it.optString("set_list_id") == setListId }.sortedBy { it.optInt("position") } }
     val entryRows = remember(entries, setListId) { entries.map(::recordJson).filter { it.optString("set_list_id") == setListId }.groupBy { it.optString("section_id") } }
@@ -5020,6 +5026,13 @@ private fun GigModeScreen(
     val firedCueIds = remember(eventId) { mutableSetOf<String>() }
     var previousCuePositionMs by remember(eventId) { mutableLongStateOf(-1L) }
     val gigStartedAt = remember(eventId) { System.currentTimeMillis() }
+    val localForEvent = localLive.role != LocalLiveRole.NONE && localLive.eventId == eventId
+    val performanceLiveConnected = liveConnected || (localForEvent && localLive.connected)
+    val performanceLiveLabel = when {
+        localForEvent && localLive.role == LocalLiveRole.HOST -> "LOCAL HOST"
+        localForEvent && localLive.connected -> "LOCAL LIVE"
+        else -> null
+    }
     fun moveToSong(targetIndex: Int) {
         if (performanceSongs.isEmpty()) return
         val target = targetIndex.coerceIn(0, performanceSongs.lastIndex)
@@ -5305,6 +5318,16 @@ private fun GigModeScreen(
                 midiDestinations = midiRouter.destinations()
                 showLiveHardware = true
             },
+            setListName = performanceSetListName,
+            locationLabel = performanceLocation,
+            dateTimeLabel = performanceDateTime,
+            liveConnected = performanceLiveConnected,
+            liveUpdating = liveUpdating,
+            liveLabel = performanceLiveLabel,
+            onBackToSchedule = back,
+            onOpenLocalLive = { showLocalLive = true },
+            onEditLiveSet = { editingLiveSet = true },
+            canEditLiveSet = setListRecord != null,
             onPlaybackPosition = { positionMs ->
                 if (positionMs + 250 < previousCuePositionMs) {
                     firedCueIds.clear()
@@ -5329,46 +5352,28 @@ private fun GigModeScreen(
         return
     }
     LazyColumn(
-        pedalInputModifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B)))).statusBarsPadding().navigationBarsPadding().padding(horizontal = 14.dp),
+        pedalInputModifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF080B12), Ink, Color(0xFF07131B)))).statusBarsPadding().navigationBarsPadding().padding(horizontal = 14.dp),
         state = listState,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
-            Surface(color = Color(0xF207090F), shape = RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp), border = BorderStroke(1.dp, Color(0x2EFF9D1E))) {
-                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    GigIconButton(Icons.Rounded.ArrowBack, "Back to upcoming schedule", back)
-                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text("SET LIST", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                        Text(setList?.optString("name")?.ifBlank { null } ?: event.optString("title", "Set List"), color = Color.White, fontFamily = FontFamily.Serif, fontSize = 22.sp, maxLines = 1)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        val venueName = venues.firstOrNull { it.entityId == event.optString("venue_id") }?.let { recordJson(it).optString("name") }.orEmpty()
-                        Text(listOf(venueName, event.optString("location")).filter(String::isNotBlank).joinToString(" - "), color = TextSoft, fontSize = 11.sp, maxLines = 1)
-                        Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString("  "), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        val localForEvent = localLive.role != LocalLiveRole.NONE && localLive.eventId == eventId
-                        LiveConnectionStatus(
-                            connected = liveConnected || (localForEvent && localLive.connected),
-                            updating = liveUpdating,
-                            label = when {
-                                localForEvent && localLive.role == LocalLiveRole.HOST -> "LOCAL HOST"
-                                localForEvent && localLive.connected -> "LOCAL LIVE"
-                                else -> null
-                            },
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                GigIconButton(Icons.Rounded.WifiTethering, "Local live network", onClick = { showLocalLive = true }, active = localLive.role != LocalLiveRole.NONE && localLive.eventId == eventId)
-                Spacer(Modifier.width(7.dp))
-                GigIconButton(Icons.Rounded.Edit, "Edit live set list", onClick = { editingLiveSet = true }, enabled = setListRecord != null)
-                Spacer(Modifier.width(7.dp))
-                GigIconButton(Icons.Rounded.ListIcon, "List view", onClick = {}, active = true)
-                Spacer(Modifier.width(7.dp))
-                GigIconButton(Icons.Rounded.Description, "Chart view", onClick = { if (performanceSongs.isNotEmpty()) detailOpen = true })
-            }
+            LeviathanLivePerformanceHeader(
+                setListName = performanceSetListName,
+                locationLabel = performanceLocation,
+                dateTimeLabel = performanceDateTime,
+                connected = performanceLiveConnected,
+                updating = liveUpdating,
+                liveLabel = performanceLiveLabel,
+                localLiveActive = localForEvent,
+                listActive = true,
+                chartActive = false,
+                canEdit = setListRecord != null,
+                onBack = back,
+                onLocalLive = { showLocalLive = true },
+                onEdit = { editingLiveSet = true },
+                onList = {},
+                onChart = { if (performanceSongs.isNotEmpty()) detailOpen = true },
+            )
         }
         if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
             item { GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, activeGigSong?.sectionName.orEmpty()) }
@@ -5430,6 +5435,76 @@ private fun LiveConnectionStatus(connected: Boolean, updating: Boolean, label: S
             fontSize = 8.sp,
             fontWeight = FontWeight.Black,
         )
+    }
+}
+
+@Composable
+private fun LeviathanLivePerformanceHeader(
+    setListName: String,
+    locationLabel: String,
+    dateTimeLabel: String,
+    connected: Boolean,
+    updating: Boolean,
+    liveLabel: String?,
+    localLiveActive: Boolean,
+    listActive: Boolean,
+    chartActive: Boolean,
+    canEdit: Boolean,
+    onBack: () -> Unit,
+    onLocalLive: () -> Unit,
+    onEdit: () -> Unit,
+    onList: () -> Unit,
+    onChart: () -> Unit,
+) {
+    Surface(
+        color = Color(0xF207090F),
+        shape = RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp),
+        border = BorderStroke(1.dp, Color(0x2EFF9D1E)),
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(10.dp)) {
+            val compact = maxWidth < 760.dp
+            Column(verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 0.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    GigIconButton(Icons.Rounded.ArrowBack, "Back to upcoming schedule", onBack)
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text("SET LIST", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        Text(setListName, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 22.sp, maxLines = 1)
+                    }
+                    if (!compact) {
+                        Column(Modifier.weight(0.75f).padding(horizontal = 10.dp)) {
+                            Text("LOCATION", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                            Text(locationLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                        Column(Modifier.weight(0.75f).padding(horizontal = 10.dp)) {
+                            Text("DATE & TIME", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                            Text(dateTimeLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                    }
+                    LiveConnectionStatus(connected = connected, updating = updating, label = liveLabel)
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (compact) {
+                        Column(Modifier.weight(1f)) {
+                            Text(locationLabel, color = TextSoft, fontSize = 10.sp, maxLines = 1)
+                            Text(dateTimeLabel, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    GigIconButton(Icons.Rounded.WifiTethering, "Local live network", onClick = onLocalLive, active = localLiveActive)
+                    Spacer(Modifier.width(7.dp))
+                    GigIconButton(Icons.Rounded.Edit, "Edit live set list", onClick = onEdit, enabled = canEdit)
+                    Spacer(Modifier.width(7.dp))
+                    GigIconButton(Icons.Rounded.ListIcon, "List view", onClick = onList, active = listActive)
+                    Spacer(Modifier.width(7.dp))
+                    GigIconButton(Icons.Rounded.Description, "Chart view", onClick = onChart, active = chartActive)
+                }
+            }
+        }
     }
 }
 
@@ -5620,6 +5695,16 @@ private fun PerformanceSongScreen(
     showControlArmed: Boolean,
     audioHardwareRevision: Int,
     onOpenLiveHardware: () -> Unit,
+    setListName: String,
+    locationLabel: String,
+    dateTimeLabel: String,
+    liveConnected: Boolean,
+    liveUpdating: Boolean,
+    liveLabel: String?,
+    onBackToSchedule: () -> Unit,
+    onOpenLocalLive: () -> Unit,
+    onEditLiveSet: () -> Unit,
+    canEditLiveSet: Boolean,
     onPlaybackPosition: (Long) -> Unit,
     close: () -> Unit,
     previous: () -> Unit,
@@ -5707,11 +5792,29 @@ private fun PerformanceSongScreen(
     Column(
         modifier
             .fillMaxSize()
-            .background(Brush.linearGradient(listOf(Color(0xFF120D08), Ink, Color(0xFF07131B))))
+            .background(Brush.linearGradient(listOf(Color(0xFF080B12), Ink, Color(0xFF07131B))))
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(12.dp)
     ) {
+        LeviathanLivePerformanceHeader(
+            setListName = setListName,
+            locationLabel = locationLabel,
+            dateTimeLabel = dateTimeLabel,
+            connected = liveConnected,
+            updating = liveUpdating,
+            liveLabel = liveLabel,
+            localLiveActive = liveLabel == "LOCAL HOST" || liveLabel == "LOCAL LIVE",
+            listActive = false,
+            chartActive = true,
+            canEdit = canEditLiveSet,
+            onBack = onBackToSchedule,
+            onLocalLive = onOpenLocalLive,
+            onEdit = onEditLiveSet,
+            onList = close,
+            onChart = {},
+        )
+        Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             GigIconButton(Icons.Rounded.Close, "Return to set list", close)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
