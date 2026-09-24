@@ -14,6 +14,7 @@ data class LiveAudioDevice(
     val encodings: List<Int>,
 ) {
     val maximumOutputChannels: Int get() = outputChannelCounts.maxOrNull()?.coerceAtLeast(2) ?: 2
+    val routingPreferenceKey: String get() = "$kind|$name|$maximumOutputChannels"
 }
 
 data class CompatibleRoutingProfile(
@@ -46,10 +47,18 @@ object AudioDeviceCatalog {
     }
 
     fun compatibleProfile(device: LiveAudioDevice, profiles: List<JSONObject>): CompatibleRoutingProfile? {
-        return compatibleProfileForChannels(device.maximumOutputChannels, profiles)
+        return compatibleProfiles(device, profiles).firstOrNull()
+    }
+
+    fun compatibleProfiles(device: LiveAudioDevice, profiles: List<JSONObject>): List<CompatibleRoutingProfile> {
+        return compatibleProfilesForChannels(device.maximumOutputChannels, profiles)
     }
 
     fun compatibleProfileForChannels(availableChannels: Int, profiles: List<JSONObject>): CompatibleRoutingProfile? {
+        return compatibleProfilesForChannels(availableChannels, profiles).firstOrNull()
+    }
+
+    fun compatibleProfilesForChannels(availableChannels: Int, profiles: List<JSONObject>): List<CompatibleRoutingProfile> {
         val available = availableChannels.coerceAtLeast(2)
         val candidates = profiles.mapNotNull { profile ->
             val count = profile.optInt("output_channel_count", 2).coerceAtLeast(2)
@@ -64,7 +73,7 @@ object AudioDeviceCatalog {
             compareByDescending<Pair<CompatibleRoutingProfile, Boolean>> { it.first.exactMatch }
                 .thenByDescending { it.second }
                 .thenByDescending { it.first.outputChannelCount }
-        ).firstOrNull()?.first
+        ).map { it.first }
     }
 
     private fun typeName(type: Int): String = when (type) {

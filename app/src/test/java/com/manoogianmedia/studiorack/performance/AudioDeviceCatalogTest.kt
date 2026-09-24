@@ -34,4 +34,19 @@ class AudioDeviceCatalogTest {
         assertEquals("eighteen", result.id)
         assertTrue(result.exactMatch)
     }
+
+    @Test
+    fun returnsEveryCompatibleProfileInBestFirstOrder() {
+        val profiles = listOf(
+            JSONObject().put("id", "stereo").put("output_channel_count", 2),
+            JSONObject().put("id", "eight").put("output_channel_count", 8),
+            JSONObject().put("id", "four").put("output_channel_count", 4),
+            JSONObject().put("id", "eighteen").put("output_channel_count", 18),
+        )
+
+        val result = AudioDeviceCatalog.compatibleProfilesForChannels(8, profiles)
+
+        assertEquals(listOf("eight", "four", "stereo"), result.map { it.id })
+        assertTrue(result.first().exactMatch)
+    }
 }

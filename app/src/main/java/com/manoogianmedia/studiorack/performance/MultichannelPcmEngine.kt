@@ -138,10 +138,10 @@ class MultichannelPcmEngine private constructor(
         }
 
         fun mix(masterFrame: Long, frames: Int, mix: FloatArray, outputChannels: Int): Boolean {
-            if (route.muted) return false
             seek(masterFrame)
             val readFrames = wav.readFrames(input, frames)
             if (readFrames <= 0) return false
+            if (route.muted) return true
             val gain = 10.0.pow(route.gainDb.toDouble() / 20.0).toFloat()
             val start = (route.outputStartChannel - 1).coerceIn(0, outputChannels - 1)
             val width = route.outputChannelCount.coerceIn(1, outputChannels - start)
