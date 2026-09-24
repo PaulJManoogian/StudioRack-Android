@@ -113,8 +113,6 @@ import androidx.compose.material.icons.rounded.SettingsInputComponent
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.TabletAndroid
-import androidx.compose.material.icons.rounded.VolumeOff
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.animation.core.animateFloat
@@ -6686,13 +6684,13 @@ private fun PerformanceMetronomeControls(mediaLink: String?, context: Context, m
     val state by metronome.state.collectAsState()
     mediaLink?.let { link -> GigIconButton(Icons.Rounded.Headphones, "Listen", onClick = { openMediaLink(context, link) }) }
     GigIconButton(
-        if (state.running) Icons.Rounded.Pause else Icons.Rounded.MusicNote,
+        MetronomeIcons.Standard,
         if (state.running) "Stop metronome" else "Start metronome",
         metronome::toggle,
         active = state.running,
     )
     GigIconButton(
-        if (state.muted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+        if (state.muted) MetronomeIcons.Muted else MetronomeIcons.Sound,
         if (state.muted) "Unmute metronome" else "Mute metronome",
         metronome::toggleMuted,
         active = state.muted,
