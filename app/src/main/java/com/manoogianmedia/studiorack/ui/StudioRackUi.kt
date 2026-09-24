@@ -5457,52 +5457,35 @@ private fun LeviathanLivePerformanceHeader(
         shape = RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp),
         border = BorderStroke(1.dp, Color(0x2EFF9D1E)),
     ) {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(10.dp)) {
-            val compact = maxWidth < 760.dp
-            Column(verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 0.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    GigIconButton(Icons.Rounded.ArrowBack, "Back to upcoming schedule", onBack)
-                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text("SET LIST", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                        Text(setListName, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 22.sp, maxLines = 1)
-                    }
-                    if (!compact) {
-                        Column(Modifier.weight(0.75f).padding(horizontal = 10.dp)) {
-                            Text("LOCATION", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                            Text(locationLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        }
-                        Column(Modifier.weight(0.75f).padding(horizontal = 10.dp)) {
-                            Text("DATE & TIME", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                            Text(dateTimeLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        }
-                    }
-                    LiveConnectionStatus(connected = connected, updating = updating, label = liveLabel)
-                }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (compact) {
-                        Column(Modifier.weight(1f)) {
-                            Text(locationLabel, color = TextSoft, fontSize = 10.sp, maxLines = 1)
-                            Text(dateTimeLabel, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        }
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                    GigIconButton(Icons.Rounded.WifiTethering, "Local live network", onClick = onLocalLive, active = localLiveActive)
-                    Spacer(Modifier.width(7.dp))
-                    GigIconButton(Icons.Rounded.Edit, "Edit live set list", onClick = onEdit, enabled = canEdit)
-                    Spacer(Modifier.width(7.dp))
-                    GigIconButton(
-                        if (chartView) Icons.Rounded.ListIcon else Icons.Rounded.Description,
-                        if (chartView) "Switch to list view" else "Switch to chart view",
-                        onClick = onToggleView,
-                        active = true,
-                    )
-                }
-            }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            GigIconButton(Icons.Rounded.ArrowBack, "Back to upcoming schedule", onBack)
+            LiveConnectionStatus(connected = connected, updating = updating, label = liveLabel)
+            Text(
+                buildAnnotatedString {
+                    pushStyle(SpanStyle(color = Color.White, fontWeight = FontWeight.Bold))
+                    append(setListName)
+                    pop()
+                    pushStyle(SpanStyle(color = TextSoft))
+                    append("  |  $locationLabel  |  $dateTimeLabel")
+                    pop()
+                },
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            GigIconButton(Icons.Rounded.WifiTethering, "Local live network", onClick = onLocalLive, active = localLiveActive)
+            GigIconButton(Icons.Rounded.Edit, "Edit live set list", onClick = onEdit, enabled = canEdit)
+            GigIconButton(
+                if (chartView) Icons.Rounded.ListIcon else Icons.Rounded.Description,
+                if (chartView) "Switch to list view" else "Switch to chart view",
+                onClick = onToggleView,
+                active = true,
+            )
         }
     }
 }
@@ -6080,26 +6063,12 @@ private fun TimedSongGuideControls(
         border = BorderStroke(1.dp, Cyan.copy(alpha = .45f)),
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Timed song guide", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                    Text(
-                        if (countInRemainingMs > 0L) "Count-in" else "Ready with metronome timing",
-                        color = TextSoft,
-                        fontSize = 10.sp,
-                    )
-                }
-                GigIconButton(
-                    if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    if (running) "Pause timed song guide" else "Start timed song guide",
-                    onPlayPause,
-                    active = running,
-                )
-                Spacer(Modifier.size(6.dp))
-                GigIconButton(Icons.Rounded.Stop, "Stop timed song guide", onStop)
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (countInRemainingMs > 0L) "-${formatPlaybackTime(countInRemainingMs)}" else formatPlaybackTime(positionMs),
                     color = Cyan,
@@ -6114,6 +6083,13 @@ private fun TimedSongGuideControls(
                 )
                 Text(formatPlaybackTime(safeDuration), color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
+            GigIconButton(
+                if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                if (running) "Pause timed song guide" else "Start timed song guide",
+                onPlayPause,
+                active = running,
+            )
+            GigIconButton(Icons.Rounded.Stop, "Stop timed song guide", onStop)
         }
     }
 }
