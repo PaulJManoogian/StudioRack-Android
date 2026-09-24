@@ -5642,7 +5642,7 @@ private fun PerformanceSongScreen(
         countInMeasures * metronomeState.beatsPerMeasure * (60_000L / metronomeState.tempo.coerceAtLeast(1))
     }
     val songSections = remember(item.performanceCues) {
-        item.performanceCues.filter { it.type == "section" && it.label.isNotBlank() }
+        preferredSongSections(item.performanceCues.filter { it.type == "section" && it.label.isNotBlank() }
             .mapIndexed { index, cue ->
                 TimedSongSection(
                     cue.atMs,
@@ -5652,7 +5652,7 @@ private fun PerformanceSongScreen(
                     cue.payload.optInt("source_index", -1).takeIf { it >= 0 },
                 )
             }
-            .sortedBy(TimedSongSection::atMs)
+        )
     }
     val activeTimelineSection = activeSongSection(songSections, timelinePositionMs)
     val timelineDurationMs = remember(item.entry.optString("id"), item.song, item.playbackAudio, item.playbackStems, songSections) {
@@ -5790,11 +5790,11 @@ private fun PerformanceSongScreen(
             GigIconButton(Icons.Rounded.NavigateBefore, "Previous song", previous, position > 0)
             Column(Modifier.weight(1f)) {
                 if (nextItem != null) {
-                    Text("> ${gigSongTitle(nextItem)}", color = Amber, fontSize = if (tabletLayout) 28.sp else 14.sp, lineHeight = if (tabletLayout) 32.sp else 17.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                    Text("> ${gigSongTitle(nextItem)}", color = Color.White, fontSize = if (tabletLayout) 28.sp else 14.sp, lineHeight = if (tabletLayout) 32.sp else 17.sp, fontWeight = FontWeight.Black, maxLines = 2)
                     val nextCue = gigSongCue(nextItem)
                     if (nextCue.isNotBlank()) Text(nextCue, color = TextSoft, fontSize = if (tabletLayout) 27.sp else 11.sp, lineHeight = if (tabletLayout) 31.sp else 14.sp, maxLines = 2)
                 } else {
-                    Text("> END OF SET LIST", color = Amber, fontSize = if (tabletLayout) 26.sp else 12.sp, fontWeight = FontWeight.Black)
+                    Text("> END OF SET LIST", color = TextSoft, fontSize = if (tabletLayout) 26.sp else 12.sp, fontWeight = FontWeight.Black)
                 }
                 previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = if (tabletLayout) 16.sp else 10.sp, maxLines = 2) }
             }
@@ -5851,7 +5851,7 @@ private fun PerformanceSongScreen(
             Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
-                    color = Color.White,
+                    color = Amber,
                     fontFamily = FontFamily.Serif,
                     fontSize = if (tablet) 56.sp else 38.sp,
                     lineHeight = if (tablet) 62.sp else 44.sp,
@@ -6075,7 +6075,7 @@ private fun SongSectionStrip(
     onSelect: (TimedSongSection) -> Unit,
 ) {
     val active = activeSongSection(sections, positionMs)
-    BoxWithConstraints(Modifier.fillMaxWidth().height(54.dp).padding(vertical = 5.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(66.dp).padding(vertical = 5.dp)) {
         val safeDuration = durationMs.coerceAtLeast(1L)
         Box(
             Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp))
@@ -6092,14 +6092,15 @@ private fun SongSectionStrip(
             Box(
                 Modifier.offset(x = maxWidth * startFraction).width(maxWidth * widthFraction).fillMaxHeight()
                     .clip(RoundedCornerShape(3.dp))
-                    .background(sectionColor.copy(alpha = .24f))
-                    .border(if (section == active) 2.dp else 1.dp, if (section == active) Color.White else sectionColor, RoundedCornerShape(3.dp))
+                    .background(sectionColor.copy(alpha = .18f))
+                    .border(if (section == active) 2.dp else 1.dp, if (section == active) Color.White else Color.White.copy(alpha = .16f), RoundedCornerShape(3.dp))
                     .clickable { onSelect(section) },
             ) {
-                if (progress > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(sectionColor.copy(alpha = .68f)))
-                Column(Modifier.padding(horizontal = 7.dp, vertical = 5.dp)) {
-                    Text(section.name, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                    Text(formatPlaybackTime(section.atMs), color = Color.White.copy(alpha = .78f), fontSize = 8.sp, maxLines = 1)
+                if (progress > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(sectionColor.copy(alpha = .30f)))
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(sectionColor))
+                Column(Modifier.padding(horizontal = 7.dp, vertical = 6.dp)) {
+                    Text(section.name, color = Color.White, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                    Text(formatPlaybackTime(section.atMs), color = Color.White.copy(alpha = .86f), fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1)
                 }
             }
         }

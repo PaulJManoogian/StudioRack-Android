@@ -15,6 +15,11 @@ internal data class TimedSongSection(
     val sourceIndex: Int? = null,
 )
 
+internal fun preferredSongSections(sections: List<TimedSongSection>): List<TimedSongSection> =
+    sections.groupBy(TimedSongSection::atMs).values
+        .map { sameStart -> sameStart.firstOrNull { it.sourceIndex != null } ?: sameStart.first() }
+        .sortedBy(TimedSongSection::atMs)
+
 private data class ChordProSectionMarker(
     val type: String,
     val explicitName: String,

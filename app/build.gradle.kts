@@ -12,8 +12,8 @@ android {
         applicationId = "com.manoogianmedia.studiorack"
         minSdk = 26
         targetSdk = 35
-        versionCode = 104
-        versionName = "0.26.9"
+        versionCode = 105
+        versionName = "0.26.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

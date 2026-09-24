@@ -48,4 +48,19 @@ Untimed line
         assertEquals(listOf("#ff5500", "#18a999"), sections.map(TimedSongSection::color))
         assertEquals("Verse 1", chordProSectionLabel("start_of_verse", "label=\"Verse 1\""))
     }
+
+    @Test
+    fun canonicalChordProSectionWinsWhenEditorsShareAStartTime() {
+        val sections = preferredSongSections(
+            listOf(
+                TimedSongSection(13_000, 44_000, "Verse 1", "#2f80ed"),
+                TimedSongSection(13_000, 45_000, "Verse 1", "#18a999", sourceIndex = 0),
+                TimedSongSection(45_000, 62_000, "Chorus", "#2f80ed"),
+                TimedSongSection(45_000, 68_000, "Chorus 1", "#d64550", sourceIndex = 1),
+            ),
+        )
+
+        assertEquals(listOf("Verse 1", "Chorus 1"), sections.map(TimedSongSection::name))
+        assertEquals(listOf("#18a999", "#d64550"), sections.map(TimedSongSection::color))
+    }
 }
