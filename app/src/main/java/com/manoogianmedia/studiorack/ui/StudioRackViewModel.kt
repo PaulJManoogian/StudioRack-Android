@@ -202,6 +202,15 @@ class StudioRackViewModel(
         }
     }
 
+    fun signOut() {
+        _uiState.value = _uiState.value.copy(busy = true, message = "Signing out...")
+        viewModelScope.launch {
+            runCatching { repository.signOut() }
+                .onSuccess { _uiState.value = StudioRackUiState(signedIn = false, message = "Signed out.") }
+                .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = it.message ?: "Could not sign out.", syncError = true) }
+        }
+    }
+
     fun createPasskey(activity: Activity) {
         _uiState.value = _uiState.value.copy(busy = true, message = "")
         viewModelScope.launch {

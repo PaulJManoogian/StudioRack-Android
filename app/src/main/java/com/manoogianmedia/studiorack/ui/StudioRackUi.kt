@@ -2936,6 +2936,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) Text("Passkeys require Android 9 or newer.", color = TextSoft, fontSize = 12.sp)
             }
             StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
+            StudioButton(onClick = model::signOut, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                Text("Sign out", color = Color.White, fontWeight = FontWeight.Black)
+            }
             WearCompanionPanel(compact = true)
             Text("Leviathan Live settings are managed from Sessions > Leviathan Live.", color = TextSoft, fontSize = 12.sp)
         }
