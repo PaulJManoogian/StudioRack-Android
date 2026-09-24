@@ -306,6 +306,18 @@ class NativeMetronome {
         }
     }
 
+    fun startAtTimeline(positionMs: Long, countInDurationMs: Long = 0L) {
+        start()
+        seekTimeline(positionMs, countInDurationMs)
+    }
+
+    fun seekTimeline(positionMs: Long, countInDurationMs: Long = 0L) {
+        if (!mutableState.value.running) return
+        mutableState.value = mutableState.value.copy(
+            startedAtEpochMs = System.currentTimeMillis() - positionMs.coerceAtLeast(0L) - countInDurationMs.coerceAtLeast(0L),
+        )
+    }
+
     fun stop() {
         mutableState.value = mutableState.value.copy(running = false, pulse = false, downbeat = false, beat = 0, startedAtEpochMs = 0)
         job?.cancel()

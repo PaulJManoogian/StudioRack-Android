@@ -95,10 +95,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.List as ListIcon
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NavigateBefore
@@ -108,7 +110,9 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayDisabled
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.SettingsInputComponent
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.TabletAndroid
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WifiTethering
@@ -4901,8 +4905,8 @@ private fun GigModeScreen(
     val busById = remember(liveAudioBuses) { liveAudioBuses.associate { it.entityId to recordJson(it) } }
     val routingProfiles = remember(liveAudioRouteProfiles) { liveAudioRouteProfiles.map(::recordJson) }
     val routesByProfile = remember(liveAudioRoutes) { liveAudioRoutes.map(::recordJson).groupBy { it.optString("profile_id") } }
-    val cuesBySong = remember(performanceCues, livePlaybackEnabled) {
-        if (livePlaybackEnabled) performanceCues.map(::recordJson).filter { it.optInt("enabled", 1) == 1 }.groupBy { it.optString("song_id") } else emptyMap()
+    val cuesBySong = remember(performanceCues) {
+        performanceCues.map(::recordJson).filter { it.optInt("enabled", 1) == 1 }.groupBy { it.optString("song_id") }
     }
     val cacheById = remember(cachedAttachments) { cachedAttachments.associateBy(CachedAttachment::attachmentId) }
     val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, arrangementById, busById, routingProfiles, routesByProfile, cuesBySong, cacheById, settings.attachmentPreferences) {
@@ -5625,7 +5629,8 @@ private fun PerformanceSongScreen(
 ) {
     val context = LocalContext.current
     val nightMode = rememberDocumentNightMode()
-    val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
+    val phoneFormat = rememberLivePhoneFormat()
+    val tabletLayout = !phoneFormat.value
     val mediaLink = normalizedMediaLink(item.song?.optString("media_ref").orEmpty())
     val path = item.cache?.localPath.orEmpty()
     val attachmentVersion = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
@@ -5758,6 +5763,61 @@ private fun PerformanceSongScreen(
             }
             GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
         }
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 4.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            GigIconButton(
+                if (phoneFormat.value) Icons.Rounded.TabletAndroid else Icons.Rounded.PhoneAndroid,
+                if (phoneFormat.value) "Use standard format" else "Use phone format",
+                onClick = {
+                    phoneFormat.value = !phoneFormat.value
+                    saveLivePhoneFormat(context, phoneFormat.value)
+                },
+                active = phoneFormat.value,
+            )
+            Spacer(Modifier.size(6.dp))
+            GigIconButton(
+                if (nightMode.value) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                if (nightMode.value) "Use light appearance" else "Use night appearance",
+                onClick = {
+                    nightMode.value = !nightMode.value
+                    saveDocumentNightMode(context, nightMode.value)
+                },
+                active = nightMode.value,
+            )
+        }
+        if (item.playbackAudio == null && (songSections.isNotEmpty() || item.synchronizedLyrics.isNotEmpty())) {
+            TimedSongGuideControls(
+                running = metronomeState.running,
+                positionMs = timelinePositionMs,
+                durationMs = timelineDurationMs,
+                countInRemainingMs = countInRemainingMs,
+                onPlayPause = {
+                    if (metronomeState.running) {
+                        metronome.stop()
+                    } else {
+                        metronome.startAtTimeline(
+                            timelinePositionMs,
+                            if (timelinePositionMs == 0L) countInDurationMs else 0L,
+                        )
+                    }
+                },
+                onStop = {
+                    metronome.stop()
+                    timelinePositionMs = 0L
+                    countInRemainingMs = 0L
+                    onPlaybackPosition(0L)
+                },
+                onSeek = {
+                    timelinePositionMs = it
+                    metronome.seekTimeline(it)
+                    requestedSectionPosition = it
+                    onPlaybackPosition(it)
+                },
+            )
+        }
         if (songSections.isNotEmpty()) {
             SongSectionStrip(
                 sections = songSections,
@@ -5765,7 +5825,9 @@ private fun PerformanceSongScreen(
                 durationMs = timelineDurationMs,
                 onSelect = { section ->
                     timelinePositionMs = section.atMs
+                    metronome.seekTimeline(section.atMs)
                     requestedSectionPosition = section.atMs
+                    onPlaybackPosition(section.atMs)
                 },
             )
         }
@@ -5846,12 +5908,6 @@ private fun PerformanceSongScreen(
                     fontSize = 12.sp,
                     modifier = Modifier.weight(1f),
                 )
-                if (item.attachment.optString("source_type") != "text") {
-                    DocumentNightModeToggle(nightMode.value) {
-                        nightMode.value = it
-                        saveDocumentNightMode(context, it)
-                    }
-                }
             }
         }
         if (pageCount > 1) {
@@ -5885,6 +5941,61 @@ private fun PerformanceSongScreen(
                         colorFilter = if (nightMode.value) DOCUMENT_NIGHT_COLOR_FILTER else null,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimedSongGuideControls(
+    running: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    countInRemainingMs: Long,
+    onPlayPause: () -> Unit,
+    onStop: () -> Unit,
+    onSeek: (Long) -> Unit,
+) {
+    val safeDuration = durationMs.coerceAtLeast(1L)
+    Surface(
+        color = Color(0xE8121928),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Cyan.copy(alpha = .45f)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Timed song guide", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        if (countInRemainingMs > 0L) "Count-in" else "Ready with metronome timing",
+                        color = TextSoft,
+                        fontSize = 10.sp,
+                    )
+                }
+                GigIconButton(
+                    if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    if (running) "Pause timed song guide" else "Start timed song guide",
+                    onPlayPause,
+                    active = running,
+                )
+                Spacer(Modifier.size(6.dp))
+                GigIconButton(Icons.Rounded.Stop, "Stop timed song guide", onStop)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (countInRemainingMs > 0L) "-${formatPlaybackTime(countInRemainingMs)}" else formatPlaybackTime(positionMs),
+                    color = Cyan,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Slider(
+                    value = positionMs.coerceIn(0L, safeDuration).toFloat(),
+                    onValueChange = { onSeek(it.toLong()) },
+                    valueRange = 0f..safeDuration.toFloat(),
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                )
+                Text(formatPlaybackTime(safeDuration), color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -6320,6 +6431,25 @@ private fun rememberDocumentNightMode(): MutableState<Boolean> {
     }
 }
 
+@Composable
+private fun rememberLivePhoneFormat(): MutableState<Boolean> {
+    val context = LocalContext.current
+    val defaultPhoneFormat = LocalConfiguration.current.screenWidthDp < 600
+    return remember(context, defaultPhoneFormat) {
+        mutableStateOf(
+            context.getSharedPreferences(DOCUMENT_VIEW_PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean(LIVE_PHONE_FORMAT, defaultPhoneFormat),
+        )
+    }
+}
+
+private fun saveLivePhoneFormat(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(DOCUMENT_VIEW_PREFERENCES, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(LIVE_PHONE_FORMAT, enabled)
+        .apply()
+}
+
 private fun saveDocumentNightMode(context: Context, enabled: Boolean) {
     context.getSharedPreferences(DOCUMENT_VIEW_PREFERENCES, Context.MODE_PRIVATE)
         .edit()
@@ -6336,6 +6466,7 @@ private val DOCUMENT_NIGHT_COLOR_FILTER = ColorFilter.colorMatrix(ColorMatrix(fl
 
 private const val DOCUMENT_VIEW_PREFERENCES = "studio_leviathan_document_view"
 private const val DOCUMENT_NIGHT_MODE = "night_mode"
+private const val LIVE_PHONE_FORMAT = "live_phone_format"
 private const val LIVE_AUDIO_PREFERENCES = "studio_leviathan_live_audio"
 private const val LIVE_AUDIO_DEVICE_ID = "output_device_id"
 

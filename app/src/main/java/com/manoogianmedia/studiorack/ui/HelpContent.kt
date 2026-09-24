@@ -63,7 +63,7 @@ internal fun studioLeviathanHelpSections(
                 "GetSongBPM can search metadata while preserving fields you already populated.",
                 "Where possible, LRCLIB duration is combined with metadata results.",
             )),
-            HelpTopic("Performance Material", listOf("A song may contain multiple Charts, Lyrics, Tabs, Sheet Music, or other materials. Attach PDFs and images, link a source, paste plain text, or store ChordPro and synchronized lyrics directly. ChordPro section directives identify verses, choruses, bridges, and other parts. Add a Timing Mark immediately before a section when it should follow the Leviathan Live song clock."), listOf(
+            HelpTopic("Performance Material", listOf("A song may contain multiple Charts, Lyrics, Tabs, Sheet Music, or other materials. Attach PDFs and images, link a source, paste plain text, or store ChordPro and synchronized lyrics directly. ChordPro section directives identify verses, choruses, bridges, and other parts. Add a Timing Mark immediately before a section when it should follow the Leviathan Live song clock. Saving timed ChordPro material creates or updates the matching shared Song Sections automatically."), listOf(
                 "Choose the material type and a clear display name.",
                 "Mark the preferred $liveName default, print inclusion, and priority.",
                 "Search LRCLIB by title, artist, and album, then review imported text before saving.",
