@@ -554,12 +554,18 @@ class StudioRackRepository(
             pushPendingCrewBehaviorSettings()
             pushPendingAttachments()
             pushPending()
-            var cursor = dao.syncState()?.cursor ?: 0
+            val refreshCanonicalSnapshot = deviceSettings.getInt(CANONICAL_SNAPSHOT_GENERATION, 0) < REQUIRED_CANONICAL_SNAPSHOT_GENERATION
+            var cursor = if (refreshCanonicalSnapshot) 0 else dao.syncState()?.cursor ?: 0
             do {
                 val response = client.pull(cursor)
                 applyPull(response)
                 cursor = response.getLong("cursor")
             } while (response.optBoolean("has_more", false))
+            if (refreshCanonicalSnapshot) {
+                deviceSettings.edit()
+                    .putInt(CANONICAL_SNAPSHOT_GENERATION, REQUIRED_CANONICAL_SNAPSHOT_GENERATION)
+                    .apply()
+            }
             refreshAttachmentCache()
             refreshImageCache()
             notifications.reconcile()
@@ -816,6 +822,8 @@ class StudioRackRepository(
 
     private companion object {
         const val BACKGROUND_SYNC_WIFI_ONLY = "background_sync_wifi_only"
+        const val CANONICAL_SNAPSHOT_GENERATION = "canonical_snapshot_generation"
+        const val REQUIRED_CANONICAL_SNAPSHOT_GENERATION = 1
     }
 }
 

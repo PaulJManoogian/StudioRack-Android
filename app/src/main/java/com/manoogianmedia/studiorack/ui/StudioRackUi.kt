@@ -5722,17 +5722,56 @@ private fun PerformanceSongScreen(
                 Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = if (tabletLayout) 13.sp else 9.sp, fontWeight = FontWeight.Black)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                GigIconButton(
+                    if (phoneFormat.value) Icons.Rounded.TabletAndroid else Icons.Rounded.PhoneAndroid,
+                    if (phoneFormat.value) "Use standard format" else "Use phone format",
+                    onClick = {
+                        phoneFormat.value = !phoneFormat.value
+                        saveLivePhoneFormat(context, phoneFormat.value)
+                    },
+                    active = phoneFormat.value,
+                )
+                GigIconButton(
+                    if (nightMode.value) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                    if (nightMode.value) "Use light appearance" else "Use night appearance",
+                    onClick = {
+                        nightMode.value = !nightMode.value
+                        saveDocumentNightMode(context, nightMode.value)
+                    },
+                    active = nightMode.value,
+                )
                 if (showPlaybackTools) {
                     GigIconButton(
                         if (playbackActive) Icons.Rounded.PlayArrow else Icons.Rounded.PlayDisabled,
                         if (playbackActive) "Disable performance audio" else "Enable performance audio",
-                        onClick = { setPlaybackActive(!playbackActive) },
+                        onClick = {
+                            val enabled = !playbackActive
+                            setPlaybackActive(enabled)
+                            val unavailable = item.playbackAudio == null && item.playbackStems.isEmpty()
+                            Toast.makeText(
+                                context,
+                                when {
+                                    !enabled -> "Performance audio disabled."
+                                    unavailable -> "Performance audio enabled. This song has no playback track."
+                                    else -> "Performance audio enabled."
+                                },
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
                         active = playbackActive,
                     )
                     GigIconButton(
                         Icons.Rounded.PlaylistPlay,
                         if (autoPlayActive) "Disable audio autoplay" else "Enable audio autoplay",
-                        onClick = { setAutoPlayActive(!autoPlayActive) },
+                        onClick = {
+                            val enabled = !autoPlayActive
+                            setAutoPlayActive(enabled)
+                            Toast.makeText(
+                                context,
+                                if (enabled) "Autoplay armed for eligible tracks after the first song." else "Audio autoplay disarmed.",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
                         active = autoPlayActive,
                     )
                     GigIconButton(
@@ -5762,31 +5801,6 @@ private fun PerformanceSongScreen(
                 previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = if (tabletLayout) 16.sp else 10.sp, maxLines = 2) }
             }
             GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 4.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            GigIconButton(
-                if (phoneFormat.value) Icons.Rounded.TabletAndroid else Icons.Rounded.PhoneAndroid,
-                if (phoneFormat.value) "Use standard format" else "Use phone format",
-                onClick = {
-                    phoneFormat.value = !phoneFormat.value
-                    saveLivePhoneFormat(context, phoneFormat.value)
-                },
-                active = phoneFormat.value,
-            )
-            Spacer(Modifier.size(6.dp))
-            GigIconButton(
-                if (nightMode.value) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
-                if (nightMode.value) "Use light appearance" else "Use night appearance",
-                onClick = {
-                    nightMode.value = !nightMode.value
-                    saveDocumentNightMode(context, nightMode.value)
-                },
-                active = nightMode.value,
-            )
         }
         if (item.playbackAudio == null && (songSections.isNotEmpty() || item.synchronizedLyrics.isNotEmpty())) {
             TimedSongGuideControls(
