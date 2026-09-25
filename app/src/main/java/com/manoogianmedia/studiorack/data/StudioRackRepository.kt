@@ -434,6 +434,17 @@ class StudioRackRepository(
         syncNow()
     }
 
+    suspend fun deleteBundle(records: List<Pair<String, String>>) {
+        var sequence = System.currentTimeMillis()
+        val current = records.mapNotNull { (type, id) -> dao.record(type, id)?.let { Triple(type, id, it) } }
+        dao.applyLocalBundle(
+            upserts = emptyList(),
+            deletes = current.map { (type, id, _) -> RecordRef(type, id) },
+            mutations = current.map { (type, id, record) -> mutation(type, id, "delete", record.revision, record.json, sequence++) },
+        )
+        syncNow()
+    }
+
     suspend fun uploadDirectoryImage(uri: String, displayName: String, mimeType: String): String {
         val extension = attachmentExtension(displayName).ifBlank { ".jpg" }
         val temporary = File.createTempFile("venue-photo-", extension, context.cacheDir)

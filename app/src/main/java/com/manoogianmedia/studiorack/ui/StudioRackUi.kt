@@ -5333,6 +5333,7 @@ private fun GigModeScreen(
             audioHardwareRevision = audioHardwareRevision,
             onOpenLiveHardware = {
                 midiDestinations = midiRouter.destinations()
+                liveHardwareView = "routing"
                 showLiveHardware = true
             },
             setListName = performanceSetListName,
@@ -5686,20 +5687,59 @@ private fun LiveAudioRoutingEditor(
     routes: List<CachedRecord>,
     detectedDevice: LiveAudioDevice?,
 ) {
+    val scope = rememberCoroutineScope()
+    var performanceResult by remember(detectedDevice?.id) { mutableStateOf("Run a short silent local check to estimate concurrent stem-processing headroom.") }
+    var checkingPerformance by remember { mutableStateOf(false) }
     val reportedOutputs = detectedDevice?.maximumOutputChannels?.coerceIn(2, 64) ?: 2
     val stereoBuses = (reportedOutputs / 2).coerceAtLeast(1)
     Text("Audio Routing", color = Cyan, fontSize = 18.sp, fontWeight = FontWeight.Black)
+    Text("1  OUTPUT & CAPACITY", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+    Text("Distinct hardware routes are limited by the connected output channels; virtual buses may share them.", color = TextSoft, fontSize = 11.sp)
     Surface(color = Ink.copy(alpha = .42f), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, Cyan.copy(alpha = .28f))) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(detectedDevice?.name ?: "System audio output", color = Color.White, fontWeight = FontWeight.Bold)
-            Text("$reportedOutputs outputs reported | up to $reportedOutputs mono or $stereoBuses stereo buses", color = TextSoft, fontSize = 11.sp)
-            Text(if (buses.size > reportedOutputs) "Some buses will need to share outputs." else "The ${buses.size} configured buses fit within the reported mono-output capacity.", color = if (buses.size > reportedOutputs) Amber else Cyan, fontSize = 11.sp)
+            Text("$reportedOutputs output channels | up to $reportedOutputs distinct mono or $stereoBuses distinct stereo routes", color = TextSoft, fontSize = 11.sp)
+            Text(if (buses.size > reportedOutputs) "Some configured buses will need to share physical outputs." else "The ${buses.size} configured buses fit within the mono-route capacity.", color = if (buses.size > reportedOutputs) Amber else Cyan, fontSize = 11.sp)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StudioButton(
+                    onClick = {
+                        checkingPerformance = true
+                        performanceResult = "Checking local processing speed..."
+                        scope.launch {
+                            val elapsedMs = withContext(Dispatchers.Default) {
+                                val samples = FloatArray(48_000) { index -> ((index % 97) - 48) / 48f }
+                                var checksum = 0f
+                                val started = System.nanoTime()
+                                repeat(32) { stem ->
+                                    val gain = .2f + (stem % 8) * .08f
+                                    for (index in samples.indices) checksum += samples[index] * gain
+                                }
+                                ((System.nanoTime() - started) / 1_000_000.0) + (checksum * 0.0)
+                            }
+                            val suggested = when {
+                                elapsedMs < 80 -> 32
+                                elapsedMs < 180 -> 24
+                                elapsedMs < 350 -> 16
+                                elapsedMs < 700 -> 8
+                                else -> 4
+                            }
+                            performanceResult = "Completed in ${elapsedMs.toInt().coerceAtLeast(1)} ms. Conservative starting point: up to $suggested concurrent stems; verify with your actual files and interface before a show."
+                            checkingPerformance = false
+                        }
+                    },
+                    enabled = !checkingPerformance,
+                    kind = StudioButtonKind.Secondary,
+                ) { Text(if (checkingPerformance) "Checking..." else "Check Processing Speed", color = Color.White, fontWeight = FontWeight.Bold) }
+                Text(performanceResult, color = if (checkingPerformance) Amber else TextSoft, fontSize = 10.sp, modifier = Modifier.weight(1f))
+            }
         }
     }
-    Text("VIRTUAL BUSES", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+    Text("2  VIRTUAL BUSES", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+    Text("Group stems by purpose. There is no fixed virtual-bus limit.", color = TextSoft, fontSize = 11.sp)
     buses.forEach { record -> LiveAudioBusStrip(record = record, model = model) }
     LiveAudioBusStrip(record = null, model = model)
-    Text("INTERFACE PROFILES", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+    Text("3  ROUTING PROFILES", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+    Text("Map each bus to numbered outputs on a particular audio interface.", color = TextSoft, fontSize = 11.sp)
     profiles.forEach { profile ->
         LiveAudioProfileEditor(
             record = profile,
@@ -5766,6 +5806,7 @@ private fun LiveAudioProfileEditor(
     var name by remember(record?.entityId, record?.revision, detectedDevice?.id) { mutableStateOf(source.optString("name").ifBlank { detectedDevice?.name ?: "" }) }
     var outputs by remember(record?.entityId, record?.revision, detectedDevice?.id) { mutableStateOf(source.optInt("output_channel_count", detectedDevice?.maximumOutputChannels ?: 2).coerceIn(2, 64).toString()) }
     var preferred by remember(record?.entityId, record?.revision) { mutableStateOf(source.optInt("is_default") == 1) }
+    var confirmDelete by remember(record?.entityId) { mutableStateOf(false) }
     var starts by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("output_start_channel", 1) ?: 1) }) }
     var widths by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("output_channel_count", 2) ?: 2) }) }
     Surface(color = Ink.copy(alpha = .28f), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, if (expanded) Cyan.copy(alpha = .35f) else Color.White.copy(alpha = .1f))) {
@@ -5805,7 +5846,8 @@ private fun LiveAudioProfileEditor(
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    if (record != null) StudioButton(onClick = { confirmDelete = true }, kind = StudioButtonKind.Danger) { Text("Remove Profile", color = Color.White, fontWeight = FontWeight.Bold) }
                     StudioButton(
                         onClick = {
                             val channelCount = outputs.toIntOrNull()?.coerceIn(2, 64) ?: 2
@@ -5823,6 +5865,15 @@ private fun LiveAudioProfileEditor(
                 }
             }
         }
+    }
+    if (confirmDelete && record != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Remove routing profile?") },
+            text = { Text("${source.optString("name", "This profile")} and its bus-to-output routes will be removed. Virtual buses and audio files are not deleted.") },
+            confirmButton = { TextButton(onClick = { model.deleteLiveAudioProfile(record.entityId) { confirmDelete = false } }) { Text("Remove", color = Color(0xFFFF7A82), fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -6279,6 +6330,7 @@ private fun PerformanceSongScreen(
                 seekRequestMs = requestedSectionPosition,
                 onSeekConsumed = { requestedSectionPosition = null },
                 audioHardwareRevision = audioHardwareRevision,
+                onOpenLiveHardware = onOpenLiveHardware,
             )
         }
         if (item.attachment != null) {
@@ -6481,6 +6533,7 @@ private fun PerformanceAudioControls(
     seekRequestMs: Long? = null,
     onSeekConsumed: () -> Unit = {},
     audioHardwareRevision: Int = 0,
+    onOpenLiveHardware: () -> Unit,
 ) {
     val context = LocalContext.current
     val sources = remember(item.entry.optString("id"), item.playbackStems, item.playbackAudio, item.playbackCache) {
@@ -6794,6 +6847,7 @@ private fun PerformanceAudioControls(
                         Text("Live mixer", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
                         GigPill("Tracks", active = mixerView == "tracks", onClick = { mixerView = "tracks" })
                         GigPill("Buses", active = mixerView == "buses", onClick = { mixerView = "buses" })
+                        GigPill("Routing", active = false, onClick = onOpenLiveHardware)
                     }
                     if (mixerView == "tracks") {
                         sources.forEach { source ->

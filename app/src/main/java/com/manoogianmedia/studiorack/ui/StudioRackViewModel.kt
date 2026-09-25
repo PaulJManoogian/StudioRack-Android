@@ -465,6 +465,20 @@ class StudioRackViewModel(
         }
     }
 
+    fun deleteLiveAudioProfile(id: String, done: () -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching {
+                val routes = liveAudioRoutes.value.filter { JSONObject(it.json).optString("profile_id") == id }
+                repository.deleteBundle(routes.map { "live_audio_route" to it.entityId } + ("live_audio_route_profile" to id))
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(message = "Routing profile removal is queued for synchronization.", syncError = false)
+                done()
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(message = it.message ?: "Could not remove the routing profile.", syncError = true)
+            }
+        }
+    }
+
     fun deleteSong(id: String, done: () -> Unit) = deleteRecord("song", id, done)
 
     fun saveEvent(id: String?, data: JSONObject, kitIds: Set<String>, ensembleIds: Set<String>, contactIds: Set<String>, done: () -> Unit) {
