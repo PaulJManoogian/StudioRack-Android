@@ -434,6 +434,37 @@ class StudioRackViewModel(
 
     fun deleteSongAttachment(id: String) = deleteRecord("song_attachment", id) {}
 
+    fun saveLiveAudioBus(id: String?, data: JSONObject, done: () -> Unit = {}) {
+        val recordId = id ?: "bus_${UUID.randomUUID().toString().replace("-", "").take(12)}"
+        viewModelScope.launch {
+            runCatching { repository.save("live_audio_bus", recordId, data.put("id", recordId)) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Audio bus saved. Synchronization is queued."); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save the audio bus.", syncError = true) }
+        }
+    }
+
+    fun saveLiveAudioProfile(id: String?, data: JSONObject, routeData: List<Pair<String?, JSONObject>>, done: () -> Unit = {}) {
+        val profileId = id ?: "routeprof_${UUID.randomUUID().toString().replace("-", "").take(12)}"
+        viewModelScope.launch {
+            runCatching {
+                val records = buildList {
+                    if (data.optInt("is_default") == 1) {
+                        liveAudioRouteProfiles.value.filter { it.entityId != profileId }.forEach { profile ->
+                            add(Triple("live_audio_route_profile", profile.entityId, JSONObject(profile.json).put("is_default", 0)))
+                        }
+                    }
+                    add(Triple("live_audio_route_profile", profileId, data.put("id", profileId)))
+                    routeData.forEach { (existingId, route) ->
+                        val routeId = existingId ?: "route_${UUID.randomUUID().toString().replace("-", "").take(12)}"
+                        add(Triple("live_audio_route", routeId, route.put("id", routeId).put("profile_id", profileId)))
+                    }
+                }
+                repository.saveBundle(records)
+            }.onSuccess { _uiState.value = _uiState.value.copy(message = "Routing profile saved. Synchronization is queued."); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save the routing profile.", syncError = true) }
+        }
+    }
+
     fun deleteSong(id: String, done: () -> Unit) = deleteRecord("song", id, done)
 
     fun saveEvent(id: String?, data: JSONObject, kitIds: Set<String>, ensembleIds: Set<String>, contactIds: Set<String>, done: () -> Unit) {

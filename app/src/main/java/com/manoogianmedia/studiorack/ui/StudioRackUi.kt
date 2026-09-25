@@ -5019,6 +5019,7 @@ private fun GigModeScreen(
     var selectedMidiKey by remember(eventId) { mutableStateOf(midiRouter.selectedKey()) }
     var showControlArmed by remember(eventId) { mutableStateOf(false) }
     var showLiveHardware by remember(eventId) { mutableStateOf(false) }
+    var liveHardwareView by remember(eventId) { mutableStateOf("device") }
     val audioPreferences = remember { context.getSharedPreferences(LIVE_AUDIO_PREFERENCES, Context.MODE_PRIVATE) }
     var selectedAudioDeviceId by remember(eventId) { mutableIntStateOf(audioPreferences.getInt(LIVE_AUDIO_DEVICE_ID, -1)) }
     var audioHardwareRevision by remember(eventId) { mutableIntStateOf(0) }
@@ -5228,11 +5229,16 @@ private fun GigModeScreen(
                 color = PanelRaised,
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, Amber.copy(alpha = .45f)),
-                modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
+                modifier = Modifier.fillMaxWidth().fillMaxHeight(.9f).widthIn(max = 820.dp),
             ) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("LEVIATHAN LIVE", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
                     Text("Live Hardware", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StudioButton(onClick = { liveHardwareView = "device" }, kind = if (liveHardwareView == "device") StudioButtonKind.Primary else StudioButtonKind.Secondary) { Text("Devices", color = if (liveHardwareView == "device") Ink else Color.White, fontWeight = FontWeight.Bold) }
+                        StudioButton(onClick = { liveHardwareView = "routing" }, kind = if (liveHardwareView == "routing") StudioButtonKind.Primary else StudioButtonKind.Secondary) { Text("Routing", color = if (liveHardwareView == "routing") Ink else Color.White, fontWeight = FontWeight.Bold) }
+                    }
+                    if (liveHardwareView == "device") {
                     Text("Audio Out", color = Cyan, fontSize = 16.sp, fontWeight = FontWeight.Black)
                     StudioButton(
                         onClick = {
@@ -5280,11 +5286,22 @@ private fun GigModeScreen(
                         ) { Text(destination.label, color = if (destination.key == selectedMidiKey) Ink else Color.White, fontWeight = FontWeight.Bold) }
                     }
                     if (selectedMidiKey.isNotBlank()) SettingToggle("Send timed MIDI / DMX-MIDI cues", showControlArmed) { showControlArmed = it }
+                    } else {
+                        LiveAudioRoutingEditor(
+                            model = model,
+                            buses = liveAudioBuses,
+                            profiles = liveAudioRouteProfiles,
+                            routes = liveAudioRoutes,
+                            detectedDevice = liveAudioDevices.firstOrNull { it.id == selectedAudioDeviceId } ?: liveAudioDevices.firstOrNull(),
+                        )
+                    }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        if (liveHardwareView == "device") {
                         TextButton(onClick = {
                             midiDestinations = midiRouter.destinations()
                             audioHardwareRevision += 1
                         }) { Text("Refresh", color = TextSoft) }
+                        }
                         TextButton(onClick = { showLiveHardware = false }) { Text("Done", color = Amber) }
                     }
                 }
@@ -5655,6 +5672,157 @@ private fun GigTimerCell(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 5.dp)) {
         Text(label.uppercase(), color = TextSoft, fontSize = if (tabletLayout) 14.sp else 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
         Text(value, color = Color.White, fontSize = if (tabletLayout) 28.sp else 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+private val LiveBusPalette = listOf("#42D9FF", "#58E99B", "#FF9D1E", "#4B8BFF", "#A879FF", "#F05D7A", "#E5C842", "#AEB8CB")
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LiveAudioRoutingEditor(
+    model: StudioRackViewModel,
+    buses: List<CachedRecord>,
+    profiles: List<CachedRecord>,
+    routes: List<CachedRecord>,
+    detectedDevice: LiveAudioDevice?,
+) {
+    val reportedOutputs = detectedDevice?.maximumOutputChannels?.coerceIn(2, 64) ?: 2
+    val stereoBuses = (reportedOutputs / 2).coerceAtLeast(1)
+    Text("Audio Routing", color = Cyan, fontSize = 18.sp, fontWeight = FontWeight.Black)
+    Surface(color = Ink.copy(alpha = .42f), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, Cyan.copy(alpha = .28f))) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(detectedDevice?.name ?: "System audio output", color = Color.White, fontWeight = FontWeight.Bold)
+            Text("$reportedOutputs outputs reported | up to $reportedOutputs mono or $stereoBuses stereo buses", color = TextSoft, fontSize = 11.sp)
+            Text(if (buses.size > reportedOutputs) "Some buses will need to share outputs." else "The ${buses.size} configured buses fit within the reported mono-output capacity.", color = if (buses.size > reportedOutputs) Amber else Cyan, fontSize = 11.sp)
+        }
+    }
+    Text("VIRTUAL BUSES", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+    buses.forEach { record -> LiveAudioBusStrip(record = record, model = model) }
+    LiveAudioBusStrip(record = null, model = model)
+    Text("INTERFACE PROFILES", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+    profiles.forEach { profile ->
+        LiveAudioProfileEditor(
+            record = profile,
+            buses = buses,
+            routes = routes.filter { JSONObject(it.json).optString("profile_id") == profile.entityId },
+            detectedDevice = detectedDevice,
+            model = model,
+        )
+    }
+    LiveAudioProfileEditor(record = null, buses = buses, routes = emptyList(), detectedDevice = detectedDevice, model = model)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LiveAudioBusStrip(record: CachedRecord?, model: StudioRackViewModel) {
+    val source = remember(record?.entityId, record?.revision) { record?.let { JSONObject(it.json) } ?: JSONObject() }
+    var name by remember(record?.entityId, record?.revision) { mutableStateOf(source.optString("name")) }
+    var color by remember(record?.entityId, record?.revision) { mutableStateOf(source.optString("color", "#42D9FF")) }
+    var gain by remember(record?.entityId, record?.revision) { mutableStateOf(source.optDouble("gain_db", 0.0).toString().removeSuffix(".0")) }
+    var muted by remember(record?.entityId, record?.revision) { mutableStateOf(source.optInt("muted") == 1) }
+    Surface(color = Ink.copy(alpha = .28f), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color.White.copy(alpha = .1f))) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.width(6.dp).height(46.dp).background(sectionComposeColor(color), RoundedCornerShape(3.dp)))
+                OutlinedTextField(value = name, onValueChange = { name = it.take(80) }, label = { Text(if (record == null) "New bus" else "Bus") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = gain, onValueChange = { gain = it.filter { character -> character.isDigit() || character in ".-" }.take(6) }, label = { Text("Gain dB") }, singleLine = true, modifier = Modifier.width(105.dp))
+                Box(
+                    Modifier.height(40.dp).width(70.dp).background(if (muted) Amber else PanelRaised, RoundedCornerShape(6.dp)).clickable { muted = !muted },
+                    contentAlignment = Alignment.Center,
+                ) { Text("MUTE", color = if (muted) Ink else TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Black) }
+                StudioButton(
+                    onClick = {
+                        model.saveLiveAudioBus(record?.entityId, JSONObject().put("name", name.trim()).put("color", color).put("gain_db", gain.toDoubleOrNull()?.coerceIn(-60.0, 12.0) ?: 0.0).put("muted", if (muted) 1 else 0).put("position", source.optInt("position", 999)))
+                        if (record == null) { name = ""; gain = "0"; muted = false }
+                    },
+                    enabled = name.isNotBlank(),
+                    kind = if (record == null) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                ) { Text(if (record == null) "Add" else "Save", color = if (record == null) Ink else Color.White, fontWeight = FontWeight.Bold) }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                LiveBusPalette.forEach { option ->
+                    Box(
+                        Modifier.size(25.dp).background(sectionComposeColor(option), CircleShape).border(if (color.equals(option, true)) 2.dp else 1.dp, if (color.equals(option, true)) Color.White else Color.Transparent, CircleShape).clickable { color = option }
+                    )
+                }
+                OutlinedTextField(value = color, onValueChange = { value -> if (value.length <= 7) color = value.uppercase() }, label = { Text("Custom") }, singleLine = true, modifier = Modifier.width(110.dp).heightIn(min = 48.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveAudioProfileEditor(
+    record: CachedRecord?,
+    buses: List<CachedRecord>,
+    routes: List<CachedRecord>,
+    detectedDevice: LiveAudioDevice?,
+    model: StudioRackViewModel,
+) {
+    val source = remember(record?.entityId, record?.revision, detectedDevice?.id) { record?.let { JSONObject(it.json) } ?: JSONObject() }
+    val routeObjects = remember(routes.map { it.entityId to it.revision }) { routes.associate { it.entityId to JSONObject(it.json) } }
+    val routeByBus = remember(routeObjects) { routeObjects.entries.associateBy { it.value.optString("bus_id") } }
+    var expanded by remember(record?.entityId) { mutableStateOf(record == null) }
+    var name by remember(record?.entityId, record?.revision, detectedDevice?.id) { mutableStateOf(source.optString("name").ifBlank { detectedDevice?.name ?: "" }) }
+    var outputs by remember(record?.entityId, record?.revision, detectedDevice?.id) { mutableStateOf(source.optInt("output_channel_count", detectedDevice?.maximumOutputChannels ?: 2).coerceIn(2, 64).toString()) }
+    var preferred by remember(record?.entityId, record?.revision) { mutableStateOf(source.optInt("is_default") == 1) }
+    var starts by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("output_start_channel", 1) ?: 1) }) }
+    var widths by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("output_channel_count", 2) ?: 2) }) }
+    Surface(color = Ink.copy(alpha = .28f), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, if (expanded) Cyan.copy(alpha = .35f) else Color.White.copy(alpha = .1f))) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(if (record == null) "Add Interface Profile" else source.optString("name", "Interface Profile"), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (record == null) "Use the connected device or enter a capacity" else "${source.optInt("output_channel_count", 2)} outputs | ${routes.size} bus routes", color = TextSoft, fontSize = 11.sp)
+                }
+                if (source.optInt("is_default") == 1) Text("PREFERRED", color = Ink, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.background(Cyan, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 4.dp))
+                Text(if (expanded) "▴" else "▾", color = TextSoft, fontSize = 18.sp)
+            }
+            if (expanded) Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(value = name, onValueChange = { name = it.take(100) }, label = { Text("Profile name") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = outputs, onValueChange = { outputs = it.filter(Char::isDigit).take(2) }, label = { Text("Outputs") }, singleLine = true, modifier = Modifier.width(105.dp))
+                    if (record == null && detectedDevice != null) TextButton(onClick = { name = detectedDevice.name; outputs = detectedDevice.maximumOutputChannels.coerceIn(2, 64).toString() }) { Text("Use device", color = Cyan) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Preferred when compatible", color = Color.White, modifier = Modifier.weight(1f))
+                    Switch(checked = preferred, onCheckedChange = { preferred = it })
+                }
+                buses.forEach { busRecord ->
+                    val bus = JSONObject(busRecord.json)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.width(5.dp).height(38.dp).background(sectionComposeColor(bus.optString("color", "#42D9FF")), RoundedCornerShape(3.dp)))
+                        Text(bus.optString("name", "Bus"), color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = (starts[busRecord.entityId] ?: 1).toString(), onValueChange = { value -> starts = starts + (busRecord.entityId to (value.toIntOrNull() ?: 1)) }, label = { Text("First") }, singleLine = true, modifier = Modifier.width(90.dp))
+                        Row(Modifier.width(130.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            listOf(1 to "Mono", 2 to "Stereo").forEach { (width, label) ->
+                                Box(Modifier.weight(1f).height(40.dp).background(if (widths[busRecord.entityId] == width) Cyan else PanelRaised, RoundedCornerShape(5.dp)).clickable { widths = widths + (busRecord.entityId to width) }, contentAlignment = Alignment.Center) { Text(label, color = if (widths[busRecord.entityId] == width) Ink else TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    StudioButton(
+                        onClick = {
+                            val channelCount = outputs.toIntOrNull()?.coerceIn(2, 64) ?: 2
+                            val routeDrafts = buses.map { bus ->
+                                val existing = routeByBus[bus.entityId]
+                                val start = (starts[bus.entityId] ?: 1).coerceIn(1, channelCount)
+                                val width = (widths[bus.entityId] ?: 2).coerceIn(1, channelCount - start + 1)
+                                existing?.key to JSONObject().put("profile_id", record?.entityId ?: "").put("bus_id", bus.entityId).put("output_start_channel", start).put("output_channel_count", width)
+                            }
+                            model.saveLiveAudioProfile(record?.entityId, JSONObject().put("name", name.trim()).put("output_channel_count", channelCount).put("is_default", if (preferred) 1 else 0), routeDrafts) { if (record == null) expanded = false }
+                        },
+                        enabled = name.isNotBlank(),
+                        kind = if (record == null) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                    ) { Text(if (record == null) "Create Profile" else "Save Profile", color = if (record == null) Ink else Color.White, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
     }
 }
 
