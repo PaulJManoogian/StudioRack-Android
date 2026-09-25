@@ -5857,14 +5857,18 @@ private fun LiveAudioProfileEditor(
                                 }
                             }
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(if (routeWidth == 2) "Stereo" else "Mono", color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Switch(checked = routeWidth == 2, onCheckedChange = { stereo ->
-                                val width = if (stereo) 2 else 1
+                        Box(
+                            Modifier.width(92.dp).height(40.dp)
+                                .semantics { stateDescription = if (routeWidth == 2) "Stereo" else "Mono" }
+                                .background(if (routeWidth == 2) Cyan else PanelRaised, RoundedCornerShape(50))
+                                .border(1.dp, if (routeWidth == 2) Cyan else Color.White.copy(alpha = .2f), RoundedCornerShape(50))
+                                .clickable {
+                                val width = if (routeWidth == 2) 1 else 2
                                 widths = widths + (busRecord.entityId to width)
                                 starts = starts + (busRecord.entityId to routeStart.coerceAtMost((channelCount - width + 1).coerceAtLeast(1)))
-                            })
-                        }
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) { Text(if (routeWidth == 2) "STEREO" else "MONO", color = if (routeWidth == 2) Ink else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black) }
                         Box(
                             Modifier.height(40.dp).background(if (routeMutes[busRecord.entityId] == true) Amber else PanelRaised, RoundedCornerShape(5.dp)).clickable { routeMutes = routeMutes + (busRecord.entityId to (routeMutes[busRecord.entityId] != true)) }.padding(horizontal = 12.dp),
                             contentAlignment = Alignment.Center,
