@@ -5809,6 +5809,8 @@ private fun LiveAudioProfileEditor(
     var confirmDelete by remember(record?.entityId) { mutableStateOf(false) }
     var starts by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("output_start_channel", 1) ?: 1) }) }
     var widths by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("output_channel_count", 2) ?: 2) }) }
+    var routeMutes by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("muted", 0) == 1) }) }
+    val outputMenus = remember(record?.entityId) { mutableStateMapOf<String, Boolean>() }
     Surface(color = Ink.copy(alpha = .28f), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, if (expanded) Cyan.copy(alpha = .35f) else Color.White.copy(alpha = .1f))) {
         Column {
             Row(
@@ -5835,15 +5837,38 @@ private fun LiveAudioProfileEditor(
                 }
                 buses.forEach { busRecord ->
                     val bus = JSONObject(busRecord.json)
+                    val channelCount = outputs.toIntOrNull()?.coerceIn(2, 64) ?: 2
+                    val routeWidth = widths[busRecord.entityId] ?: 2
+                    val maximumStart = (channelCount - routeWidth + 1).coerceAtLeast(1)
+                    val routeStart = (starts[busRecord.entityId] ?: 1).coerceIn(1, maximumStart)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.width(5.dp).height(38.dp).background(sectionComposeColor(bus.optString("color", "#42D9FF")), RoundedCornerShape(3.dp)))
                         Text(bus.optString("name", "Bus"), color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = (starts[busRecord.entityId] ?: 1).toString(), onValueChange = { value -> starts = starts + (busRecord.entityId to (value.toIntOrNull() ?: 1)) }, label = { Text("First") }, singleLine = true, modifier = Modifier.width(90.dp))
-                        Row(Modifier.width(130.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            listOf(1 to "Mono", 2 to "Stereo").forEach { (width, label) ->
-                                Box(Modifier.weight(1f).height(40.dp).background(if (widths[busRecord.entityId] == width) Cyan else PanelRaised, RoundedCornerShape(5.dp)).clickable { widths = widths + (busRecord.entityId to width) }, contentAlignment = Alignment.Center) { Text(label, color = if (widths[busRecord.entityId] == width) Ink else TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                        Box {
+                            StudioButton(onClick = { outputMenus[busRecord.entityId] = true }, kind = StudioButtonKind.Secondary) {
+                                Text(if (routeWidth == 2) "Outputs $routeStart-${routeStart + 1}" else "Output $routeStart", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                            DropdownMenu(expanded = outputMenus[busRecord.entityId] == true, onDismissRequest = { outputMenus[busRecord.entityId] = false }) {
+                                (1..maximumStart).forEach { output ->
+                                    DropdownMenuItem(
+                                        text = { Text(if (routeWidth == 2) "Outputs $output-${output + 1}" else "Output $output") },
+                                        onClick = { starts = starts + (busRecord.entityId to output); outputMenus[busRecord.entityId] = false },
+                                    )
+                                }
                             }
                         }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text(if (routeWidth == 2) "Stereo" else "Mono", color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Switch(checked = routeWidth == 2, onCheckedChange = { stereo ->
+                                val width = if (stereo) 2 else 1
+                                widths = widths + (busRecord.entityId to width)
+                                starts = starts + (busRecord.entityId to routeStart.coerceAtMost((channelCount - width + 1).coerceAtLeast(1)))
+                            })
+                        }
+                        Box(
+                            Modifier.height(40.dp).background(if (routeMutes[busRecord.entityId] == true) Amber else PanelRaised, RoundedCornerShape(5.dp)).clickable { routeMutes = routeMutes + (busRecord.entityId to (routeMutes[busRecord.entityId] != true)) }.padding(horizontal = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { Text("MUTE", color = if (routeMutes[busRecord.entityId] == true) Ink else TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black) }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
@@ -5855,7 +5880,7 @@ private fun LiveAudioProfileEditor(
                                 val existing = routeByBus[bus.entityId]
                                 val start = (starts[bus.entityId] ?: 1).coerceIn(1, channelCount)
                                 val width = (widths[bus.entityId] ?: 2).coerceIn(1, channelCount - start + 1)
-                                existing?.key to JSONObject().put("profile_id", record?.entityId ?: "").put("bus_id", bus.entityId).put("output_start_channel", start).put("output_channel_count", width)
+                                existing?.key to JSONObject().put("profile_id", record?.entityId ?: "").put("bus_id", bus.entityId).put("output_start_channel", start).put("output_channel_count", width).put("muted", if (routeMutes[bus.entityId] == true) 1 else 0)
                             }
                             model.saveLiveAudioProfile(record?.entityId, JSONObject().put("name", name.trim()).put("output_channel_count", channelCount).put("is_default", if (preferred) 1 else 0), routeDrafts) { if (record == null) expanded = false }
                         },
@@ -6583,6 +6608,13 @@ private fun PerformanceAudioControls(
     val compatibleProfile = remember(compatibleProfiles, selectedProfileId) {
         compatibleProfiles.firstOrNull { it.id == selectedProfileId } ?: compatibleProfiles.firstOrNull()
     }
+    val activeRouteMutes = remember(compatibleProfile?.id, item.routesByProfile) {
+        compatibleProfile?.let { profile ->
+            item.routesByProfile[profile.id].orEmpty().associate { route ->
+                route.optString("bus_id") to (route.optInt("muted", 0) == 1)
+            }
+        }.orEmpty()
+    }
     var liveGains by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to it.audio.optDouble("audio_gain_db", 0.0).toFloat() }) }
     var liveMutes by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to (it.audio.optInt("audio_muted") == 1) }) }
     var liveSolos by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to (it.audio.optInt("audio_solo") == 1) }) }
@@ -6618,7 +6650,7 @@ private fun PerformanceAudioControls(
                 gainDb = (liveGains[stemId] ?: 0f) + (liveBusGains[busId.ifBlank { "__main__" }] ?: 0f) + liveMasterGain,
                 pan = source.audio.optDouble("audio_pan", 0.0).toFloat(),
                 offsetMs = source.audio.optLong("audio_sync_offset_ms"),
-                muted = liveMutes[stemId] == true || liveBusMutes[busId.ifBlank { "__main__" }] == true || (soloed && liveSolos[stemId] != true),
+                muted = liveMutes[stemId] == true || liveBusMutes[busId.ifBlank { "__main__" }] == true || activeRouteMutes[busId] == true || (soloed && liveSolos[stemId] != true),
             )
         }
         MultichannelPcmEngine.open(pcmRoutes, profile.outputChannelCount, preferredDeviceInfo)
@@ -6648,7 +6680,7 @@ private fun PerformanceAudioControls(
             val source = sources[index]
             val stemId = source.audio.optString("id")
             val busId = source.audio.optString("audio_bus_id").ifBlank { "__main__" }
-            val muted = liveMutes[stemId] == true || liveBusMutes[busId] == true || (soloed && liveSolos[stemId] != true)
+            val muted = liveMutes[stemId] == true || liveBusMutes[busId] == true || activeRouteMutes[busId] == true || (soloed && liveSolos[stemId] != true)
             val totalGainDb = (liveGains[stemId] ?: 0f) + (liveBusGains[busId] ?: 0f) + liveMasterGain
             stemPlayer.volume = if (muted) 0f else Math.pow(10.0, totalGainDb.toDouble() / 20.0).toFloat().coerceIn(0f, 1f)
             stemPlayer.play()
@@ -6663,12 +6695,12 @@ private fun PerformanceAudioControls(
         }
     }
 
-    LaunchedEffect(discreteEngine, liveGains, liveMutes, liveSolos, liveBusGains, liveBusMutes, liveMasterGain) {
+    LaunchedEffect(discreteEngine, liveGains, liveMutes, liveSolos, liveBusGains, liveBusMutes, liveMasterGain, activeRouteMutes) {
         val soloed = liveSolos.values.any { it }
         sources.forEachIndexed { index, source ->
             val stemId = source.audio.optString("id")
             val busId = source.audio.optString("audio_bus_id").ifBlank { "__main__" }
-            val muted = liveMutes[stemId] == true || liveBusMutes[busId] == true || (soloed && liveSolos[stemId] != true)
+            val muted = liveMutes[stemId] == true || liveBusMutes[busId] == true || activeRouteMutes[busId] == true || (soloed && liveSolos[stemId] != true)
             val totalGainDb = (liveGains[stemId] ?: 0f) + (liveBusGains[busId] ?: 0f) + liveMasterGain
             if (discreteEngine != null) discreteEngine.updateStem(stemId, totalGainDb, muted)
             else players[index].volume = if (muted) 0f else Math.pow(10.0, totalGainDb.toDouble() / 20.0).toFloat().coerceIn(0f, 1f)
