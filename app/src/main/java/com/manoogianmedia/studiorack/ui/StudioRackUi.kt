@@ -5318,7 +5318,7 @@ private fun GigModeScreen(
             metronome = metronome,
             previousItem = performanceSongs.getOrNull(currentSong - 1),
             nextItem = performanceSongs.getOrNull(currentSong + 1),
-            settings = settings,
+            settings = settings.copy(performanceLayout = settings.performanceLayoutCatalog.resolve(eventId, setListId)),
             gigStartedAt = gigStartedAt,
             setRemainingSeconds = setRemainingSeconds,
             showPlaybackTools = livePlaybackEnabled,
@@ -5950,6 +5950,16 @@ private fun PerformanceSongScreen(
     val phoneFormat = rememberLivePhoneFormat()
     val narrowDevice = LocalConfiguration.current.screenWidthDp < 600
     val compactPhoneLayout = narrowDevice || phoneFormat.value
+    val performanceLayoutFormat = when {
+        compactPhoneLayout -> "phone"
+        LocalConfiguration.current.screenWidthDp < 1050 -> "tablet"
+        else -> "desktop"
+    }
+    val performanceLayoutItems = remember(settings.performanceLayout, performanceLayoutFormat) {
+        settings.performanceLayout.items(performanceLayoutFormat)
+    }
+    fun layoutVisible(id: String): Boolean = performanceLayoutItems.firstOrNull { it.id == id }?.visible != false
+    fun layoutRows(id: String, fallback: Int): Int = performanceLayoutItems.firstOrNull { it.id == id }?.rows ?: fallback
     val mediaLink = normalizedMediaLink(item.song?.optString("media_ref").orEmpty())
     val path = item.cache?.localPath.orEmpty()
     val attachmentVersion = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
@@ -6247,7 +6257,7 @@ private fun PerformanceSongScreen(
                 GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
             }
         }
-        if (item.playbackAudio == null && (songSections.isNotEmpty() || item.synchronizedLyrics.isNotEmpty())) {
+        if (layoutVisible("timeline") && item.playbackAudio == null && (songSections.isNotEmpty() || item.synchronizedLyrics.isNotEmpty())) {
             TimedSongGuideControls(
                 running = metronomeState.running,
                 positionMs = timelinePositionMs,
@@ -6277,7 +6287,7 @@ private fun PerformanceSongScreen(
                 },
             )
         }
-        if (songSections.isNotEmpty()) {
+        if (layoutVisible("section_strip") && songSections.isNotEmpty()) {
             SongSectionStrip(
                 sections = songSections,
                 positionMs = timelinePositionMs,
@@ -6290,10 +6300,10 @@ private fun PerformanceSongScreen(
                 },
             )
         }
-        if (settings.showClock || settings.showElapsed || settings.showSetRemaining) {
+        if (layoutVisible("clocks") && (settings.showClock || settings.showElapsed || settings.showSetRemaining)) {
             GigTimeStrip(settings, gigStartedAt, setRemainingSeconds, item.sectionName)
         }
-        if (!compactPhoneLayout) {
+        if (layoutVisible("song_identity") && !compactPhoneLayout) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val tablet = maxWidth >= 600.dp
                 Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -6316,7 +6326,7 @@ private fun PerformanceSongScreen(
             PerformancePulseLine(metronome)
         }
         val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (layoutVisible("song_details")) BoxWithConstraints(Modifier.fillMaxWidth()) {
             val tablet = maxWidth >= 600.dp
             val primarySize = if (tablet) 34.sp else 25.sp
             val secondarySize = if (tablet) 27.sp else 20.sp
@@ -6336,7 +6346,7 @@ private fun PerformanceSongScreen(
         }
         val entryNote = item.entry.optString("entry_notes")
         val songNote = item.song?.optString("notes").orEmpty()
-        if (entryNote.isNotBlank() || songNote.isNotBlank()) {
+        if (layoutVisible("notes") && (entryNote.isNotBlank() || songNote.isNotBlank())) {
             Surface(color = Color(0x0FFFFFFF), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Amber.copy(alpha = 0.16f)), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     if (entryNote.isNotBlank()) Text("Set Note: $entryNote", color = TextSoft)
@@ -6344,7 +6354,7 @@ private fun PerformanceSongScreen(
                 }
             }
         }
-        if (playbackActive && item.playbackAudio != null) {
+        if ((layoutVisible("timeline") || layoutVisible("mixer")) && playbackActive && item.playbackAudio != null) {
             PerformanceAudioControls(
                 item = item,
                 autoStartRequest = autoStartRequest,
@@ -6362,7 +6372,7 @@ private fun PerformanceSongScreen(
                 onOpenLiveHardware = onOpenLiveHardware,
             )
         }
-        if (item.attachment != null) {
+        if (layoutVisible("material") && item.attachment != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     attachmentLabel(item.attachment) + if (pageCount > 1) "  |  Page ${page + 1} of $pageCount" else "",
@@ -6372,7 +6382,7 @@ private fun PerformanceSongScreen(
                 )
             }
         }
-        if (pageCount > 1) {
+        if (layoutVisible("material") && pageCount > 1) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 GigIconButton(Icons.Rounded.NavigateBefore, "Previous chart page", onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0)
                 Spacer(Modifier.size(6.dp))
@@ -6385,8 +6395,8 @@ private fun PerformanceSongScreen(
         } else {
             Modifier.fillMaxWidth().heightIn(min = 320.dp)
         }
-        Box(
-            Modifier.fillMaxWidth().weight(1f).verticalScroll(materialScrollState),
+        if (layoutVisible("material")) Box(
+            Modifier.fillMaxWidth().weight(1f).heightIn(min = (layoutRows("material", 7) * 36).dp).verticalScroll(materialScrollState),
             contentAlignment = Alignment.TopCenter,
         ) {
             Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {

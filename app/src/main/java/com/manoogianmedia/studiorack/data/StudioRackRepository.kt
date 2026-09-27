@@ -606,8 +606,11 @@ class StudioRackRepository(
         val state = dao.syncState() ?: return
         val settings = runCatching { JSONObject(state.performanceSettingsJson) }.getOrNull() ?: return
         if (settings.optInt("_mobile_pending") != 1) return
+        val layouts = settings.optJSONObject("performance_layouts")
         settings.remove("_mobile_pending")
+        settings.remove("performance_layouts")
         val saved = client.updatePerformanceSettings(settings).getJSONObject("performance_settings")
+        if (layouts != null) saved.put("performance_layouts", layouts)
         dao.putState(state.copy(performanceSettingsJson = saved.toString()))
     }
 
@@ -695,10 +698,12 @@ class StudioRackRepository(
     }
 
     private suspend fun applyPull(response: JSONObject) {
+        val performanceSettings = response.optJSONObject("performance_settings") ?: JSONObject()
+        response.optJSONObject("performance_layouts")?.let { performanceSettings.put("performance_layouts", it) }
         val state = SyncState(
             cursor = response.getLong("cursor"),
             accountJson = response.getJSONObject("account").toString(),
-            performanceSettingsJson = response.optJSONObject("performance_settings")?.toString() ?: "{}",
+            performanceSettingsJson = performanceSettings.toString(),
             crewBehaviorSettingsJson = response.optJSONObject("crew_behavior_settings")?.toString() ?: "{}",
             lastSyncAt = System.currentTimeMillis(),
         )

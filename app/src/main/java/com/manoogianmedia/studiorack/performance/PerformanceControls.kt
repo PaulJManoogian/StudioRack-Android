@@ -40,6 +40,8 @@ data class PerformanceSettings(
     val showElapsed: Boolean = true,
     val showSetRemaining: Boolean = true,
     val attachmentPreferences: List<String> = listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
+    val performanceLayout: PerformanceLayout = PerformanceLayout.studioDefault(),
+    val performanceLayoutCatalog: PerformanceLayoutCatalog = PerformanceLayoutCatalog.studioDefault(),
 ) {
     fun toJson(pendingSync: Boolean = false): JSONObject = JSONObject()
         .put("gig_metronome_autostart", if (metronomeAutostart) 1 else 0)
@@ -69,6 +71,7 @@ data class PerformanceSettings(
     companion object {
         fun fromJson(value: String): PerformanceSettings {
             val json = runCatching { JSONObject(value) }.getOrDefault(JSONObject())
+            val layoutCatalog = PerformanceLayoutCatalog.fromSettings(json)
             return PerformanceSettings(
                 metronomeAutostart = json.optInt("gig_metronome_autostart") == 1,
                 metronomeMuted = json.optInt("gig_metronome_muted") == 1,
@@ -98,7 +101,115 @@ data class PerformanceSettings(
                 attachmentPreferences = json.optJSONArray("gig_attachment_preferences")?.let { values ->
                     (0 until values.length()).mapNotNull { index -> values.optString(index).takeIf(String::isNotBlank) }
                 }?.takeIf(List<String>::isNotEmpty) ?: listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
+                performanceLayout = layoutCatalog.active,
+                performanceLayoutCatalog = layoutCatalog,
             )
+        }
+    }
+}
+
+data class PerformanceLayoutItem(
+    val id: String,
+    val order: Int,
+    val span: Int,
+    val rows: Int,
+    val visible: Boolean,
+)
+
+data class PerformanceLayout(val id: String, val breakpoints: Map<String, List<PerformanceLayoutItem>>) {
+    fun items(format: String): List<PerformanceLayoutItem> =
+        (breakpoints[format] ?: breakpoints["desktop"].orEmpty()).sortedBy(PerformanceLayoutItem::order)
+
+    fun item(format: String, id: String): PerformanceLayoutItem? = items(format).firstOrNull { it.id == id }
+
+    companion object {
+        private val componentIds = listOf(
+            "performance_header", "song_navigation", "transport", "clocks", "song_identity", "song_details",
+            "notes", "timeline", "section_strip", "mixer", "show_control", "material",
+        )
+        private val required = setOf("performance_header", "song_navigation", "transport", "song_identity", "material")
+
+        fun studioDefault(): PerformanceLayout = PerformanceLayout(
+            "layout_system_studio_default",
+            mapOf("desktop" to defaults("desktop"), "tablet" to defaults("tablet"), "phone" to defaults("phone")),
+        )
+
+        private fun defaults(format: String): List<PerformanceLayoutItem> {
+            val columns = when (format) { "phone" -> 4; "tablet" -> 8; else -> 12 }
+            val hidden = if (format == "phone") setOf("notes", "mixer", "show_control") else emptySet()
+            return componentIds.mapIndexed { index, id ->
+                PerformanceLayoutItem(id, index, columns, if (id == "material") if (format == "phone") 7 else 9 else 1, id !in hidden)
+            }
+        }
+
+        fun fromTemplate(template: JSONObject?): PerformanceLayout {
+            val published = template?.optJSONObject("published") ?: return studioDefault()
+            val points = published.optJSONObject("breakpoints") ?: return studioDefault()
+            val parsed = mutableMapOf<String, List<PerformanceLayoutItem>>()
+            listOf("desktop", "tablet", "phone").forEach { format ->
+                val fallback = defaults(format)
+                val values = points.optJSONObject(format)?.optJSONArray("items")
+                if (values == null) {
+                    parsed[format] = fallback
+                    return@forEach
+                }
+                val source = (0 until values.length()).mapNotNull { values.optJSONObject(it) }.associateBy { it.optString("id") }
+                parsed[format] = fallback.map { default ->
+                    val item = source[default.id] ?: return@map default
+                    default.copy(
+                        order = item.optInt("order", default.order).coerceIn(0, componentIds.size * 2),
+                        span = item.optInt("span", default.span).coerceIn(1, when (format) { "phone" -> 4; "tablet" -> 8; else -> 12 }),
+                        rows = item.optInt("rows", default.rows).coerceIn(1, 16),
+                        visible = if (default.id in required) true else item.optBoolean("visible", default.visible),
+                    )
+                }.sortedBy(PerformanceLayoutItem::order)
+            }
+            return PerformanceLayout(template.optString("id", "layout_system_studio_default"), parsed)
+        }
+    }
+}
+
+data class PerformanceLayoutAssignment(val targetType: String, val targetId: String, val layoutId: String)
+
+data class PerformanceLayoutCatalog(
+    val active: PerformanceLayout,
+    val templates: Map<String, PerformanceLayout>,
+    val assignments: List<PerformanceLayoutAssignment>,
+) {
+    fun resolve(eventId: String, setListId: String): PerformanceLayout {
+        val assignedId = assignments.firstOrNull { it.targetType == "event" && it.targetId == eventId }?.layoutId
+            ?: assignments.firstOrNull { it.targetType == "set_list" && it.targetId == setListId }?.layoutId
+        return templates[assignedId] ?: active
+    }
+
+    companion object {
+        fun studioDefault(): PerformanceLayoutCatalog {
+            val layout = PerformanceLayout.studioDefault()
+            return PerformanceLayoutCatalog(layout, mapOf(layout.id to layout), emptyList())
+        }
+
+        fun fromSettings(settings: JSONObject): PerformanceLayoutCatalog {
+            val payload = settings.optJSONObject("performance_layouts") ?: return studioDefault()
+            val active = PerformanceLayout.fromTemplate(payload.optJSONObject("active"))
+            val templates = mutableMapOf(active.id to active)
+            payload.optJSONArray("templates")?.let { values ->
+                (0 until values.length()).forEach { index ->
+                    val layout = PerformanceLayout.fromTemplate(values.optJSONObject(index))
+                    templates[layout.id] = layout
+                }
+            }
+            val assignments = payload.optJSONArray("assignments")?.let { values ->
+                (0 until values.length()).mapNotNull { index ->
+                    values.optJSONObject(index)?.let { assignment ->
+                        val targetType = assignment.optString("target_type")
+                        val targetId = assignment.optString("target_id")
+                        val layoutId = assignment.optString("layout_id")
+                        if (targetType.isBlank() || targetId.isBlank() || layoutId.isBlank()) null
+                        else PerformanceLayoutAssignment(targetType, targetId, layoutId)
+                    }
+                }
+            }.orEmpty()
+            return PerformanceLayoutCatalog(active, templates, assignments)
         }
     }
 }

@@ -4,6 +4,8 @@ import android.view.KeyEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
 
 class PerformanceControlsTest {
     @Test
@@ -113,5 +115,26 @@ class PerformanceControlsTest {
             PedalAction.STOP_AUDIO,
             mappedPedalAction(KeyEvent.KEYCODE_PAGE_DOWN, reduced.copy(pedalButtonCount = 6)),
         )
+    }
+
+    @Test
+    fun performanceLayoutUsesEventThenSetListThenActiveAssignment() {
+        fun template(id: String, materialRows: Int) = JSONObject()
+            .put("id", id)
+            .put("published", JSONObject().put("breakpoints", JSONObject().put("tablet", JSONObject()
+                .put("items", JSONArray().put(JSONObject()
+                    .put("id", "material").put("order", 11).put("span", 8).put("rows", materialRows).put("visible", true))))))
+        val payload = JSONObject()
+            .put("active", template("active", 8))
+            .put("templates", JSONArray().put(template("set-layout", 10)).put(template("event-layout", 12)))
+            .put("assignments", JSONArray()
+                .put(JSONObject().put("target_type", "set_list").put("target_id", "set-1").put("layout_id", "set-layout"))
+                .put(JSONObject().put("target_type", "event").put("target_id", "event-1").put("layout_id", "event-layout")))
+        val settings = PerformanceSettings.fromJson(JSONObject().put("performance_layouts", payload).toString())
+
+        assertEquals("event-layout", settings.performanceLayoutCatalog.resolve("event-1", "set-1").id)
+        assertEquals("set-layout", settings.performanceLayoutCatalog.resolve("other-event", "set-1").id)
+        assertEquals("active", settings.performanceLayoutCatalog.resolve("other-event", "other-set").id)
+        assertEquals(12, settings.performanceLayoutCatalog.resolve("event-1", "set-1").item("tablet", "material")?.rows)
     }
 }
