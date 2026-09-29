@@ -50,6 +50,7 @@ class StudioRackRepository(
     fun pendingCount(): Flow<Int> = dao.observePendingCount()
     fun conflicts(): Flow<List<SyncConflict>> = dao.observeConflicts()
     fun notificationCount(): Flow<Int> = dao.observeUnreadNotificationCount()
+    fun notificationReceipts(): Flow<List<NotificationReceipt>> = dao.observeUnreadNotificationReceipts()
     fun syncHealth(): StateFlow<RepositorySyncHealth> = _syncHealth
     fun backgroundSyncWifiOnly(): StateFlow<Boolean> = _backgroundSyncWifiOnly
 

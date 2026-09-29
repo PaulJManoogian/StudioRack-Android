@@ -16,6 +16,7 @@ import com.manoogianmedia.studiorack.data.DataExport
 import com.manoogianmedia.studiorack.data.LocalLiveCoordinator
 import com.manoogianmedia.studiorack.data.LocalLivePeer
 import com.manoogianmedia.studiorack.data.LocalLiveRole
+import com.manoogianmedia.studiorack.data.NotificationReceipt
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.crew.CrewBehaviorSettings
 import kotlinx.coroutines.flow.SharingStarted
@@ -143,6 +144,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val sharedAttachments: StateFlow<List<SupportingRecord>> = repository.supporting("shared_song_attachment")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val shareNotifications: StateFlow<List<SupportingRecord>> = repository.supporting("share_notification")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val syncState: StateFlow<SyncState?> = repository.syncState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val pendingCount: StateFlow<Int> = repository.pendingCount()
@@ -151,6 +154,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val notificationCount: StateFlow<Int> = repository.notificationCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val notificationReceipts: StateFlow<List<NotificationReceipt>> = repository.notificationReceipts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val syncHealth: StateFlow<RepositorySyncHealth> = repository.syncHealth()
     val backgroundSyncWifiOnly: StateFlow<Boolean> = repository.backgroundSyncWifiOnly()
     val localLive = localLiveCoordinator.state
@@ -316,6 +321,10 @@ class StudioRackViewModel(
 
     fun refreshNotifications() {
         viewModelScope.launch { runCatching { repository.reconcileNotifications() } }
+    }
+
+    fun markNotificationRead(sourceId: String) {
+        viewModelScope.launch { repository.markNotificationRead(sourceId) }
     }
 
     fun hostLocalLive(eventId: String, sessionName: String) {

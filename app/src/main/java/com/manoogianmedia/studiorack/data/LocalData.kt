@@ -124,6 +124,9 @@ interface StudioRackDao {
     @Query("SELECT COUNT(*) FROM notification_receipts WHERE unread=1")
     fun observeUnreadNotificationCount(): Flow<Int>
 
+    @Query("SELECT * FROM notification_receipts WHERE unread=1 ORDER BY notifiedAt DESC")
+    fun observeUnreadNotificationReceipts(): Flow<List<NotificationReceipt>>
+
     @Query("SELECT * FROM notification_receipts")
     suspend fun notificationReceipts(): List<NotificationReceipt>
 

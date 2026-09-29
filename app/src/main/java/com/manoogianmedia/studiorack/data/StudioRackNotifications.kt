@@ -255,7 +255,7 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
         val openIntent = PendingIntent.getActivity(
             context,
             SUMMARY_ID,
-            Intent(context, MainActivity::class.java).putExtra(EXTRA_NOTIFICATION_DESTINATION, "dashboard"),
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_NOTIFICATION_DESTINATION, "alerts"),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         manager.notify(

@@ -178,6 +178,7 @@ import com.manoogianmedia.studiorack.data.DataExport
 import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SongAttachmentInput
 import com.manoogianmedia.studiorack.data.NotificationRoute
+import com.manoogianmedia.studiorack.data.NotificationReceipt
 import com.manoogianmedia.studiorack.data.LocalLivePeer
 import com.manoogianmedia.studiorack.data.LocalLiveRole
 import com.manoogianmedia.studiorack.data.cacheImageFile
@@ -292,6 +293,7 @@ private fun MainShell(
     openGig: (String) -> Unit,
 ) {
     var section by remember { mutableStateOf(AppSection.DASHBOARD) }
+    var showingAlerts by remember { mutableStateOf(false) }
     val pending by model.pendingCount.collectAsState()
     val conflicts by model.conflicts.collectAsState()
     val syncHealth by model.syncHealth.collectAsState()
@@ -299,10 +301,15 @@ private fun MainShell(
     val productName = stringResource(R.string.app_name_marked)
     LaunchedEffect(notificationRoutes) {
         notificationRoutes.collect { route ->
-            section = when (route.destination) {
-                "equipment" -> AppSection.EQUIPMENT
-                "sessions" -> AppSection.SESSIONS
-                else -> AppSection.DASHBOARD
+            if (route.destination == "alerts") {
+                showingAlerts = true
+            } else {
+                showingAlerts = false
+                section = when (route.destination) {
+                    "equipment" -> AppSection.EQUIPMENT
+                    "sessions" -> AppSection.SESSIONS
+                    else -> AppSection.DASHBOARD
+                }
             }
         }
     }
@@ -329,7 +336,7 @@ private fun MainShell(
                         Text("${conflicts.size} CONFLICT${if (conflicts.size == 1) "" else "S"}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
                     }
                     if (notificationCount > 0) Surface(
-                        modifier = Modifier.padding(start = 7.dp).clickable { section = AppSection.DASHBOARD },
+                        modifier = Modifier.padding(start = 7.dp).clickable { showingAlerts = true },
                         color = Amber,
                         contentColor = Ink,
                         shape = RoundedCornerShape(50),
@@ -359,8 +366,8 @@ private fun MainShell(
                             destinations.forEach { destination ->
                                 StudioNavPill(
                                     destination = destination,
-                                    selected = section == destination,
-                                    onClick = { section = destination },
+                                    selected = !showingAlerts && section == destination,
+                                    onClick = { showingAlerts = false; section = destination },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
@@ -381,13 +388,24 @@ private fun MainShell(
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
-                when (section) {
-                    AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
-                    AppSection.EQUIPMENT -> EquipmentScreen(model)
-                    AppSection.KITS -> KitsScreen(model)
-                    AppSection.SESSIONS -> SessionsScreen(model, openGig)
-                    AppSection.LIBRARY -> LibraryScreen(model)
-                    AppSection.MORE -> MoreScreen(model, uiState)
+                if (showingAlerts) {
+                    AlertsScreen(model) { destination, _ ->
+                        showingAlerts = false
+                        section = when (destination) {
+                            "equipment" -> AppSection.EQUIPMENT
+                            "sessions" -> AppSection.SESSIONS
+                            else -> AppSection.DASHBOARD
+                        }
+                    }
+                } else {
+                    when (section) {
+                        AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
+                        AppSection.EQUIPMENT -> EquipmentScreen(model)
+                        AppSection.KITS -> KitsScreen(model)
+                        AppSection.SESSIONS -> SessionsScreen(model, openGig)
+                        AppSection.LIBRARY -> LibraryScreen(model)
+                        AppSection.MORE -> MoreScreen(model, uiState)
+                    }
                 }
             }
         }
@@ -610,6 +628,114 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
         }) { viewingEvent = null }
     }
     }
+}
+
+internal data class AlertPresentation(val title: String, val body: String, val area: String)
+
+@Composable
+private fun AlertsScreen(model: StudioRackViewModel, openDestination: (String, String) -> Unit) {
+    val alerts by model.notificationReceipts.collectAsState()
+    val actions by model.buddyActions.collectAsState()
+    val notes by model.maintenanceNotes.collectAsState()
+    val events by model.events.collectAsState()
+    val items by model.items.collectAsState()
+    val shares by model.shareNotifications.collectAsState()
+    val actionRows = actions.associate { it.entityId to supportingJson(it) }
+    val noteRows = notes.associate { it.entityId to recordJson(it) }
+    val eventRows = events.associate { it.entityId to recordJson(it) }
+    val itemNames = items.associate { it.entityId to supportingJson(it).optString("display_name", "Equipment") }
+    val shareRows = shares.associate { it.entityId to supportingJson(it) }
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
+            Spacer(Modifier.height(18.dp))
+            SectionHeading("ALERTS", "Items needing your attention")
+            Text("Open an alert to review it in the relevant area.", color = TextSoft, fontSize = 12.sp)
+        }
+        if (alerts.isEmpty()) item { EmptyCard("You have no unread alerts.") }
+        items(alerts, key = { it.sourceId }) { alert ->
+            val presentation = alertPresentation(alert, actionRows, noteRows, eventRows, itemNames, shareRows)
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable {
+                    model.markNotificationRead(alert.sourceId)
+                    openDestination(alert.destination, alert.recordId)
+                },
+                color = Panel,
+                contentColor = Color.White,
+                border = BorderStroke(1.dp, Amber.copy(alpha = 0.55f)),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(presentation.area.uppercase(), color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(alert.notifiedAt)),
+                            color = TextSoft,
+                            fontSize = 10.sp,
+                        )
+                    }
+                    Text(presentation.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+                    if (presentation.body.isNotBlank()) Text(
+                        presentation.body,
+                        color = TextSoft,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    Text("OPEN", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 10.dp))
+                }
+            }
+        }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+internal fun alertPresentation(
+    receipt: NotificationReceipt,
+    actions: Map<String, JSONObject>,
+    notes: Map<String, JSONObject>,
+    events: Map<String, JSONObject>,
+    itemNames: Map<String, String>,
+    shares: Map<String, JSONObject>,
+): AlertPresentation {
+    actions[receipt.sourceId]?.let { row ->
+        val body = row.optString("last_reply_body").ifBlank { row.optString("body") }
+            .lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+        return AlertPresentation(
+            row.optString("display_subject").ifBlank { row.optString("subject", "Crew alert") },
+            body,
+            if (receipt.destination == "sessions") "Sessions" else if (receipt.destination == "equipment") "Gear" else "Crew",
+        )
+    }
+    val noteId = receipt.sourceId.removePrefix("sba_note_")
+    notes[noteId]?.let { row ->
+        return AlertPresentation(
+            "${itemNames[row.optString("item_id")] ?: "Equipment"} needs attention",
+            row.optString("note", "Review this maintenance item."),
+            "Gear",
+        )
+    }
+    events[receipt.recordId]?.let { row ->
+        val whenLabel = listOf(row.optString("event_date"), row.optString("start_time"))
+            .filter(String::isNotBlank).joinToString(" at ")
+        return AlertPresentation(
+            row.optString("title", "Upcoming session"),
+            listOf(whenLabel, row.optString("location")).filter(String::isNotBlank).joinToString(" - "),
+            "Sessions",
+        )
+    }
+    shares[receipt.sourceId]?.let { row ->
+        return AlertPresentation(
+            row.optString("subject", "Shared item updated"),
+            row.optString("body", "Open Shared With Me to review it."),
+            "Sharing",
+        )
+    }
+    return AlertPresentation("Alert", "Open the related area to review this item.", receipt.destination.humanize())
 }
 
 @Composable
