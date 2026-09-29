@@ -301,6 +301,8 @@ class StudioRackNotifications(private val context: Context, private val dao: Stu
 
     private fun cleanSubject(value: String): String = value
         .replace(Regex("^\\[(?:SL|SR)-[^]]+]\\s*", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("^Leviathan\\s+Crew\\s+Item:\\s*", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("\\s*\\[(?:SL|SR)-[^]]+]\\s*$", RegexOption.IGNORE_CASE), "")
         .ifBlank { context.getString(R.string.app_name) }
     private fun isRecent(value: String): Boolean = runCatching {
         Instant.parse(value).isAfter(Instant.now().minus(2, ChronoUnit.DAYS))
