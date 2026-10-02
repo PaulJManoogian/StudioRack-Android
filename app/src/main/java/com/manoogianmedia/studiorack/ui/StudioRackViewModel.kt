@@ -146,6 +146,24 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val sharedAttachments: StateFlow<List<SupportingRecord>> = repository.supporting("shared_song_attachment")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val joinedEnsembles: StateFlow<List<SupportingRecord>> = repository.supporting("joined_ensemble")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val joinedEnsembleRoles: StateFlow<List<SupportingRecord>> = repository.supporting("joined_ensemble_role")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val joinedEvents: StateFlow<List<SupportingRecord>> = repository.supporting("joined_event")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val joinedSetLists: StateFlow<List<SupportingRecord>> = repository.supporting("joined_set_list")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val joinedSetListSections: StateFlow<List<SupportingRecord>> = repository.supporting("joined_set_list_section")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val joinedSetListEntries: StateFlow<List<SupportingRecord>> = repository.supporting("joined_set_list_entry")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val joinedSongs: StateFlow<List<SupportingRecord>> = repository.supporting("joined_song")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val joinedAttachments: StateFlow<List<SupportingRecord>> = repository.supporting("joined_song_attachment")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val memberOverlays: StateFlow<List<SupportingRecord>> = repository.supporting("member_overlay")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val shareNotifications: StateFlow<List<SupportingRecord>> = repository.supporting("share_notification")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val syncState: StateFlow<SyncState?> = repository.syncState()
@@ -320,6 +338,22 @@ class StudioRackViewModel(
         if (knownRevision.isBlank() || (revision.isNotBlank() && revision != knownRevision)) repository.sync()
         LiveRefreshResult(revision, connected = true, changed = knownRevision.isNotBlank() && revision != knownRevision)
     }.getOrElse { LiveRefreshResult(knownRevision, connected = false, changed = false) }
+
+    fun saveMemberOverlay(data: JSONObject) {
+        viewModelScope.launch {
+            runCatching { repository.saveMemberOverlay(data) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Private performance note saved.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Private note could not be saved.", syncError = true) }
+        }
+    }
+
+    fun deleteMemberOverlay(overlayId: String) {
+        viewModelScope.launch {
+            runCatching { repository.deleteMemberOverlay(overlayId) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Private performance note removed.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Private note could not be removed.", syncError = true) }
+        }
+    }
 
     fun refreshNotifications() {
         viewModelScope.launch { runCatching { repository.reconcileNotifications() } }

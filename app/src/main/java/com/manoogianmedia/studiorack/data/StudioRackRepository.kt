@@ -94,6 +94,17 @@ class StudioRackRepository(
 
     suspend fun liveShareStatus(grantId: String): JSONObject = client.liveShareStatus(grantId)
 
+    suspend fun saveMemberOverlay(data: JSONObject): JSONObject {
+        val result = client.saveMemberOverlay(data)
+        sync()
+        return result
+    }
+
+    suspend fun deleteMemberOverlay(overlayId: String) {
+        client.deleteMemberOverlay(overlayId)
+        sync()
+    }
+
     suspend fun localLivePacket(eventId: String): JSONObject {
         val event = dao.record("studio_event", eventId) ?: error("The scheduled session is not available on this device.")
         val eventJson = JSONObject(event.json)
@@ -778,10 +789,11 @@ class StudioRackRepository(
     }
 
     private suspend fun refreshAttachmentCache() {
-        val records = dao.records("song_attachment") + dao.supporting("shared_song_attachment").map { shared ->
+        val sharedRecords = (dao.supporting("shared_song_attachment") + dao.supporting("joined_song_attachment")).map { shared ->
             val data = JSONObject(shared.json)
-            CachedRecord("shared_song_attachment", shared.entityId, data.optString("updated_utc").hashCode(), shared.json)
+            CachedRecord(shared.entityType, shared.entityId, data.optString("updated_utc").hashCode(), shared.json)
         }
+        val records = dao.records("song_attachment") + sharedRecords
         val existing = dao.cachedAttachments().associateBy { it.attachmentId }
         val activeIds = records.mapTo(mutableSetOf()) { it.entityId }
 

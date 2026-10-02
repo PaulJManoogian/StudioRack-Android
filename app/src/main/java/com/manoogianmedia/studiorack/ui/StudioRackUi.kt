@@ -1575,11 +1575,173 @@ private fun HelpPanel() {
 
 @Composable
 private fun SharingPanel(model: StudioRackViewModel) {
-    var tab by remember { mutableStateOf("Shared With Me") }
+    var tab by remember { mutableStateOf("Joined Bands") }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeading("COLLABORATION", "Sharing")
-        ChoiceStrip(listOf("Shared With Me", "My Shares"), tab) { tab = it }
-        if (tab == "My Shares") MySharesPanel(model) else SharedWithMePanel(model, showHeading = false)
+        ChoiceStrip(listOf("Joined Bands", "Shared With Me", "My Shares"), tab) { tab = it }
+        when (tab) {
+            "Joined Bands" -> JoinedBandsPanel(model)
+            "My Shares" -> MySharesPanel(model)
+            else -> SharedWithMePanel(model, showHeading = false)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun JoinedBandsPanel(model: StudioRackViewModel) {
+    val context = LocalContext.current
+    val bands by model.joinedEnsembles.collectAsState()
+    val roles by model.joinedEnsembleRoles.collectAsState()
+    val events by model.joinedEvents.collectAsState()
+    val setLists by model.joinedSetLists.collectAsState()
+    val sections by model.joinedSetListSections.collectAsState()
+    val entries by model.joinedSetListEntries.collectAsState()
+    val songs by model.joinedSongs.collectAsState()
+    val attachments by model.joinedAttachments.collectAsState()
+    val overlays by model.memberOverlays.collectAsState()
+    val cached by model.cachedAttachments.collectAsState()
+    val roleData = remember(roles) { roles.map(::supportingJson) }
+    val eventData = remember(events) { events.map(::supportingJson) }
+    val setListData = remember(setLists) { setLists.map(::supportingJson) }
+    val sectionData = remember(sections) { sections.map(::supportingJson) }
+    val entryData = remember(entries) { entries.map(::supportingJson) }
+    val songData = remember(songs) { songs.map(::supportingJson) }
+    val attachmentData = remember(attachments) { attachments.associateWith(::supportingJson) }
+    val overlayData = remember(overlays) { overlays.map(::supportingJson) }
+    val cacheById = remember(cached) { cached.associateBy(CachedAttachment::attachmentId) }
+    val online = rememberNetworkConnected()
+    var selectedBand by remember { mutableStateOf<String?>(null) }
+    var selectedEvent by remember { mutableStateOf<String?>(null) }
+    var preview by remember { mutableStateOf<CachedAttachment?>(null) }
+    var noteTarget by remember { mutableStateOf<JSONObject?>(null) }
+    var noteText by remember { mutableStateOf("") }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Band sets and role-appropriate performance materials remain available from the last successful sync.", color = TextSoft)
+        if (bands.isEmpty()) EmptyCard("No band memberships are connected to this account yet.")
+        bands.forEach { record ->
+            val band = supportingJson(record)
+            val ensembleId = band.optString("ensemble_id")
+            val bandRoles = roleData.filter { it.optString("ensemble_id") == ensembleId }
+            val bandEvents = eventData.filter { it.optString("ensemble_id") == ensembleId }
+            InfoCard {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(band.optString("name", "Band"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text(band.optString("workspace_name"), color = Cyan)
+                        Text(
+                            bandRoles.joinToString(", ") { it.optString("role_label") }.ifBlank { "No performance role assigned" },
+                            color = TextSoft,
+                            fontSize = 13.sp,
+                        )
+                        Text("${band.optString("material_profile", "role_based").humanize()} materials | ${band.optString("authority_role", "performer").humanize()}", color = TextSoft, fontSize = 12.sp)
+                    }
+                    StudioButton(
+                        onClick = {
+                            selectedBand = if (selectedBand == ensembleId) null else ensembleId
+                            selectedEvent = null
+                        },
+                        enabled = band.optString("membership_status") == "active" && bandEvents.isNotEmpty(),
+                        kind = StudioButtonKind.Secondary,
+                    ) { Text(if (selectedBand == ensembleId) "Close" else "Open", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+                if (band.optString("membership_status") != "active") Text("MEMBERSHIP ${band.optString("membership_status").uppercase()}", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                else if (bandEvents.isEmpty()) Text("No scheduled set lists are available for this band.", color = TextSoft)
+                if (selectedBand == ensembleId) {
+                    bandEvents.forEach { event ->
+                        val eventId = event.optString("id")
+                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(event.optString("title", "Scheduled set"), color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    Text(listOf(event.optString("event_date"), event.optString("start_time"), event.optString("location")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 12.sp)
+                                }
+                                StudioButton(onClick = { selectedEvent = if (selectedEvent == eventId) null else eventId }, kind = StudioButtonKind.Secondary) {
+                                    Text(if (selectedEvent == eventId) "Hide Set" else "View Set", color = Color.White)
+                                }
+                            }
+                            if (selectedEvent == eventId) {
+                                val setListId = event.optString("set_list_id")
+                                val setList = setListData.firstOrNull { it.optString("ensemble_id") == ensembleId && it.optString("id") == setListId }
+                                setList?.let { Text(it.optString("name"), color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 8.dp)) }
+                                sectionData
+                                    .filter { it.optString("ensemble_id") == ensembleId && it.optString("set_list_id") == setListId }
+                                    .sortedBy { it.optInt("position") }
+                                    .forEach { section ->
+                                        Text(section.optString("name", "Set"), color = Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                                        entryData
+                                            .filter { it.optString("ensemble_id") == ensembleId && it.optString("set_list_id") == setListId && it.optString("section_id") == section.optString("id") }
+                                            .sortedBy { it.optInt("position") }
+                                            .forEach { entry ->
+                                                val song = songData.firstOrNull { it.optString("ensemble_id") == ensembleId && it.optString("id") == entry.optString("song_id") }
+                                                song?.let { value ->
+                                                    val songId = value.optString("id")
+                                                    val songAttachments = attachments.filter {
+                                                        val data = attachmentData.getValue(it)
+                                                        data.optString("ensemble_id") == ensembleId && data.optString("song_id") == songId
+                                                    }
+                                                    val note = overlayData.firstOrNull { it.optString("ensemble_id") == ensembleId && it.optString("source_song_id") == songId }
+                                                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                                        Text("${entry.optInt("position")}. ${value.optString("title", "Untitled")}", color = Color.White, fontWeight = FontWeight.Bold)
+                                                        if (value.optString("artist").isNotBlank()) Text(value.optString("artist"), color = TextSoft)
+                                                        Text(listOf(value.optString("starts_by"), displaySongKey(value.optString("song_key")), value.optString("tempo"), value.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 12.sp)
+                                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            songAttachments.forEach { attachment ->
+                                                                val data = attachmentData.getValue(attachment)
+                                                                val cachedAttachment = cacheById[attachment.entityId]
+                                                                StudioButton(
+                                                                    onClick = {
+                                                                        if (cachedAttachment?.status == "ready") preview = cachedAttachment
+                                                                        else normalizedMediaLink(data.optString("file_ref"))?.let { openMediaLink(context, it) }
+                                                                    },
+                                                                    enabled = cachedAttachment?.status == "ready" || normalizedMediaLink(data.optString("file_ref")) != null,
+                                                                    kind = StudioButtonKind.Secondary,
+                                                                ) { Text(attachmentLabel(data), color = Color.White) }
+                                                            }
+                                                            StudioButton(onClick = {
+                                                                noteTarget = JSONObject(value.toString()).put("set_list_id", setListId).put("set_list_entry_id", entry.optString("id"))
+                                                                noteText = note?.optString("content_text").orEmpty()
+                                                            }, enabled = online, kind = StudioButtonKind.Secondary) {
+                                                                Text(if (note == null) "Private Note" else "Edit Private Note", color = Color.White)
+                                                            }
+                                                            if (note != null) StudioButton(onClick = { model.deleteMemberOverlay(note.optString("id")) }, enabled = online, kind = StudioButtonKind.Danger) { Text("Remove Note", color = Color.White) }
+                                                        }
+                                                        note?.optString("content_text")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp)) }
+                                                    }
+                                                }
+                                            }
+                                    }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    preview?.let { AttachmentPreviewDialog(it) { preview = null } }
+    noteTarget?.let { song ->
+        val ensembleId = selectedBand.orEmpty()
+        val existing = overlayData.firstOrNull { it.optString("ensemble_id") == ensembleId && it.optString("source_song_id") == song.optString("id") }
+        EditorDialog("Private Performance Note", { noteTarget = null }) {
+            Text(song.optString("title"), color = Amber, fontWeight = FontWeight.Bold)
+            OutlinedTextField(noteText, { noteText = it.take(10_000) }, label = { Text("Only you can see this note") }, minLines = 4, modifier = Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StudioButton(onClick = { noteTarget = null }, kind = StudioButtonKind.Secondary, modifier = Modifier.weight(1f)) { Text("Cancel", color = Color.White) }
+                StudioButton(onClick = {
+                    model.saveMemberOverlay(JSONObject()
+                        .put("id", existing?.optString("id").orEmpty())
+                        .put("source_account_id", song.optString("source_account_id"))
+                        .put("source_song_id", song.optString("id"))
+                        .put("ensemble_id", ensembleId)
+                        .put("set_list_id", song.optString("set_list_id"))
+                        .put("set_list_entry_id", song.optString("set_list_entry_id"))
+                        .put("overlay_type", "performance_note")
+                        .put("content_text", noteText.trim()))
+                    noteTarget = null
+                }, enabled = noteText.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Save", color = Color.Black, fontWeight = FontWeight.Bold) }
+            }
+        }
     }
 }
 

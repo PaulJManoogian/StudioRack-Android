@@ -79,6 +79,12 @@ class SyncClient(
     suspend fun liveShareStatus(grantId: String): JSONObject =
         request("/live/shares/${URLEncoder.encode(grantId, Charsets.UTF_8.name())}/status")
 
+    suspend fun saveMemberOverlay(data: JSONObject): JSONObject =
+        request("/member-overlays", "POST", data)
+
+    suspend fun deleteMemberOverlay(overlayId: String): JSONObject =
+        request("/member-overlays/${URLEncoder.encode(overlayId, Charsets.UTF_8.name())}", "DELETE")
+
     suspend fun revoke() = request("/auth/revoke", "POST", JSONObject())
 
     suspend fun shareLink(grantId: String): JSONObject = request("/sharing/$grantId/link", "POST", JSONObject())
