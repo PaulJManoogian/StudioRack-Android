@@ -355,6 +355,56 @@ class StudioRackRepository(
         syncNow()
     }
 
+    suspend fun saveEnsembleMemberships(ensembleId: String, memberships: Map<String, JSONObject>) {
+        val existingMemberships = dao.records("ensemble_contact")
+            .filter { JSONObject(it.json).optString("ensemble_id") == ensembleId }
+        val existingById = existingMemberships.associateBy { it.entityId }
+        val existingRoles = dao.records("ensemble_member_role")
+            .filter { JSONObject(it.json).optString("ensemble_id") == ensembleId }
+        val existingRolesById = existingRoles.associateBy { it.entityId }
+        val desiredMemberships = memberships.map { (contactId, source) ->
+            val id = "$ensembleId|$contactId"
+            val current = existingById[id]?.let { JSONObject(it.json) } ?: JSONObject()
+            val data = JSONObject(current.toString())
+                .put("ensemble_id", ensembleId)
+                .put("contact_id", contactId)
+                .put("relationship_role", source.optString("performance_roles"))
+                .put("is_primary", source.optInt("is_primary", 0))
+                .put("notes", source.optString("notes"))
+                .put("membership_status", source.optString("membership_status", "active"))
+                .put("authority_role", source.optString("authority_role", "performer"))
+                .put("material_profile", source.optString("material_profile", "role_based"))
+            id to data
+        }
+        val desiredMembershipIds = desiredMemberships.mapTo(mutableSetOf()) { it.first }
+        val removedMemberships = existingMemberships.filter { it.entityId !in desiredMembershipIds }
+        val desiredRoles = memberships.flatMap { (contactId, source) ->
+            source.optString("performance_roles").split(',', ';', '\n')
+                .map(String::trim).filter(String::isNotBlank).distinctBy { it.lowercase() }
+                .mapNotNull { role ->
+                    val roleCode = role.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
+                    if (roleCode.isBlank()) return@mapNotNull null
+                    val id = "$ensembleId|$contactId|$roleCode"
+                    id to JSONObject().put("ensemble_id", ensembleId).put("contact_id", contactId)
+                        .put("role_code", roleCode).put("role_label", role)
+                }
+        }
+        val desiredRoleIds = desiredRoles.mapTo(mutableSetOf()) { it.first }
+        val removedRoles = existingRoles.filter { it.entityId !in desiredRoleIds }
+        var sequence = System.currentTimeMillis()
+        val membershipUpserts = desiredMemberships.map { (id, data) -> CachedRecord("ensemble_contact", id, existingById[id]?.revision ?: 0, data.toString()) }
+        val roleUpserts = desiredRoles.map { (id, data) -> CachedRecord("ensemble_member_role", id, existingRolesById[id]?.revision ?: 0, data.toString()) }
+        dao.applyLocalBundle(
+            upserts = membershipUpserts + roleUpserts,
+            deletes = (removedRoles + removedMemberships).map { RecordRef(it.entityType, it.entityId) },
+            mutations = membershipUpserts.map { mutation(it.entityType, it.entityId, "upsert", it.revision, it.json, sequence++) } +
+                removedRoles.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) } +
+                roleUpserts.map { mutation(it.entityType, it.entityId, "upsert", it.revision, it.json, sequence++) } +
+                removedMemberships.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) },
+        )
+        syncNow()
+    }
+
     suspend fun saveContact(contactId: String, data: JSONObject, methods: List<JSONObject>) {
         val currentContact = dao.record("contact", contactId)
         val existingMethods = dao.records("contact_method").filter { JSONObject(it.json).optString("contact_id") == contactId }

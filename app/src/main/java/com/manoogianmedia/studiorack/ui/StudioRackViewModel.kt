@@ -76,6 +76,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val ensembleContacts: StateFlow<List<CachedRecord>> = repository.records("ensemble_contact")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val ensembleMemberRoles: StateFlow<List<CachedRecord>> = repository.records("ensemble_member_role")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val eventEnsembles: StateFlow<List<CachedRecord>> = repository.records("studio_event_ensemble")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val eventContacts: StateFlow<List<CachedRecord>> = repository.records("studio_event_contact")
@@ -525,6 +527,14 @@ class StudioRackViewModel(
             runCatching { repository.saveContactRelationships(parentType, parentId, contactIds) }
                 .onSuccess { _uiState.value = _uiState.value.copy(message = "Contact relationships saved. Synchronization is queued."); done() }
                 .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save contact relationships.") }
+        }
+    }
+
+    fun saveEnsembleMemberships(ensembleId: String, memberships: Map<String, JSONObject>, done: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { repository.saveEnsembleMemberships(ensembleId, memberships) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Band memberships saved. Synchronization is queued."); done() }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save band memberships.") }
         }
     }
 

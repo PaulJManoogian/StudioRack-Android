@@ -1825,6 +1825,7 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
     val ensembles by model.ensembles.collectAsState()
     val venueContacts by model.venueContacts.collectAsState()
     val ensembleContacts by model.ensembleContacts.collectAsState()
+    val ensembleMemberRoles by model.ensembleMemberRoles.collectAsState()
     var tab by remember { mutableStateOf("Venues") }
     var mode by remember { mutableStateOf("Browse") }
     var query by remember { mutableStateOf("") }
@@ -1989,6 +1990,7 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
         DirectoryRelationshipsDialog(
             parentType, record, contacts,
             if (parentType == "venue") venueContacts else ensembleContacts,
+            if (parentType == "ensemble") ensembleMemberRoles else emptyList(),
             model,
         ) { managing = null }
     }
@@ -2305,11 +2307,48 @@ private fun readPickedContact(context: Context, contactUri: Uri): ImportedDevice
     return ImportedDeviceContact(name, organization, jobTitle, normalized, photoUri)
 }
 
+private data class EnsembleMembershipDraft(
+    val performanceRoles: String = "",
+    val authorityRole: String = "performer",
+    val materialProfile: String = "role_based",
+    val membershipStatus: String = "active",
+)
+
 @Composable
-private fun DirectoryRelationshipsDialog(parentType: String, parent: CachedRecord, contacts: List<CachedRecord>, relationships: List<CachedRecord>, model: StudioRackViewModel, close: () -> Unit) {
+private fun DirectoryRelationshipsDialog(
+    parentType: String,
+    parent: CachedRecord,
+    contacts: List<CachedRecord>,
+    relationships: List<CachedRecord>,
+    memberRoles: List<CachedRecord>,
+    model: StudioRackViewModel,
+    close: () -> Unit,
+) {
     val parentKey = if (parentType == "venue") "venue_id" else "ensemble_id"
-    val selectedAtOpen = relationships.filter { recordJson(it).optString(parentKey) == parent.entityId }.mapTo(mutableSetOf()) { recordJson(it).optString("contact_id") }
+    val currentRelationships = relationships.filter { recordJson(it).optString(parentKey) == parent.entityId }
+    val selectedAtOpen = currentRelationships.mapTo(mutableSetOf()) { recordJson(it).optString("contact_id") }
     var selected by remember { mutableStateOf(selectedAtOpen) }
+    val membershipDrafts = remember(parent.entityId, currentRelationships, memberRoles) {
+        mutableStateMapOf<String, EnsembleMembershipDraft>().apply {
+            currentRelationships.forEach { relationship ->
+                val data = recordJson(relationship)
+                val contactId = data.optString("contact_id")
+                val roles = memberRoles.filter {
+                    val role = recordJson(it)
+                    role.optString("ensemble_id") == parent.entityId && role.optString("contact_id") == contactId
+                }.joinToString(", ") { role ->
+                    val roleData = recordJson(role)
+                    roleData.optString("role_label").ifBlank { roleData.optString("role_code").replace('_', ' ').humanize() }
+                }
+                put(contactId, EnsembleMembershipDraft(
+                    performanceRoles = roles.ifBlank { data.optString("relationship_role") },
+                    authorityRole = data.optString("authority_role", "performer"),
+                    materialProfile = data.optString("material_profile", "role_based"),
+                    membershipStatus = data.optString("membership_status", "active"),
+                ))
+            }
+        }
+    }
     var query by remember(parent.entityId) { mutableStateOf("") }
     val filteredContacts = contacts.filter { contact ->
         val data = recordJson(contact)
@@ -2324,17 +2363,51 @@ private fun DirectoryRelationshipsDialog(parentType: String, parent: CachedRecor
         }
         filteredContacts.forEach { contact ->
             val checked = contact.entityId in selected
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked, { enabled -> selected = selected.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) } })
-                Column {
-                    Text(recordJson(contact).optString("display_name"), color = Color.White, fontWeight = FontWeight.Bold)
-                    val detail = listOf(recordJson(contact).optString("job_title"), recordJson(contact).optString("organization_name")).filter(String::isNotBlank).joinToString(" / ")
-                    if (detail.isNotBlank()) Text(detail, color = TextSoft, fontSize = 12.sp)
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked, { enabled ->
+                        selected = selected.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) }
+                        if (enabled && membershipDrafts[contact.entityId] == null) membershipDrafts[contact.entityId] = EnsembleMembershipDraft()
+                    })
+                    Column {
+                        Text(recordJson(contact).optString("display_name"), color = Color.White, fontWeight = FontWeight.Bold)
+                        val detail = listOf(recordJson(contact).optString("job_title"), recordJson(contact).optString("organization_name")).filter(String::isNotBlank).joinToString(" / ")
+                        if (detail.isNotBlank()) Text(detail, color = TextSoft, fontSize = 12.sp)
+                    }
+                }
+                if (checked && parentType == "ensemble") {
+                    val draft = membershipDrafts[contact.entityId] ?: EnsembleMembershipDraft()
+                    StudioField("Performance roles (comma separated)", draft.performanceRoles) {
+                        membershipDrafts[contact.entityId] = draft.copy(performanceRoles = it)
+                    }
+                    Text("Authority", color = TextSoft, fontSize = 11.sp)
+                    ChoiceStrip(listOf("Performer", "Music Librarian", "Band Leader"), when (draft.authorityRole) {
+                        "librarian" -> "Music Librarian"; "leader" -> "Band Leader"; else -> "Performer"
+                    }) { value -> membershipDrafts[contact.entityId] = draft.copy(authorityRole = when (value) { "Music Librarian" -> "librarian"; "Band Leader" -> "leader"; else -> "performer" }) }
+                    Text("Material access", color = TextSoft, fontSize = 11.sp)
+                    ChoiceStrip(listOf("Role Based", "Full Band", "Production", "Custom"), when (draft.materialProfile) {
+                        "full_band" -> "Full Band"; "production" -> "Production"; "custom" -> "Custom"; else -> "Role Based"
+                    }) { value -> membershipDrafts[contact.entityId] = draft.copy(materialProfile = value.lowercase().replace(' ', '_')) }
+                    Text("Membership", color = TextSoft, fontSize = 11.sp)
+                    ChoiceStrip(listOf("Active", "Suspended", "Former"), draft.membershipStatus.replaceFirstChar(Char::uppercase)) { value ->
+                        membershipDrafts[contact.entityId] = draft.copy(membershipStatus = value.lowercase())
+                    }
                 }
             }
         }
         if (contacts.isNotEmpty() && filteredContacts.isEmpty()) Text("No contacts match this search.", color = TextSoft)
-        EditorActions(true, save = { model.saveDirectoryRelationships(parentType, parent.entityId, selected, close) }, delete = null)
+        EditorActions(true, save = {
+            if (parentType == "ensemble") {
+                val payload = selected.associateWith { contactId ->
+                    val draft = membershipDrafts[contactId] ?: EnsembleMembershipDraft()
+                    JSONObject().put("performance_roles", draft.performanceRoles)
+                        .put("authority_role", draft.authorityRole)
+                        .put("material_profile", draft.materialProfile)
+                        .put("membership_status", draft.membershipStatus)
+                }
+                model.saveEnsembleMemberships(parent.entityId, payload, close)
+            } else model.saveDirectoryRelationships(parentType, parent.entityId, selected, close)
+        }, delete = null)
     }
 }
 
