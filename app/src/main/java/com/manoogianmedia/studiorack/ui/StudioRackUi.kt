@@ -109,6 +109,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlayDisabled
 import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.RateReview
 import androidx.compose.material.icons.rounded.SettingsInputComponent
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Stop
@@ -294,6 +295,7 @@ private fun MainShell(
 ) {
     var section by remember { mutableStateOf(AppSection.DASHBOARD) }
     var showingAlerts by remember { mutableStateOf(false) }
+    var showingFeedback by remember { mutableStateOf(false) }
     val pending by model.pendingCount.collectAsState()
     val conflicts by model.conflicts.collectAsState()
     val syncHealth by model.syncHealth.collectAsState()
@@ -303,8 +305,10 @@ private fun MainShell(
         notificationRoutes.collect { route ->
             if (route.destination == "alerts") {
                 showingAlerts = true
+                showingFeedback = false
             } else {
                 showingAlerts = false
+                showingFeedback = false
                 section = when (route.destination) {
                     "equipment" -> AppSection.EQUIPMENT
                     "sessions" -> AppSection.SESSIONS
@@ -335,8 +339,12 @@ private fun MainShell(
                     if (conflicts.isNotEmpty()) Surface(color = Color(0xFF8B2F3A), shape = RoundedCornerShape(8.dp)) {
                         Text("${conflicts.size} CONFLICT${if (conflicts.size == 1) "" else "S"}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
                     }
+                    if (uiState.testerPhase in setOf("alpha", "beta")) TesterFeedbackButton {
+                        showingFeedback = true
+                        showingAlerts = false
+                    }
                     if (notificationCount > 0) Surface(
-                        modifier = Modifier.padding(start = 7.dp).clickable { showingAlerts = true },
+                        modifier = Modifier.padding(start = 7.dp).clickable { showingAlerts = true; showingFeedback = false },
                         color = Amber,
                         contentColor = Ink,
                         shape = RoundedCornerShape(50),
@@ -366,8 +374,8 @@ private fun MainShell(
                             destinations.forEach { destination ->
                                 StudioNavPill(
                                     destination = destination,
-                                    selected = !showingAlerts && section == destination,
-                                    onClick = { showingAlerts = false; section = destination },
+                                    selected = !showingAlerts && !showingFeedback && section == destination,
+                                    onClick = { showingAlerts = false; showingFeedback = false; section = destination },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
@@ -388,7 +396,9 @@ private fun MainShell(
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
-                if (showingAlerts) {
+                if (showingFeedback) {
+                    TesterFeedbackScreen(model, uiState.testerPhase) { showingFeedback = false }
+                } else if (showingAlerts) {
                     AlertsScreen(model) { destination, _ ->
                         showingAlerts = false
                         section = when (destination) {
@@ -408,6 +418,111 @@ private fun MainShell(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TesterFeedbackButton(open: () -> Unit) {
+    Surface(
+        modifier = Modifier.padding(start = 7.dp).size(38.dp).clickable(onClick = open),
+        color = PanelRaised,
+        contentColor = Amber,
+        border = BorderStroke(1.dp, Amber),
+        shape = CircleShape,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.RateReview, "Tester feedback", Modifier.size(23.dp), tint = Amber)
+            Surface(
+                modifier = Modifier.align(Alignment.BottomEnd).size(17.dp),
+                color = Ink,
+                shape = CircleShape,
+            ) {
+                Icon(Icons.Rounded.MusicNote, null, Modifier.padding(2.dp), tint = Cyan)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TesterFeedbackScreen(model: StudioRackViewModel, testerPhase: String, close: () -> Unit) {
+    var feedbackType by remember { mutableStateOf("Something could work better") }
+    var productArea by remember { mutableStateOf("Android Application") }
+    var impact by remember { mutableStateOf("Noticeable problem") }
+    var summary by remember { mutableStateOf("") }
+    var details by remember { mutableStateOf("") }
+    var contactAllowed by remember { mutableStateOf(true) }
+    var submitting by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf("") }
+    var resultError by remember { mutableStateOf(false) }
+    val feedbackValues = mapOf(
+        "Something is broken" to "bug", "Something could work better" to "improvement",
+        "New idea" to "idea", "Question" to "question",
+    )
+    val areaValues = mapOf(
+        "Leviathan Live" to "live", "Songs & Charts" to "songs", "Set Lists & Schedule" to "setlists",
+        "Gear" to "gear", "Crew" to "crew", "People & Sharing" to "people",
+        "Desktop Application" to "desktop", "Android Application" to "android", "Other" to "other",
+    )
+    val impactValues = mapOf(
+        "I cannot continue" to "blocking", "Major disruption" to "major",
+        "Noticeable problem" to "moderate", "Small issue" to "minor",
+    )
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = close) { Icon(Icons.Rounded.ArrowBack, "Back", tint = Amber) }
+            Column(Modifier.weight(1f)) {
+                Text("${testerPhase.uppercase()} TESTER", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                Text("Share Feedback", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Text("Tell us what happened, what you expected, or what would make the app more useful.", color = TextSoft)
+        LabeledChoice("Feedback type", feedbackValues.keys.toList(), feedbackType) { feedbackType = it }
+        LabeledChoice("Product area", areaValues.keys.toList(), productArea) { productArea = it }
+        LabeledChoice("Impact", impactValues.keys.toList(), impact) { impact = it }
+        OutlinedTextField(
+            value = summary,
+            onValueChange = { summary = it.take(180) },
+            label = { Text("Short summary") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = details,
+            onValueChange = { details = it.take(8000) },
+            label = { Text("What happened or what should change?") },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
+            minLines = 6,
+        )
+        Row(
+            Modifier.fillMaxWidth().clickable { contactAllowed = !contactAllowed },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = contactAllowed, onCheckedChange = { contactAllowed = it })
+            Text("You may contact me about this feedback", color = Color.White)
+        }
+        if (result.isNotBlank()) Text(result, color = if (resultError) Color(0xFFFF6B6B) else Color(0xFF63E6A4))
+        StudioButton(
+            onClick = {
+                submitting = true
+                result = ""
+                model.submitTesterFeedback(
+                    feedbackValues.getValue(feedbackType), areaValues.getValue(productArea), impactValues.getValue(impact),
+                    summary.trim(), details.trim(), contactAllowed,
+                ) { ok, message ->
+                    submitting = false
+                    result = message
+                    resultError = !ok
+                    if (ok) { summary = ""; details = "" }
+                }
+            },
+            enabled = !submitting && summary.isNotBlank() && details.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (submitting) "Sending..." else "Send Feedback", color = Ink, fontWeight = FontWeight.Black)
         }
     }
 }

@@ -20,14 +20,20 @@ class TokenStore(context: Context) {
     }
     fun deviceId(): String? = prefs.getString("device_id", null)
     fun accountId(): String? = prefs.getString("account_id", null)
+    fun testerPhase(): String = prefs.getString("tester_phase", "").orEmpty()
     fun isSignedIn(): Boolean = token() != null
 
-    fun save(token: String, deviceId: String, accountId: String) {
+    fun save(token: String, deviceId: String, accountId: String, testerPhase: String = "") {
         prefs.edit()
             .putString("token", encrypt(token))
             .putString("device_id", deviceId)
             .putString("account_id", accountId)
+            .putString("tester_phase", testerPhase)
             .commit()
+    }
+
+    fun setTesterPhase(testerPhase: String) {
+        prefs.edit().putString("tester_phase", testerPhase).apply()
     }
 
     fun clear() = prefs.edit().clear().apply()

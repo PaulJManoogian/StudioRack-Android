@@ -87,6 +87,10 @@ class SyncClient(
 
     suspend fun revoke() = request("/auth/revoke", "POST", JSONObject())
 
+    suspend fun testerStatus(): JSONObject = request("/tester/status")
+
+    suspend fun submitFeedback(data: JSONObject): JSONObject = request("/feedback", "POST", data)
+
     suspend fun shareLink(grantId: String): JSONObject = request("/sharing/$grantId/link", "POST", JSONObject())
 
     suspend fun emailShare(grantId: String): JSONObject = request("/sharing/$grantId/email", "POST", JSONObject())

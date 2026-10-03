@@ -586,7 +586,12 @@ class StudioRackRepository(
     suspend fun signIn(email: String, accessCode: String, mfaCode: String) {
         val stableId = tokenStore.deviceId() ?: "android_" + Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
         val response = client.signIn(email, accessCode, mfaCode, "${Build.MANUFACTURER} ${Build.MODEL}", stableId)
-        tokenStore.save(response.getString("access_token"), response.getString("device_id"), response.getString("account_id"))
+        tokenStore.save(
+            response.getString("access_token"),
+            response.getString("device_id"),
+            response.getString("account_id"),
+            response.optString("tester_phase"),
+        )
         sync()
         scheduleAutomaticSync()
     }
@@ -608,7 +613,12 @@ class StudioRackRepository(
             "${Build.MANUFACTURER} ${Build.MODEL}",
             stableId,
         )
-        tokenStore.save(response.getString("access_token"), response.getString("device_id"), response.getString("account_id"))
+        tokenStore.save(
+            response.getString("access_token"),
+            response.getString("device_id"),
+            response.getString("account_id"),
+            response.optString("tester_phase"),
+        )
         sync()
         scheduleAutomaticSync()
     }
@@ -631,6 +641,33 @@ class StudioRackRepository(
         runCatching { client.revoke() }
         notifications.clearAll()
         tokenStore.clear()
+    }
+
+    fun testerPhase(): String = tokenStore.testerPhase()
+
+    suspend fun refreshTesterStatus(): String {
+        val phase = client.testerStatus().optString("tester_phase").lowercase()
+        tokenStore.setTesterPhase(phase)
+        return phase
+    }
+
+    suspend fun submitFeedback(
+        feedbackType: String,
+        productArea: String,
+        impact: String,
+        summary: String,
+        details: String,
+        contactAllowed: Boolean,
+    ) {
+        client.submitFeedback(
+            JSONObject()
+                .put("feedback_type", feedbackType)
+                .put("product_area", productArea)
+                .put("impact", impact)
+                .put("summary", summary)
+                .put("details", details)
+                .put("contact_allowed", contactAllowed)
+        )
     }
 
     suspend fun savePerformanceSettings(settings: JSONObject) {

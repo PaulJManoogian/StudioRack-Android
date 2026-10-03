@@ -184,7 +184,13 @@ class StudioRackViewModel(
     val nearbyLiveSessions = localLiveCoordinator.peers
 
     private val initiallySignedIn = repository.signedIn()
-    private val _uiState = MutableStateFlow(StudioRackUiState(initiallySignedIn, starting = initiallySignedIn))
+    private val _uiState = MutableStateFlow(
+        StudioRackUiState(
+            signedIn = initiallySignedIn,
+            starting = initiallySignedIn,
+            testerPhase = repository.testerPhase(),
+        )
+    )
     val uiState: StateFlow<StudioRackUiState> = _uiState.asStateFlow()
     private val _reportState = MutableStateFlow(ReportUiState())
     val reportState: StateFlow<ReportUiState> = _reportState.asStateFlow()
@@ -198,7 +204,10 @@ class StudioRackViewModel(
                 val result = runCatching { repository.sync() }
                 delay((800L - (System.currentTimeMillis() - startedAt)).coerceAtLeast(0L))
                 result
-                    .onSuccess { _uiState.value = _uiState.value.copy(starting = false, message = "Synced.", syncError = false) }
+                    .onSuccess {
+                        val testerPhase = runCatching { repository.refreshTesterStatus() }.getOrDefault(repository.testerPhase())
+                        _uiState.value = _uiState.value.copy(starting = false, message = "Synced.", syncError = false, testerPhase = testerPhase)
+                    }
                     .onFailure {
                         _uiState.value = _uiState.value.copy(
                             starting = false,
@@ -215,7 +224,7 @@ class StudioRackViewModel(
         _uiState.value = _uiState.value.copy(busy = true, message = "")
         viewModelScope.launch {
             runCatching { repository.signIn(email, accessCode, mfaCode) }
-                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "This device is ready offline.", syncError = false) }
+                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "This device is ready offline.", syncError = false, testerPhase = repository.testerPhase()) }
                 .onFailure { _uiState.value = StudioRackUiState(signedIn = false, message = it.message ?: "Sign-in failed.") }
         }
     }
@@ -224,7 +233,7 @@ class StudioRackViewModel(
         _uiState.value = _uiState.value.copy(busy = true, message = "")
         viewModelScope.launch {
             runCatching { repository.signInWithPasskey(activity) }
-                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "Signed in with your passkey.", syncError = false) }
+                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "Signed in with your passkey.", syncError = false, testerPhase = repository.testerPhase()) }
                 .onFailure { _uiState.value = StudioRackUiState(signedIn = false, message = it.passkeyMessage("Passkey sign-in failed."), syncError = true) }
         }
     }
@@ -251,8 +260,31 @@ class StudioRackViewModel(
         _uiState.value = _uiState.value.copy(busy = true, syncError = false)
         viewModelScope.launch {
             runCatching { repository.sync() }
-                .onSuccess { _uiState.value = _uiState.value.copy(busy = false, message = "Synced.", syncError = false) }
+                .onSuccess {
+                    val testerPhase = runCatching { repository.refreshTesterStatus() }.getOrDefault(repository.testerPhase())
+                    _uiState.value = _uiState.value.copy(busy = false, message = "Synced.", syncError = false, testerPhase = testerPhase)
+                }
                 .onFailure { _uiState.value = _uiState.value.copy(busy = false, message = it.message ?: "Synchronization failed.", syncError = true) }
+        }
+    }
+
+    fun submitTesterFeedback(
+        feedbackType: String,
+        productArea: String,
+        impact: String,
+        summary: String,
+        details: String,
+        contactAllowed: Boolean,
+        complete: (Boolean, String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repository.submitFeedback(feedbackType, productArea, impact, summary, details, contactAllowed)
+            }.onSuccess {
+                complete(true, "Thank you. Your feedback is in the review queue.")
+            }.onFailure {
+                complete(false, it.message ?: "Feedback could not be submitted.")
+            }
         }
     }
 
@@ -788,6 +820,7 @@ data class StudioRackUiState(
     val message: String = "",
     val starting: Boolean = false,
     val syncError: Boolean = false,
+    val testerPhase: String = "",
 )
 
 private fun Throwable.passkeyMessage(fallback: String): String = when {
