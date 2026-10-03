@@ -38,7 +38,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -102,6 +105,9 @@ internal fun SetListEditor(
     }
     var pickingSection by remember { mutableStateOf<String?>(null) }
     var removedEntry by remember { mutableStateOf<RemovedSetEntry?>(null) }
+    var showSetListSettings by remember(original?.entityId, liveAutosave) { mutableStateOf(!liveAutosave) }
+    val expandedSections = remember(original?.entityId) { mutableStateMapOf<String, Boolean>() }
+    val expandedEntries = remember(original?.entityId) { mutableStateMapOf<String, Boolean>() }
     val currentDraft by rememberUpdatedState(draft)
     val entryHeights = remember { mutableStateMapOf<String, Int>() }
     val editorListState = rememberLazyListState()
@@ -191,6 +197,27 @@ internal fun SetListEditor(
                     }
                 }
             }
+            item {
+                Surface(
+                    color = EditorPanel,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFF30384A)),
+                    modifier = Modifier.fillMaxWidth().clickable { showSetListSettings = !showSetListSettings },
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(draft.name.ifBlank { "Set list settings" }, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(
+                                "${draft.sections.size} sets | ${draft.sections.sumOf { it.entries.size }} items" + if (estimatedSeconds > 0) " | ${formatDuration(estimatedSeconds)}" else "",
+                                color = EditorSoft,
+                                fontSize = 11.sp,
+                            )
+                        }
+                        Icon(if (showSetListSettings) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, contentDescription = if (showSetListSettings) "Hide set list settings" else "Show set list settings", tint = EditorAmber)
+                    }
+                }
+            }
+            if (showSetListSettings) {
             item { DictationTextField(draft.name, { draft = draft.copy(name = it) }, "Set list name") }
             item { DictationTextField(draft.description, { draft = draft.copy(description = it) }, "Description") }
             item { DictationTextField(draft.notes, { draft = draft.copy(notes = it) }, "Set list notes", singleLine = false, minLines = 2) }
@@ -243,6 +270,7 @@ internal fun SetListEditor(
                     }
                 }
             }
+            }
             if (draft.sections.isEmpty()) item {
                 Card(colors = CardDefaults.cardColors(containerColor = EditorPanel), shape = RoundedCornerShape(8.dp)) {
                     Text("No sets yet. Add a set, then choose songs in performance order.", color = EditorSoft, modifier = Modifier.padding(18.dp))
@@ -253,11 +281,20 @@ internal fun SetListEditor(
                 Card(colors = CardDefaults.cardColors(containerColor = EditorPanel), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFF30384A))) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("SET ${sectionIndex + 1}", color = EditorAmber, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                            Column(Modifier.weight(1f)) {
+                                Text("SET ${sectionIndex + 1}", color = EditorAmber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                Text(section.name.ifBlank { "Untitled set" }, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text("${section.entries.size} item${if (section.entries.size == 1) "" else "s"}", color = EditorSoft, fontSize = 11.sp)
+                            }
+                            IconButton(onClick = { expandedSections[section.id] = expandedSections[section.id] != true }) {
+                                Icon(if (expandedSections[section.id] == true) Icons.Rounded.ExpandLess else Icons.Rounded.Edit, contentDescription = "Edit ${section.name}", tint = EditorAmber)
+                            }
                             TextButton(onClick = { draft = draft.copy(sections = draft.sections.filterNot { it.id == section.id }) }) { Text("Remove", color = Color(0xFFFF7A82)) }
                         }
+                        if (expandedSections[section.id] == true) {
                         DictationTextField(section.name, { value -> draft = draft.updateSection(section.id) { it.copy(name = value) } }, "Set name")
                         DictationTextField(section.notes, { value -> draft = draft.updateSection(section.id) { it.copy(notes = value) } }, "Set notes", singleLine = false, minLines = 2)
+                        }
                         section.entries.forEachIndexed { index, entry ->
                             key(entry.id) {
                             val song = entry.songId?.let(songRows::get)
@@ -405,9 +442,14 @@ internal fun SetListEditor(
                                             Text(song.optString("title", "Untitled"), color = Color.White, fontWeight = FontWeight.Bold)
                                             song.optString("artist").takeIf(String::isNotBlank)?.let { Text(it, color = EditorSoft, fontSize = 12.sp) }
                                         }
+                                        if (entry.notes.isNotBlank() && expandedEntries[entry.id] != true) Text(entry.notes, color = EditorCyan, fontSize = 11.sp, maxLines = 1)
+                                    }
+                                    IconButton(onClick = { expandedEntries[entry.id] = expandedEntries[entry.id] != true }) {
+                                        Icon(if (expandedEntries[entry.id] == true) Icons.Rounded.ExpandLess else Icons.Rounded.Edit, contentDescription = "Edit $label details", tint = EditorCyan)
                                     }
                                     Icon(Icons.Rounded.DragHandle, contentDescription = "Hold and drag to reorder $label", tint = EditorAmber, modifier = Modifier.size(34.dp))
                                 }
+                                if (expandedEntries[entry.id] == true) {
                                 DictationTextField(entry.notes, { value -> draft = draft.updateEntry(section.id, entry.id) { it.copy(notes = value) } }, "Notation for this set", singleLine = false, minLines = 2)
                                 Text("PERFORMANCE GROUP", color = EditorSoft, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 6.dp))
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -480,6 +522,7 @@ internal fun SetListEditor(
                                         }
                                     }
                                 }
+                                }
                             }
                             }
                             HorizontalDivider(color = Color(0xFF30384A))
@@ -494,7 +537,11 @@ internal fun SetListEditor(
             }
             item {
                 OutlinedButton(
-                    onClick = { draft = draft.copy(sections = draft.sections + SetSectionDraft(newId("sls"), "Set ${draft.sections.size + 1}")) },
+                    onClick = {
+                        val section = SetSectionDraft(newId("sls"), "Set ${draft.sections.size + 1}")
+                        draft = draft.copy(sections = draft.sections + section)
+                        expandedSections[section.id] = true
+                    },
                     border = BorderStroke(1.dp, EditorAmber), modifier = Modifier.fillMaxWidth(),
                 ) { Text("Add Set", color = EditorAmber, fontWeight = FontWeight.Bold) }
             }
