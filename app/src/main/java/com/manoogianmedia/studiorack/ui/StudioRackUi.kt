@@ -1988,6 +1988,12 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
     val venueContacts by model.venueContacts.collectAsState()
     val ensembleContacts by model.ensembleContacts.collectAsState()
     val ensembleMemberRoles by model.ensembleMemberRoles.collectAsState()
+    val ensembleMemberMaterialAccess by model.ensembleMemberMaterialAccess.collectAsState()
+    val events by model.events.collectAsState()
+    val eventEnsembles by model.eventEnsembles.collectAsState()
+    val entries by model.entries.collectAsState()
+    val songs by model.songs.collectAsState()
+    val attachments by model.attachments.collectAsState()
     var tab by remember { mutableStateOf("Venues") }
     var mode by remember { mutableStateOf("Browse") }
     var query by remember { mutableStateOf("") }
@@ -2153,6 +2159,8 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
             parentType, record, contacts,
             if (parentType == "venue") venueContacts else ensembleContacts,
             if (parentType == "ensemble") ensembleMemberRoles else emptyList(),
+            if (parentType == "ensemble") ensembleMemberMaterialAccess else emptyList(),
+            events, eventEnsembles, entries, songs, attachments,
             model,
         ) { managing = null }
     }
@@ -2483,6 +2491,12 @@ private fun DirectoryRelationshipsDialog(
     contacts: List<CachedRecord>,
     relationships: List<CachedRecord>,
     memberRoles: List<CachedRecord>,
+    memberMaterialAccess: List<CachedRecord>,
+    events: List<CachedRecord>,
+    eventEnsembles: List<CachedRecord>,
+    entries: List<CachedRecord>,
+    songs: List<CachedRecord>,
+    attachments: List<CachedRecord>,
     model: StudioRackViewModel,
     close: () -> Unit,
 ) {
@@ -2511,6 +2525,24 @@ private fun DirectoryRelationshipsDialog(
             }
         }
     }
+    val materialDecisionDrafts = remember(parent.entityId, memberMaterialAccess) {
+        mutableStateMapOf<String, Map<String, String>>().apply {
+            memberMaterialAccess.filter { recordJson(it).optString("ensemble_id") == parent.entityId }.forEach { access ->
+                val data = recordJson(access)
+                val contactId = data.optString("contact_id")
+                put(contactId, get(contactId).orEmpty() + (data.optString("attachment_id") to data.optString("access_decision")))
+            }
+        }
+    }
+    val ensembleEventIds = eventEnsembles.filter { recordJson(it).optString("ensemble_id") == parent.entityId }
+        .mapTo(mutableSetOf()) { recordJson(it).optString("event_id") }
+    val ensembleSetListIds = events.filter { it.entityId in ensembleEventIds }
+        .mapNotNullTo(mutableSetOf()) { recordJson(it).optString("set_list_id").takeIf(String::isNotBlank) }
+    val ensembleSongIds = entries.filter { recordJson(it).optString("set_list_id") in ensembleSetListIds }
+        .mapNotNullTo(mutableSetOf()) { recordJson(it).optString("song_id").takeIf(String::isNotBlank) }
+    val eligibleMaterials = attachments.filter { recordJson(it).optString("song_id") in ensembleSongIds }
+        .sortedWith(compareBy<CachedRecord>({ record -> songs.firstOrNull { it.entityId == recordJson(record).optString("song_id") }?.let(::recordJson)?.optString("title")?.lowercase().orEmpty() }, { recordJson(it).optInt("position") }))
+    var expandedMaterialContact by remember(parent.entityId) { mutableStateOf<String?>(null) }
     var query by remember(parent.entityId) { mutableStateOf("") }
     val filteredContacts = contacts.filter { contact ->
         val data = recordJson(contact)
@@ -2554,6 +2586,41 @@ private fun DirectoryRelationshipsDialog(
                     ChoiceStrip(listOf("Active", "Suspended", "Former"), draft.membershipStatus.replaceFirstChar(Char::uppercase)) { value ->
                         membershipDrafts[contact.entityId] = draft.copy(membershipStatus = value.lowercase())
                     }
+                    StudioButton(
+                        onClick = { expandedMaterialContact = if (expandedMaterialContact == contact.entityId) null else contact.entityId },
+                        kind = StudioButtonKind.Secondary,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (expandedMaterialContact == contact.entityId) "Hide Material Access" else "Configure Material Access", color = Color.White, fontWeight = FontWeight.Bold) }
+                    if (expandedMaterialContact == contact.entityId) {
+                        Text("Inherit follows the selected profile. Allow and Withhold are explicit exceptions.", color = TextSoft, fontSize = 12.sp)
+                        if (eligibleMaterials.isEmpty()) Text("Assign this band to an event with a set list to configure materials.", color = TextSoft)
+                        eligibleMaterials.forEach { material ->
+                            val data = recordJson(material)
+                            val song = songs.firstOrNull { it.entityId == data.optString("song_id") }?.let(::recordJson)
+                            val decisions = materialDecisionDrafts[contact.entityId].orEmpty()
+                            val selectedDecision = decisions[material.entityId] ?: "inherit"
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = PanelRaised,
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFF343B4D)),
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    Text(song?.optString("title", "Untitled").orEmpty(), color = Amber, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        data.optString("display_name").ifBlank { data.optString("attachment_type", "Material").humanize() } +
+                                            data.optString("instrument_role").takeIf(String::isNotBlank)?.let { " / $it" }.orEmpty(),
+                                        color = Color.White,
+                                    )
+                                    ChoiceStrip(listOf("Inherit", "Allow", "Withhold"), when (selectedDecision) { "allow" -> "Allow"; "deny" -> "Withhold"; else -> "Inherit" }) { value ->
+                                        val updated = decisions.toMutableMap()
+                                        when (value) { "Allow" -> updated[material.entityId] = "allow"; "Withhold" -> updated[material.entityId] = "deny"; else -> updated.remove(material.entityId) }
+                                        materialDecisionDrafts[contact.entityId] = updated
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2567,7 +2634,7 @@ private fun DirectoryRelationshipsDialog(
                         .put("material_profile", draft.materialProfile)
                         .put("membership_status", draft.membershipStatus)
                 }
-                model.saveEnsembleMemberships(parent.entityId, payload, close)
+                model.saveEnsembleMemberships(parent.entityId, payload, materialDecisionDrafts.toMap(), close)
             } else model.saveDirectoryRelationships(parentType, parent.entityId, selected, close)
         }, delete = null)
     }

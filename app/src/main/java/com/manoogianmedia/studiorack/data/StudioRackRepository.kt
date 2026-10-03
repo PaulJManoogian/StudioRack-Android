@@ -366,13 +366,20 @@ class StudioRackRepository(
         syncNow()
     }
 
-    suspend fun saveEnsembleMemberships(ensembleId: String, memberships: Map<String, JSONObject>) {
+    suspend fun saveEnsembleMemberships(
+        ensembleId: String,
+        memberships: Map<String, JSONObject>,
+        materialDecisions: Map<String, Map<String, String>>,
+    ) {
         val existingMemberships = dao.records("ensemble_contact")
             .filter { JSONObject(it.json).optString("ensemble_id") == ensembleId }
         val existingById = existingMemberships.associateBy { it.entityId }
         val existingRoles = dao.records("ensemble_member_role")
             .filter { JSONObject(it.json).optString("ensemble_id") == ensembleId }
         val existingRolesById = existingRoles.associateBy { it.entityId }
+        val existingMaterialAccess = dao.records("ensemble_member_material_access")
+            .filter { JSONObject(it.json).optString("ensemble_id") == ensembleId }
+        val existingMaterialAccessById = existingMaterialAccess.associateBy { it.entityId }
         val desiredMemberships = memberships.map { (contactId, source) ->
             val id = "$ensembleId|$contactId"
             val current = existingById[id]?.let { JSONObject(it.json) } ?: JSONObject()
@@ -402,15 +409,29 @@ class StudioRackRepository(
         }
         val desiredRoleIds = desiredRoles.mapTo(mutableSetOf()) { it.first }
         val removedRoles = existingRoles.filter { it.entityId !in desiredRoleIds }
+        val desiredMaterialAccess = materialDecisions.flatMap { (contactId, decisions) ->
+            if (contactId !in memberships) return@flatMap emptyList()
+            decisions.mapNotNull { (attachmentId, decision) ->
+                if (decision !in setOf("allow", "deny")) return@mapNotNull null
+                val id = "$ensembleId|$contactId|$attachmentId"
+                id to JSONObject().put("ensemble_id", ensembleId).put("contact_id", contactId)
+                    .put("attachment_id", attachmentId).put("access_decision", decision)
+            }
+        }
+        val desiredMaterialAccessIds = desiredMaterialAccess.mapTo(mutableSetOf()) { it.first }
+        val removedMaterialAccess = existingMaterialAccess.filter { it.entityId !in desiredMaterialAccessIds }
         var sequence = System.currentTimeMillis()
         val membershipUpserts = desiredMemberships.map { (id, data) -> CachedRecord("ensemble_contact", id, existingById[id]?.revision ?: 0, data.toString()) }
         val roleUpserts = desiredRoles.map { (id, data) -> CachedRecord("ensemble_member_role", id, existingRolesById[id]?.revision ?: 0, data.toString()) }
+        val materialAccessUpserts = desiredMaterialAccess.map { (id, data) -> CachedRecord("ensemble_member_material_access", id, existingMaterialAccessById[id]?.revision ?: 0, data.toString()) }
         dao.applyLocalBundle(
-            upserts = membershipUpserts + roleUpserts,
-            deletes = (removedRoles + removedMemberships).map { RecordRef(it.entityType, it.entityId) },
+            upserts = membershipUpserts + roleUpserts + materialAccessUpserts,
+            deletes = (removedMaterialAccess + removedRoles + removedMemberships).map { RecordRef(it.entityType, it.entityId) },
             mutations = membershipUpserts.map { mutation(it.entityType, it.entityId, "upsert", it.revision, it.json, sequence++) } +
-                removedRoles.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) } +
                 roleUpserts.map { mutation(it.entityType, it.entityId, "upsert", it.revision, it.json, sequence++) } +
+                materialAccessUpserts.map { mutation(it.entityType, it.entityId, "upsert", it.revision, it.json, sequence++) } +
+                removedMaterialAccess.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) } +
+                removedRoles.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) } +
                 removedMemberships.map { mutation(it.entityType, it.entityId, "delete", it.revision, it.json, sequence++) },
         )
         syncNow()
