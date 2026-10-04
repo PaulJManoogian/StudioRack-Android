@@ -77,7 +77,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -85,6 +84,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
@@ -93,6 +93,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.Shapes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DarkMode
@@ -111,6 +112,7 @@ import androidx.compose.material.icons.rounded.PlayDisabled
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.RateReview
 import androidx.compose.material.icons.rounded.SettingsInputComponent
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.TabletAndroid
@@ -159,6 +161,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.Font
@@ -212,6 +215,7 @@ import java.io.File
 import java.text.DateFormat
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 import java.time.temporal.ChronoUnit
@@ -497,13 +501,7 @@ private fun TesterFeedbackScreen(model: StudioRackViewModel, testerPhase: String
             modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
             minLines = 6,
         )
-        Row(
-            Modifier.fillMaxWidth().clickable { contactAllowed = !contactAllowed },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(checked = contactAllowed, onCheckedChange = { contactAllowed = it })
-            Text("You may contact me about this feedback", color = Color.White)
-        }
+        SettingToggle("You may contact me about this feedback", contactAllowed) { contactAllowed = it }
         if (result.isNotBlank()) Text(result, color = if (resultError) Color(0xFFFF6B6B) else Color(0xFF63E6A4))
         StudioButton(
             onClick = {
@@ -966,10 +964,7 @@ private fun MaintenanceHistoryDialog(itemId: String, itemName: String, model: St
             if (expectedDue.isNotBlank()) DetailLine("Scheduled service being completed", expectedDue)
             activeNotes.forEach { note ->
                 val id = note.optString("id")
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = id in selectedNotes, onCheckedChange = { selectedNotes = if (it) selectedNotes + id else selectedNotes - id })
-                    Text(note.optString("note"), color = Color.White, modifier = Modifier.weight(1f))
-                }
+                SettingToggle(note.optString("note"), id in selectedNotes) { selected -> selectedNotes = if (selected) selectedNotes + id else selectedNotes - id }
             }
             val date = parseLocalDate(completedOn)
             val next = parseLocalDate(nextDue)
@@ -1073,10 +1068,15 @@ private fun SessionsScreen(
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
     val reportState by model.reportState.collectAsState()
+    val context = LocalContext.current
     val online = rememberNetworkConnected()
     var query by remember { mutableStateOf("") }
     var sessionTab by remember { mutableStateOf("Schedule") }
     var type by remember { mutableStateOf("All") }
+    var scheduleView by remember { mutableStateOf("Month") }
+    var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
+    val calendarPreferences = remember { context.getSharedPreferences(CALENDAR_VIEW_PREFERENCES, Context.MODE_PRIVATE) }
+    var weekStartsSunday by remember { mutableStateOf(calendarPreferences.getBoolean(CALENDAR_WEEK_START_SUNDAY, true)) }
     var editingEvent by remember { mutableStateOf<EditorTarget?>(null) }
     var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
     var localLiveEvent by remember { mutableStateOf<JSONObject?>(null) }
@@ -1100,38 +1100,63 @@ private fun SessionsScreen(
         if (sessionTab == "Leviathan Live") {
             item { LeviathanLiveSettingsPanel(model) }
         } else {
-            item { StudioButton(onClick = { editingEvent = EditorTarget(null, JSONObject()) }, modifier = Modifier.fillMaxWidth()) { Text("Add Scheduled Event", color = Ink, fontWeight = FontWeight.Black) } }
-            item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = Color.White, fontWeight = FontWeight.Bold) } }
-            item { DictationTextField(query, { query = it }, "Find scheduled work") }
-            item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
             item {
-                StudioButton(
-                    onClick = { exportTarget = ExportTarget("events", "Visible scheduled items", rows.map { it.optString("id") }) },
-                    enabled = rows.isNotEmpty() && !reportState.busy,
-                    modifier = Modifier.fillMaxWidth(),
-                    kind = StudioButtonKind.Secondary,
-                ) { Text("Export visible scheduled items (${rows.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { ChoiceStrip(listOf("Month", "Agenda"), scheduleView) { scheduleView = it } }
+                    StudioButton(onClick = { editingEvent = EditorTarget(null, newCalendarEvent()) }) { Text("Add Event", color = Ink, fontWeight = FontWeight.Black) }
+                }
             }
-            if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
-            items(rows, key = { it.getString("id") }) { event ->
-                val eventPeople = resolveEventPeople(event, contacts, ensembles, eventEnsembles, eventContacts, ensembleContacts, venueContacts)
-                val eventGroupNames = resolveEventGroupNames(event, ensembles, eventEnsembles)
-                EventCard(
-                    event,
-                    eventPacketReadiness(event, entries, attachments, cachedAttachments),
-                    open = { viewingEvent = event },
-                    openSetList = if (event.optString("set_list_id").isNotBlank()) ({ openGig(event.getString("id")) }) else null,
-                    edit = { editingEvent = EditorTarget(event.optString("id"), event) },
-                    copy = {
-                        editingEvent = EditorTarget(null, JSONObject(event.toString())
-                            .put("_copy_source_id", event.optString("id"))
-                            .put("event_status", "scheduled").put("event_date", "").put("start_time", "")
-                            .put("end_date", "").put("end_time", ""))
-                    },
-                    host = if (event.optString("set_list_id").isNotBlank()) ({ localLiveEvent = event; showLocalLive = true }) else null,
-                    peopleCount = eventPeople.size,
-                    people = if (eventPeople.isNotEmpty() || eventGroupNames.isNotEmpty()) ({ peopleEvent = event }) else null,
-                )
+            item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = Color.White, fontWeight = FontWeight.Bold) } }
+            if (scheduleView == "Month") {
+                item {
+                    CalendarMonthPanel(
+                        month = visibleMonth,
+                        events = events.map(::recordJson),
+                        weekStartsSunday = weekStartsSunday,
+                        previousMonth = { visibleMonth = visibleMonth.minusMonths(1) },
+                        nextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
+                        today = { visibleMonth = YearMonth.now() },
+                        changeWeekStart = { enabled ->
+                            weekStartsSunday = enabled
+                            calendarPreferences.edit().putBoolean(CALENDAR_WEEK_START_SUNDAY, enabled).apply()
+                        },
+                        addOnDate = { selectedDate -> editingEvent = EditorTarget(null, newCalendarEvent(selectedDate)) },
+                        openEvent = { viewingEvent = it },
+                    )
+                }
+            } else {
+                item { DictationTextField(query, { query = it }, "Find scheduled work") }
+                item { ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it } }
+                item {
+                    StudioButton(
+                        onClick = { exportTarget = ExportTarget("events", "Visible scheduled items", rows.map { it.optString("id") }) },
+                        enabled = rows.isNotEmpty() && !reportState.busy,
+                        modifier = Modifier.fillMaxWidth(),
+                        kind = StudioButtonKind.Secondary,
+                    ) { Text("Export visible scheduled items (${rows.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+                if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
+                items(rows, key = { it.getString("id") }) { event ->
+                    val eventPeople = resolveEventPeople(event, contacts, ensembles, eventEnsembles, eventContacts, ensembleContacts, venueContacts)
+                    val eventGroupNames = resolveEventGroupNames(event, ensembles, eventEnsembles)
+                    EventCard(
+                        event,
+                        eventPacketReadiness(event, entries, attachments, cachedAttachments),
+                        open = { viewingEvent = event },
+                        openSetList = if (event.optString("set_list_id").isNotBlank()) ({ openGig(event.getString("id")) }) else null,
+                        edit = { editingEvent = EditorTarget(event.optString("id"), event) },
+                        copy = {
+                            editingEvent = EditorTarget(null, JSONObject(event.toString())
+                                .put("_copy_source_id", event.optString("id"))
+                                .put("event_status", "scheduled").put("event_date", "").put("start_time", "")
+                                .put("end_date", "").put("end_time", ""))
+                        },
+                        shareCalendar = { shareEventCalendar(context, event, event.optString("_display_location", event.optString("location"))) },
+                        host = if (event.optString("set_list_id").isNotBlank()) ({ localLiveEvent = event; showLocalLive = true }) else null,
+                        peopleCount = eventPeople.size,
+                        people = if (eventPeople.isNotEmpty() || eventGroupNames.isNotEmpty()) ({ peopleEvent = event }) else null,
+                    )
+                }
             }
         }
     }
@@ -1156,6 +1181,88 @@ private fun SessionsScreen(
     }
     }
 }
+
+@Composable
+private fun CalendarMonthPanel(
+    month: YearMonth,
+    events: List<JSONObject>,
+    weekStartsSunday: Boolean,
+    previousMonth: () -> Unit,
+    nextMonth: () -> Unit,
+    today: () -> Unit,
+    changeWeekStart: (Boolean) -> Unit,
+    addOnDate: (String) -> Unit,
+    openEvent: (JSONObject) -> Unit,
+) {
+    val days = remember(month, events, weekStartsSunday) { buildCalendarMonth(month, events, weekStartsSunday) }
+    val weekdayLabels = if (weekStartsSunday) listOf("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT") else listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Panel),
+        border = BorderStroke(1.dp, Color(0xFF343B4D)),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                EventToolIconButton(Icons.Rounded.NavigateBefore, "Previous month", previousMonth)
+                Text(month.format(DateTimeFormatter.ofPattern("MMMM yyyy")), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                StudioButton(onClick = today, kind = StudioButtonKind.Secondary) { Text("Today", color = Color.White, fontWeight = FontWeight.Bold) }
+                EventToolIconButton(Icons.Rounded.NavigateNext, "Next month", nextMonth)
+            }
+            SettingToggle("Week starts Sunday", weekStartsSunday, changeWeekStart)
+            Row(Modifier.fillMaxWidth()) {
+                weekdayLabels.forEach { label ->
+                    Text(label, color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+            }
+            days.chunked(7).forEach { week ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    week.forEach { day ->
+                        val dayBackground = when {
+                            day.isToday -> Color(0xFF292515)
+                            day.inMonth -> Color(0xFF171C28)
+                            else -> Color(0xFF0D1018)
+                        }
+                        Column(
+                            Modifier.weight(1f).heightIn(min = 92.dp).background(dayBackground, RoundedCornerShape(6.dp))
+                                .border(if (day.isToday) 1.dp else 0.dp, if (day.isToday) Amber else Color.Transparent, RoundedCornerShape(6.dp))
+                                .clickable { addOnDate(day.date.toString()) }.padding(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text(day.date.dayOfMonth.toString(), color = if (day.inMonth) Color.White else Color(0xFF667086), fontSize = 11.sp, fontWeight = if (day.isToday) FontWeight.Black else FontWeight.Bold)
+                            day.events.take(2).forEach { event ->
+                                val eventColor = parseCalendarColor(event.optString("calendar_color"))
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable { openEvent(event) },
+                                    color = eventColor.copy(alpha = .24f),
+                                    border = BorderStroke(1.dp, eventColor),
+                                    shape = RoundedCornerShape(4.dp),
+                                ) {
+                                    Text(event.optString("title", "Event"), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 2, modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp))
+                                }
+                            }
+                            if (day.events.size > 2) Text("+${day.events.size - 2} more", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun newCalendarEvent(date: String = ""): JSONObject = JSONObject()
+    .put("event_type", "performance")
+    .put("event_status", "scheduled")
+    .put("event_date", date)
+    .put("end_date", date)
+    .put("calendar_color", CALENDAR_COLORS.first())
+    .put("importance", "normal")
+    .put("is_private", 0)
+    .put("all_day", 0)
+    .put("reminder_enabled", 1)
+    .put("reminder_lead_value", 2)
+    .put("reminder_lead_unit", "days")
+
+private fun parseCalendarColor(value: String): Color = runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Amber)
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -2063,16 +2170,10 @@ private fun ShareEditor(record: SupportingRecord, model: StudioRackViewModel, on
         StudioField("Expires (UTC, for example 2026-09-08T20:00:00Z)", expires, dictation = false) { expires = it }
         Text("Allowed information", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         availableScopes.forEach { (value, label) ->
-            Row(Modifier.fillMaxWidth().clickable { selectedScopes = if (value in selectedScopes) selectedScopes - value else selectedScopes + value }, verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = value in selectedScopes, onCheckedChange = { checked -> selectedScopes = if (checked) selectedScopes + value else selectedScopes - value })
-                Text(label, color = Color.White)
-            }
+            SettingToggle(label, value in selectedScopes) { checked -> selectedScopes = if (checked) selectedScopes + value else selectedScopes - value }
         }
         if (original.optString("share_mode") == "registered") {
-            Row(Modifier.fillMaxWidth().clickable { allowCopy = !allowCopy }, verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = allowCopy, onCheckedChange = { allowCopy = it })
-                Text("Allow recipient to keep an editable copy", color = Color.White)
-            }
+            SettingToggle("Allow recipient to keep an editable copy", allowCopy) { allowCopy = it }
         }
         StudioButton(
             onClick = {
@@ -2673,11 +2774,11 @@ private fun DirectoryRelationshipsDialog(
         filteredContacts.forEach { contact ->
             val checked = contact.entityId in selected
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked, { enabled ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Switch(checked = checked, onCheckedChange = { enabled ->
                         selected = selected.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) }
                         if (enabled && membershipDrafts[contact.entityId] == null) membershipDrafts[contact.entityId] = EnsembleMembershipDraft()
-                    })
+                    }, colors = studioSwitchColors())
                     Column {
                         Text(recordJson(contact).optString("display_name"), color = Color.White, fontWeight = FontWeight.Bold)
                         val detail = listOf(recordJson(contact).optString("job_title"), recordJson(contact).optString("organization_name")).filter(String::isNotBlank).joinToString(" / ")
@@ -3706,10 +3807,20 @@ private fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boo
         Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = studioSwitchColors())
         Text(label, color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(start = 10.dp))
     }
 }
+
+@Composable
+private fun studioSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = Color.White,
+    checkedTrackColor = Amber,
+    checkedBorderColor = Amber,
+    uncheckedThumbColor = Color(0xFFD8DCE7),
+    uncheckedTrackColor = Color(0xFF3A4151),
+    uncheckedBorderColor = Color(0xFF687185),
+)
 
 @Composable
 private fun LabeledChoice(label: String, options: List<String>, selected: String, choose: (String) -> Unit) {
@@ -4435,7 +4546,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
         }
         StudioField("Listen / media URL", media, dictation = false) { media = it }
         StudioField("Notes", notes, singleLine = false) { notes = it }
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(favorite, { favorite = it }); Text("Favorite", color = Color.White) }
+        SettingToggle("Favorite", favorite) { favorite = it }
         Text("Attachments", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
         Text("Add charts, lyrics, tablature, sheet music, MIDI, or DMX-MIDI control files now. Files are copied to this device immediately and uploaded on the next sync.", color = TextSoft, fontSize = 11.sp)
         Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -4767,6 +4878,7 @@ private fun contentDisplayName(context: Context, uri: Uri): String {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close: () -> Unit) {
     val agentName = stringResource(R.string.agent_name)
     val original = target.data
@@ -4785,6 +4897,10 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
     var time by remember { mutableStateOf(original.optString("start_time")) }
     var endDate by remember { mutableStateOf(original.optString("end_date")) }
     var endTime by remember { mutableStateOf(original.optString("end_time")) }
+    var allDay by remember { mutableStateOf(original.optInt("all_day") == 1) }
+    var isPrivate by remember { mutableStateOf(original.optInt("is_private") == 1) }
+    var calendarColor by remember { mutableStateOf(original.optString("calendar_color", CALENDAR_COLORS.first())) }
+    var importance by remember { mutableStateOf(original.optString("importance", "normal")) }
     var venueId by remember { mutableStateOf(original.optString("venue_id")) }
     var location by remember { mutableStateOf(original.optString("location")) }
     var setListId by remember { mutableStateOf(original.optString("set_list_id")) }
@@ -4805,14 +4921,30 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
         StudioField("Name", title) { title = it }
         Text("Type", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("performance", "rehearsal", "studio_session", "other"), type) { type = it }
         Text("Status", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("scheduled", "ended"), status) { status = it }
+        SettingToggle("All-day event", allDay) { allDay = it }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("Date (YYYY-MM-DD)", date, dictation = false) { date = it.take(10) } }
-            Box(Modifier.weight(1f)) { StudioField("Start Time", time, dictation = false) { time = it.take(8) } }
+            if (!allDay) Box(Modifier.weight(1f)) { StudioField("Start Time", time, dictation = false) { time = it.take(8) } }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("End Date", endDate, dictation = false) { endDate = it.take(10) } }
-            Box(Modifier.weight(1f)) { StudioField("End Time", endTime, dictation = false) { endTime = it.take(8) } }
+            if (!allDay) Box(Modifier.weight(1f)) { StudioField("End Time", endTime, dictation = false) { endTime = it.take(8) } }
         }
+        Text("Calendar color", color = TextSoft, fontWeight = FontWeight.Bold)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            CALENDAR_COLORS.forEach { value ->
+                val selected = value.equals(calendarColor, ignoreCase = true)
+                Surface(
+                    modifier = Modifier.size(if (selected) 42.dp else 36.dp).clickable { calendarColor = value },
+                    color = parseCalendarColor(value),
+                    shape = CircleShape,
+                    border = BorderStroke(if (selected) 3.dp else 1.dp, if (selected) Color.White else Color(0xFF596174)),
+                ) {}
+            }
+        }
+        Text("Importance", color = TextSoft, fontWeight = FontWeight.Bold)
+        ChoiceStrip(listOf("normal", "important", "critical"), importance) { importance = it }
+        SettingToggle("Private event", isPrivate) { isPrivate = it }
         Text("Venue", color = TextSoft, fontWeight = FontWeight.Bold)
         StudioField("Find a venue", venueQuery) { venueQuery = it }
         val visibleVenues = venues.filter { recordJson(it).optString("name").contains(venueQuery, ignoreCase = true) }
@@ -4831,10 +4963,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
             StudioField("Find a kit", kitQuery) { kitQuery = it }
             kits.filter { supportingJson(it).optString("name").contains(kitQuery, ignoreCase = true) }.forEach { kit ->
                 val checked = kit.entityId in selectedKits
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked, { enabled -> selectedKits = selectedKits.toMutableSet().apply { if (enabled) add(kit.entityId) else remove(kit.entityId) } })
-                    Text(supportingJson(kit).optString("name"), color = Color.White)
-                }
+                SettingToggle(supportingJson(kit).optString("name"), checked) { enabled -> selectedKits = selectedKits.toMutableSet().apply { if (enabled) add(kit.entityId) else remove(kit.entityId) } }
             }
         }
         StudioField("Notes", notes, singleLine = false) { notes = it }
@@ -4843,10 +4972,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
             StudioField("Find a band or group", ensembleQuery) { ensembleQuery = it }
             ensembles.filter { recordJson(it).optString("name").contains(ensembleQuery, ignoreCase = true) }.forEach { ensemble ->
                 val checked = ensemble.entityId in selectedEnsembles
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked, { enabled -> selectedEnsembles = selectedEnsembles.toMutableSet().apply { if (enabled) add(ensemble.entityId) else remove(ensemble.entityId) } })
-                    Text(recordJson(ensemble).optString("name"), color = Color.White)
-                }
+                SettingToggle(recordJson(ensemble).optString("name"), checked) { enabled -> selectedEnsembles = selectedEnsembles.toMutableSet().apply { if (enabled) add(ensemble.entityId) else remove(ensemble.entityId) } }
             }
         }
         if (contacts.isNotEmpty()) {
@@ -4858,27 +4984,29 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
                     .joinToString(" ").contains(contactQuery, ignoreCase = true)
             }.forEach { contact ->
                 val checked = contact.entityId in selectedContacts
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked, { enabled -> selectedContacts = selectedContacts.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) } })
-                    Text(recordJson(contact).optString("display_name"), color = Color.White)
-                }
+                SettingToggle(recordJson(contact).optString("display_name"), checked) { enabled -> selectedContacts = selectedContacts.toMutableSet().apply { if (enabled) add(contact.entityId) else remove(contact.entityId) } }
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(reminder, { reminder = it }); Text("$agentName reminder", color = Color.White) }
+        SettingToggle("$agentName reminder", reminder) { reminder = it }
         if (reminder) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("How close", lead, dictation = false) { lead = it.filter(Char::isDigit).take(3) } }
             Box(Modifier.weight(1f)) { Text("Unit", color = TextSoft); ChoiceStrip(listOf("hours", "days", "weeks"), unit) { unit = it } }
         }
+        val eventWindowError = validateEventWindow(date, time, endDate, endTime, allDay)
+        if (date.isNotBlank() && eventWindowError != null) Text(eventWindowError, color = Color(0xFFFF7777), fontWeight = FontWeight.Bold)
         EditorActions(
-            canSave = title.isNotBlank(),
+            canSave = title.isNotBlank() && eventWindowError == null,
             save = {
                 model.saveEvent(target.id, JSONObject()
                     .put("event_type", type).put("event_status", status).put("title", title.trim())
-                    .put("event_date", date.trim()).put("start_time", time.trim()).put("end_date", endDate.trim()).put("end_time", endTime.trim())
+                    .put("event_date", date.trim()).put("start_time", if (allDay) "" else time.trim()).put("end_date", endDate.trim().ifBlank { date.trim() }).put("end_time", if (allDay) "" else endTime.trim())
                     .put("venue_id", venueId.ifBlank { JSONObject.NULL }).put("location", location.trim())
                     .put("set_list_id", setListId.ifBlank { JSONObject.NULL }).put("notes", notes.trim())
                     .put("reminder_enabled", if (reminder) 1 else 0).put("reminder_lead_value", lead.toIntOrNull() ?: 2)
-                    .put("reminder_lead_unit", unit), selectedKits, selectedEnsembles, selectedContacts, close)
+                    .put("reminder_lead_unit", unit).put("calendar_color", calendarColor.uppercase()).put("importance", importance)
+                    .put("is_private", if (isPrivate) 1 else 0).put("all_day", if (allDay) 1 else 0)
+                    .put("calendar_uid", original.optString("calendar_uid")).put("calendar_revision", if (target.id == null) 0 else original.optInt("calendar_revision") + 1),
+                    selectedKits, selectedEnsembles, selectedContacts, close)
             },
             delete = target.id?.let { id -> { model.deleteEvent(id, close) } },
         )
@@ -4940,6 +5068,7 @@ private fun SessionDetailDialog(
     val hasSetList = event.optString("set_list_id").isNotBlank()
     val venueName = venue?.optString("name").orEmpty()
     val venueAddress = venueAddress(venue)
+    val displayLocation = listOf(venueName, venueAddress, event.optString("location")).filter(String::isNotBlank).joinToString(" - ")
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Ink) {
             LazyColumn(
@@ -4964,8 +5093,10 @@ private fun SessionDetailDialog(
                 item {
                     InfoCard {
                         DetailLine("Type", event.optString("event_type").humanize())
-                        DetailLine("Date", event.optString("event_date"))
-                        DetailLine("Time", listOf(event.optString("start_time"), event.optString("end_time")).filter(String::isNotBlank).joinToString(" to "))
+                        DetailLine("When", eventDateSummary(event))
+                        DetailLine("Ends", listOf(event.optString("end_date"), event.optString("end_time")).filter(String::isNotBlank).joinToString(" / "))
+                        DetailLine("Importance", event.optString("importance", "normal").humanize())
+                        DetailLine("Visibility", if (event.optInt("is_private") == 1) "Private" else "Shared workspace event")
                         DetailLine("Venue", venueName)
                         DetailLine("Address", venueAddress)
                         DetailLine("Room / location details", event.optString("location"))
@@ -4976,6 +5107,13 @@ private fun SessionDetailDialog(
                 if (mapLink != null) item {
                     StudioButton(onClick = { openMapLink(context, mapLink) }, modifier = Modifier.fillMaxWidth()) {
                         Text("Directions", color = Ink, fontWeight = FontWeight.Black)
+                    }
+                }
+                item {
+                    StudioButton(onClick = { shareEventCalendar(context, event, displayLocation) }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                        Icon(Icons.Rounded.Share, "Share calendar file", tint = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Share Calendar File (.ICS)", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
                 if (hasSetList) item {
@@ -4998,6 +5136,7 @@ private fun EventCard(
     openSetList: (() -> Unit)? = null,
     edit: (() -> Unit)? = null,
     copy: (() -> Unit)? = null,
+    shareCalendar: (() -> Unit)? = null,
     host: (() -> Unit)? = null,
     peopleCount: Int = 0,
     people: (() -> Unit)? = null,
@@ -5010,11 +5149,16 @@ private fun EventCard(
         shape = RoundedCornerShape(8.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(12.dp)) {
-            Box(Modifier.width(4.dp).height(82.dp).background(Brush.verticalGradient(listOf(Amber, Cyan)), RoundedCornerShape(50)))
+            Box(Modifier.width(4.dp).height(82.dp).background(parseCalendarColor(event.optString("calendar_color")), RoundedCornerShape(50)))
             Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp)) {
-                Text(listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString(" / "), color = TextSoft, fontSize = 13.sp)
+                Text(eventDateSummary(event), color = TextSoft, fontSize = 13.sp)
                 Text(event.optString("title", "Untitled session"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Text(listOf(event.optString("event_type").humanize(), event.optString("_display_location", event.optString("location"))).filter(String::isNotBlank).joinToString(" - "), color = TextSoft)
+                Row(Modifier.padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).background(parseCalendarColor(event.optString("calendar_color")), CircleShape))
+                    Text(event.optString("importance", "normal").humanize(), color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (event.optInt("is_private") == 1) Text("PRIVATE", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                }
                 if (readiness.total > 0) {
                     Text(
                         if (readiness.ready == readiness.total) "Offline packet ready (${readiness.ready} attachments)" else "Offline packet: ${readiness.ready}/${readiness.total} attachments ready",
@@ -5028,6 +5172,7 @@ private fun EventCard(
                     if (openSetList != null) SubBrandIconButton(SubBrand.Live, "Open in $liveModeName", openSetList)
                     if (people != null) EventToolIconButton(Icons.Rounded.Groups, "People", people, peopleCount)
                     if (host != null) TextButton(onClick = host) { Text("Host", color = Cyan, fontWeight = FontWeight.Bold) }
+                    if (shareCalendar != null) EventToolIconButton(Icons.Rounded.CalendarMonth, "Share calendar file", shareCalendar)
                     if (edit != null) EventToolIconButton(Icons.Rounded.Edit, "Edit event", edit)
                     if (copy != null) EventToolIconButton(Icons.Rounded.ContentCopy, "Copy event", copy)
                 }
@@ -5240,6 +5385,7 @@ private fun EventPeopleDialog(
                     StudioButton(onClick = close, kind = StudioButtonKind.Secondary) { Text("Close", color = Color.White) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioButton(onClick = { shareEventCalendar(context, event, event.optString("_display_location", event.optString("location"))) }, kind = StudioButtonKind.Secondary) { Text("Share .ICS", color = Color.White, fontWeight = FontWeight.Bold) }
                     if (participantPhones.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "smsto", participantPhones) }) { Text("Text Participants", color = Ink, fontWeight = FontWeight.Bold) }
                     if (participantEmails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", participantEmails) }, kind = StudioButtonKind.Secondary) { Text("Email Participants", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
@@ -5249,26 +5395,28 @@ private fun EventPeopleDialog(
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StudioButton(
-                        onClick = { openGroupContactLink(context, "smsto", selectedPhones) },
+                        onClick = { textEventDetails(context, event, event.optString("_display_location", event.optString("location")), selectedPhones) },
                         enabled = selectedPhones.isNotEmpty(),
-                    ) { Text("Text Selected (${selectedPhones.size})", color = Ink, fontWeight = FontWeight.Bold) }
+                    ) { Text("Text Calendar (${selectedPhones.size})", color = Ink, fontWeight = FontWeight.Bold) }
                     StudioButton(
-                        onClick = { openGroupContactLink(context, "mailto", selectedEmails) },
+                        onClick = { shareEventCalendar(context, event, event.optString("_display_location", event.optString("location")), selectedEmails) },
                         enabled = selectedEmails.isNotEmpty(),
                         kind = StudioButtonKind.Secondary,
-                    ) { Text("Email Selected (${selectedEmails.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+                    ) { Text("Email .ICS (${selectedEmails.size})", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (people.isEmpty()) item { EmptyCard("A band or group is selected, but it has no connected members yet.") }
                     items(people, key = EventPerson::id) { person ->
                         val label = (person.roles + person.contexts).filter(String::isNotBlank).joinToString(" / ")
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                            Checkbox(
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Switch(
                                 checked = person.id in selectedIds,
                                 onCheckedChange = { checked ->
                                     recipientScope = "Custom selection"
                                     selectedIds = selectedIds.toMutableSet().apply { if (checked) add(person.id) else remove(person.id) }.toSet()
                                 },
+                                modifier = Modifier.semantics { contentDescription = "Include ${person.contact.optString("display_name", "person")}" },
+                                colors = studioSwitchColors(),
                             )
                             Box(Modifier.weight(1f)) {
                                 DirectoryContactRow(person.contact, label, context, methodsByContact[person.id].orEmpty())
@@ -6376,7 +6524,7 @@ private fun LiveAudioProfileEditor(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Preferred when compatible", color = Color.White, modifier = Modifier.weight(1f))
-                    Switch(checked = preferred, onCheckedChange = { preferred = it })
+                    Switch(checked = preferred, onCheckedChange = { preferred = it }, colors = studioSwitchColors())
                 }
                 buses.forEach { busRecord ->
                     val bus = JSONObject(busRecord.json)
@@ -7518,7 +7666,7 @@ private fun DocumentNightModeToggle(enabled: Boolean, change: (Boolean) -> Unit)
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Text("Night view", color = if (enabled) Cyan else TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Switch(checked = enabled, onCheckedChange = change)
+        Switch(checked = enabled, onCheckedChange = change, colors = studioSwitchColors())
     }
 }
 
@@ -7569,6 +7717,9 @@ private const val LIVE_PHONE_FORMAT = "live_phone_format"
 private const val LIVE_AUDIO_PREFERENCES = "studio_leviathan_live_audio"
 private const val LIVE_AUDIO_DEVICE_ID = "output_device_id"
 private const val LIVE_AUDIO_PROFILE_PREFIX = "routing_profile:"
+private const val CALENDAR_VIEW_PREFERENCES = "studio_leviathan_calendar_view"
+private const val CALENDAR_WEEK_START_SUNDAY = "week_starts_sunday"
+private val CALENDAR_COLORS = listOf("#FF9D1E", "#42D9FF", "#63E6A4", "#A98BFF", "#FF6B7A", "#FFD43B", "#5C7CFA", "#8D6E63")
 
 private data class ChordProDisplayBlock(
     val name: String?,
@@ -7977,6 +8128,52 @@ private fun openGroupContactLink(context: Context, scheme: String, values: List<
     } catch (_: SecurityException) {
         Toast.makeText(context, "Group messaging is not available on this device.", Toast.LENGTH_LONG).show()
     }
+}
+
+private fun shareEventCalendar(context: Context, event: JSONObject, displayLocation: String, emails: List<String> = emptyList()) {
+    val calendarDirectory = File(context.filesDir, "calendar").apply { mkdirs() }
+    val calendarFile = File(calendarDirectory, eventCalendarFileName(event)).apply {
+        writeText(buildEventIcs(event, displayLocation), Charsets.UTF_8)
+    }
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", calendarFile)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/calendar"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_SUBJECT, "Studio Leviathan Calendar: ${event.optString("title", "Scheduled Event")}")
+        putExtra(Intent.EXTRA_TEXT, calendarMessage(event, displayLocation))
+        if (emails.isNotEmpty()) putExtra(Intent.EXTRA_EMAIL, emails.distinct().toTypedArray())
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        clipData = ClipData.newRawUri("Studio Leviathan calendar event", uri)
+    }
+    try {
+        context.startActivity(Intent.createChooser(intent, if (emails.isEmpty()) "Share calendar event" else "Email calendar invitation"))
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "No application is available to share this calendar file.", Toast.LENGTH_LONG).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, "Calendar sharing is not available on this device.", Toast.LENGTH_LONG).show()
+    }
+}
+
+private fun textEventDetails(context: Context, event: JSONObject, displayLocation: String, phones: List<String>) {
+    val recipients = phones.map(String::trim).filter(String::isNotBlank).distinct()
+    if (recipients.isEmpty()) return
+    val uri = Uri.parse("smsto:${recipients.joinToString(";") { Uri.encode(it) }}")
+    val intent = Intent(Intent.ACTION_SENDTO, uri).putExtra("sms_body", calendarMessage(event, displayLocation))
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, "No messaging application is available.", Toast.LENGTH_LONG).show()
+    } catch (_: SecurityException) {
+        Toast.makeText(context, "Messaging is not available on this device.", Toast.LENGTH_LONG).show()
+    }
+}
+
+private fun calendarMessage(event: JSONObject, displayLocation: String): String = buildString {
+    append(event.optString("title", "Studio Leviathan Event"))
+    append("\n")
+    append(eventDateSummary(event))
+    if (displayLocation.isNotBlank()) append("\n").append(displayLocation)
+    if (event.optString("notes").isNotBlank()) append("\n\n").append(event.optString("notes"))
 }
 
 internal fun mediaIntent(link: String): Intent? = normalizedMediaLink(link)?.let { safeLink ->

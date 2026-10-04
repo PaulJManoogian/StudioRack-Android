@@ -211,7 +211,7 @@ internal class LocalExchangeExporter(
             "setlists" -> listOf("set_list", "description", "set", "set_number", "song_number", "group_type", "group_name", "song", "artist", "key", "tempo", "duration", "time_signature", "style", "starts_by", "patch_name", "patch_number", "set_note", "song_note", "set_list_notes", "favorite")
             "items" -> listOf("display_name", "brand", "category", "type", "location", "usage_status", "quantity", "notes")
             "kits" -> listOf("name", "designation", "location", "members", "notes")
-            else -> listOf("title", "type", "status", "date", "start_time", "location", "set_list", "kits", "notes")
+            else -> listOf("title", "type", "status", "start_date", "start_time", "end_date", "end_time", "all_day", "importance", "private", "color", "location", "set_list", "kits", "notes")
         }
         val output = mutableListOf<Map<String, String>>()
         records.forEach { record ->
@@ -239,7 +239,10 @@ internal class LocalExchangeExporter(
                 )
                 else -> output += mapOf(
                     "title" to record.text("title"), "type" to record.text("event_type"), "status" to record.text("event_status"),
-                    "date" to record.text("event_date"), "start_time" to record.text("start_time"), "location" to record.text("location"),
+                    "start_date" to record.text("event_date"), "start_time" to record.text("start_time"),
+                    "end_date" to record.text("end_date"), "end_time" to record.text("end_time"),
+                    "all_day" to record.text("all_day"), "importance" to record.text("importance"),
+                    "private" to record.text("is_private"), "color" to record.text("calendar_color"), "location" to record.text("location"),
                     "set_list" to record.text("set_list_name"), "kits" to record.text("kit_summary"), "notes" to record.text("notes"),
                 )
             }

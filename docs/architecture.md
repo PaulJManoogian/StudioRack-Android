@@ -43,7 +43,7 @@ The app receives a device token only after email, StudioRack access code, and au
 
 Venues, contacts, bands/groups, and their many-to-many relationship rows use the same generic Room record cache and queued-mutation pipeline as songs and events. They can be created and edited offline from the People directory. Event saves atomically queue the event, its selected groups, and its selected individual contacts.
 
-The event stores a reusable `venue_id` separately from room, stage, entrance, or one-off location details. Schedule cards and Gig Mode resolve the venue name from the local cache. Access-grant tokens remain server-only: creating or revoking a temporary share requires connectivity so the server can mint, hash, scope, expire, and audit the token.
+The event stores a reusable `venue_id` separately from room, stage, entrance, or one-off location details. Calendar fields (`end_date`, `end_time`, `all_day`, `calendar_color`, `importance`, `is_private`, `calendar_uid`, and `calendar_revision`) remain in the canonical `studio_event` record and travel through the same queued sync contract as the web application. Schedule cards, the month calendar, calendar-file exports, reminders, and Gig Mode all read the same cached event. Access-grant tokens remain server-only: creating or revoking a temporary share requires connectivity so the server can mint, hash, scope, expire, and audit the token.
 
 ## Next functional layers
 

@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -33,6 +32,7 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
@@ -241,7 +241,7 @@ internal fun SetListEditor(
                     }
                     Row(Modifier.fillMaxWidth().clickable { draft = draft.copy(favorite = !draft.favorite) }, verticalAlignment = Alignment.CenterVertically) {
                         Text("Favorite set list", color = Color.White, modifier = Modifier.weight(1f))
-                        Switch(draft.favorite, { draft = draft.copy(favorite = it) })
+                        Switch(draft.favorite, { draft = draft.copy(favorite = it) }, colors = editorSwitchColors())
                     }
                 }
             }
@@ -266,7 +266,7 @@ internal fun SetListEditor(
                             Text("Stop between songs", color = Color.White, fontWeight = FontWeight.Bold)
                             Text("Do not advance automatically when playback finishes.", color = EditorSoft, fontSize = 11.sp)
                         }
-                        Switch(draft.stopBetweenSongs, { draft = draft.copy(stopBetweenSongs = it) })
+                        Switch(draft.stopBetweenSongs, { draft = draft.copy(stopBetweenSongs = it) }, colors = editorSwitchColors())
                     }
                 }
             }
@@ -598,7 +598,7 @@ private fun SongPicker(section: SetSectionDraft, songs: List<CachedRecord>, clos
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(chosen.indexOf(record.entityId).takeIf { it >= 0 }?.plus(1)?.toString().orEmpty(), color = EditorAmber, fontWeight = FontWeight.Black, modifier = Modifier.size(28.dp))
-                        Checkbox(selected, null)
+                        Switch(selected, { toggle(record.entityId, it) }, colors = editorSwitchColors())
                         Column(Modifier.weight(1f)) {
                             Text(song.optString("title", "Untitled"), color = Color.White, fontWeight = FontWeight.Bold)
                             Text(listOf(song.optString("artist"), song.optString("style"), song.optString("tempo")).filter(String::isNotBlank).joinToString("  |  "), color = EditorSoft, fontSize = 12.sp)
@@ -609,6 +609,16 @@ private fun SongPicker(section: SetSectionDraft, songs: List<CachedRecord>, clos
         }
     }
 }
+
+@Composable
+private fun editorSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = Color.White,
+    checkedTrackColor = EditorAmber,
+    checkedBorderColor = EditorAmber,
+    uncheckedThumbColor = Color(0xFFD8DCE7),
+    uncheckedTrackColor = Color(0xFF3A4151),
+    uncheckedBorderColor = Color(0xFF687185),
+)
 
 private fun setListDraft(original: CachedRecord?, allSections: List<CachedRecord>, allEntries: List<CachedRecord>, copyMode: Boolean = false): SetListDraft {
     val sourceId = original?.entityId

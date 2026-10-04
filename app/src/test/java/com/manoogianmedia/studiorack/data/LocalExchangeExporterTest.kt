@@ -82,7 +82,9 @@ class LocalExchangeExporterTest {
         val store = LocalExportStore(
             entities = mapOf(
                 "set_list" to listOf(JSONObject().put("id", "set_1").put("name", "Friday Show")),
-                "studio_event" to listOf(JSONObject().put("id", "event_1").put("title", "Venue Date").put("set_list_id", "set_1")),
+                "studio_event" to listOf(JSONObject().put("id", "event_1").put("title", "Venue Date").put("set_list_id", "set_1")
+                    .put("event_date", "2026-10-02").put("end_date", "2026-10-04").put("all_day", 1)
+                    .put("importance", "critical").put("is_private", 1).put("calendar_color", "#FF9D1E")),
                 "studio_event_kit" to listOf(JSONObject().put("event_id", "event_1").put("kit_id", "kit_1")),
             ),
             supporting = mapOf(
@@ -99,6 +101,8 @@ class LocalExchangeExporterTest {
         val eventCsv = exporter.export("events", "csv", listOf("event_1"), store).bytes.toString(Charsets.UTF_8)
         assertTrue(eventCsv.contains("Venue Date"))
         assertTrue(eventCsv.contains("Friday Show,Road Kit"))
+        assertTrue(eventCsv.contains("start_date,start_time,end_date,end_time,all_day,importance,private,color"))
+        assertTrue(eventCsv.contains("2026-10-02,,2026-10-04,,1,critical,1,#FF9D1E"))
     }
 
     private fun song(id: String, title: String) = JSONObject()
