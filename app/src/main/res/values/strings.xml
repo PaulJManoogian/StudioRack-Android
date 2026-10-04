@@ -17,6 +17,9 @@
     <string name="brand_descriptor">The performance operations platform.</string>
     <string name="public_base_url" translatable="false">https://www.manoogianmedia.com/leviathan</string>
     <string name="api_base_url" translatable="false">https://www.manoogianmedia.com/leviathan/api/v1</string>
+    <string name="privacy_policy_url" translatable="false">https://www.manoogianmedia.com/privacypolicy.html</string>
+    <string name="terms_url" translatable="false">https://www.manoogianmedia.com/terms.html</string>
+    <string name="support_email" translatable="false">crew@studioleviathan.com</string>
     <string name="export_file_prefix" translatable="false">studio-leviathan</string>
     <string name="asset_statements" translatable="false">[{\"include\":\"https://www.manoogianmedia.com/.well-known/assetlinks.json\"}]</string>
 </resources>

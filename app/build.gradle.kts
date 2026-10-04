@@ -1,20 +1,60 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
 }
 
+val releaseSigningProperties = Properties()
+val releaseSigningFile = rootProject.file("release-signing.properties")
+if (releaseSigningFile.isFile) {
+    releaseSigningFile.inputStream().use(releaseSigningProperties::load)
+}
+
+fun releaseSigningValue(property: String, environment: String): String? =
+    releaseSigningProperties.getProperty(property)?.takeIf(String::isNotBlank)
+        ?: System.getenv(environment)?.takeIf(String::isNotBlank)
+
+val releaseStoreFile = releaseSigningValue("storeFile", "LEVIATHAN_UPLOAD_STORE_FILE")
+val releaseStorePassword = releaseSigningValue("storePassword", "LEVIATHAN_UPLOAD_STORE_PASSWORD")
+val releaseKeyAlias = releaseSigningValue("keyAlias", "LEVIATHAN_UPLOAD_KEY_ALIAS")
+val releaseKeyPassword = releaseSigningValue("keyPassword", "LEVIATHAN_UPLOAD_KEY_PASSWORD")
+val releaseSigningReady = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.manoogianmedia.studiorack"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.manoogianmedia.studiorack"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 116
-        versionName = "0.27.0"
+        targetSdk = 36
+        versionCode = 117
+        versionName = "0.28.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releaseSigningReady) {
+                storeFile = rootProject.file(requireNotNull(releaseStoreFile))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures { compose = true }
@@ -24,6 +64,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+}
+
+tasks.matching { it.name == "bundleRelease" || it.name == "assembleRelease" }.configureEach {
+    doFirst {
+        check(releaseSigningReady) {
+            "Release signing is not configured. Copy release-signing.properties.example to release-signing.properties or set the LEVIATHAN_UPLOAD_* environment variables."
+        }
+    }
 }
 
 dependencies {

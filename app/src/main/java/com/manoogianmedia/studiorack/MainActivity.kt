@@ -56,13 +56,16 @@ class MainActivity : ComponentActivity() {
         if (destination.isNotBlank()) notificationRoutes.tryEmit(NotificationRoute(destination, recordId))
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (gigModeActive && isSupportedPedalKeyCode(event.keyCode)) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                hardwareKeys.tryEmit(event.keyCode)
-            }
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (gigModeActive && isSupportedPedalKeyCode(keyCode)) {
+            if (event.repeatCount == 0) hardwareKeys.tryEmit(keyCode)
             return true
         }
-        return super.dispatchKeyEvent(event)
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (gigModeActive && isSupportedPedalKeyCode(keyCode)) return true
+        return super.onKeyUp(keyCode, event)
     }
 }

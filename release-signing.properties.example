@@ -1,0 +1,6 @@
+# Copy this file to release-signing.properties and keep the populated file private.
+# Both mobile and Wear OS must use the same upload key.
+storeFile=C:/secure/path/studio-leviathan-upload.p12
+storePassword=replace-me
+keyAlias=studio-leviathan-upload
+keyPassword=replace-me

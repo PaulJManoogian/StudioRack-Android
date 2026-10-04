@@ -3582,6 +3582,18 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) Text("Passkeys require Android 9 or newer.", color = TextSoft, fontSize = 12.sp)
             }
             StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                StudioButton(
+                    onClick = { openMediaLink(context, context.getString(R.string.privacy_policy_url)) },
+                    modifier = Modifier.weight(1f),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text("Privacy", color = Color.White, fontWeight = FontWeight.Bold) }
+                StudioButton(
+                    onClick = { openMediaLink(context, context.getString(R.string.terms_url)) },
+                    modifier = Modifier.weight(1f),
+                    kind = StudioButtonKind.Secondary,
+                ) { Text("Terms", color = Color.White, fontWeight = FontWeight.Bold) }
+            }
             StudioButton(onClick = model::signOut, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
                 Text("Sign out", color = Color.White, fontWeight = FontWeight.Black)
             }

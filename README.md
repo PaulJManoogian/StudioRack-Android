@@ -41,6 +41,8 @@ Create `local.properties` with the Android SDK path, then run:
 ./gradlew assembleDebug test
 ```
 
+Google Play release preparation, listing copy, store assets, and the local signed-bundle process are documented in `play-store/README.md` and `play-store/release-checklist.md`. Android releases are built locally; this repository intentionally does not use a GitHub Android build workflow.
+
 The production API root is configured as:
 
 ```text

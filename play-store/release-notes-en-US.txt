@@ -1,0 +1,7 @@
+Studio Leviathan closed beta
+
+- Full offline-first Android experience for equipment, songs, set lists, schedules, and sharing.
+- Leviathan Live performance mode with synchronized charts, lyrics, timing, controls, and local networking.
+- Full calendar views, multi-day events, reminders, participant delivery, and calendar export.
+- Wear OS companion controls for supported live-performance workflows.
+- Updated privacy, support, and release-readiness information.

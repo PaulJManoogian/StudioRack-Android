@@ -9,4 +9,6 @@ captures/
 .cxx/
 *.jks
 *.keystore
+release-signing.properties
+play-store/release/
 

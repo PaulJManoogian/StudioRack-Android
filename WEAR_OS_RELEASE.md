@@ -6,7 +6,7 @@ The phone and watch apps use the same application ID and signing identity so Goo
 
 1. Add Wear OS in **Test and release > Advanced settings > Form factors**.
 2. Upload a round Wear OS screenshot and opt in to the Wear OS review policy.
-3. Publish the mobile and Wear app bundles to the same internal-testing audience.
+3. Publish the mobile and Wear app bundles to the same closed-testing audience using their separate device-form-factor tracks.
 4. Confirm that the phone artifact uses its normal version code and the Wear artifact uses its independent Wear version-code sequence.
 5. Verify the listing on a tester account from both the phone and watch Play Stores.
 
@@ -21,7 +21,7 @@ Release bundles are produced in:
 - `app/build/outputs/bundle/release/`
 - `wear/build/outputs/bundle/release/`
 
-Release builds must be signed with the same production key. Do not upload debug-signed artifacts.
+Release builds are signed with the same Studio Leviathan upload key configured in the ignored `release-signing.properties` file. Do not upload debug-signed artifacts. Upload-ready filenames, hashes, and the public certificate fingerprint are recorded in `play-store/release-manifest.md`.
 
 ## Installation Experience
 
