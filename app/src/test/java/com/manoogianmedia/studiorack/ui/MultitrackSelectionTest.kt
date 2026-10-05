@@ -8,6 +8,17 @@ import org.junit.Test
 
 class MultitrackSelectionTest {
     @Test
+    fun `server main mix replaces synthetic fallback bus`() {
+        val buses = listOf(
+            JSONObject().put("id", "bus-main").put("name", "Main Mix"),
+            JSONObject().put("id", "bus-click").put("name", "Click"),
+        )
+
+        assertEquals("bus-main", defaultMixerBusId(buses))
+        assertEquals("__main__", defaultMixerBusId(emptyList()))
+    }
+
+    @Test
     fun singleArrangementBecomesDefaultWhenEntryHasNoPlaybackChoice() {
         val arrangement = JSONObject().put("id", "arr_1").put("song_id", "song_1")
         val entry = JSONObject().put("song_id", "song_1")

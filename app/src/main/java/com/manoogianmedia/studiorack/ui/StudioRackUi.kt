@@ -7399,15 +7399,21 @@ private fun PerformanceAudioControls(
     var liveGains by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to it.audio.optDouble("audio_gain_db", 0.0).toFloat() }) }
     var liveMutes by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to (it.audio.optInt("audio_muted") == 1) }) }
     var liveSolos by remember(sourceKey) { mutableStateOf(sources.associate { it.audio.optString("id") to (it.audio.optInt("audio_solo") == 1) }) }
-    var liveBusAssignments by remember(sourceKey) {
+    val defaultBusId = remember(item.audioBuses, sourceKey) {
+        defaultMixerBusId(item.audioBuses)
+    }
+    var liveBusAssignments by remember(sourceKey, defaultBusId) {
         mutableStateOf(sources.associate { source ->
-            source.audio.optString("id") to source.audio.optionalId("audio_bus_id").ifBlank { "__main__" }
+            source.audio.optString("id") to source.audio.optionalId("audio_bus_id").ifBlank { defaultBusId }
         })
     }
-    val busesById = remember(item.audioBuses, sourceKey) {
+    val busesById = remember(item.audioBuses, sourceKey, defaultBusId) {
         buildMap<String, JSONObject?> {
-            put("__main__", null)
-            item.audioBuses.forEach { bus -> put(bus.optString("id"), bus) }
+            if (defaultBusId == "__main__") put(defaultBusId, null)
+            item.audioBuses.forEach { bus ->
+                val busId = bus.optString("id")
+                if (busId.isNotBlank()) put(busId, bus)
+            }
         }
     }
     val busOptions = remember(busesById) {
@@ -7429,17 +7435,17 @@ private fun PerformanceAudioControls(
         val soloed = liveSolos.values.any { it }
         val pcmRoutes = sources.map { source ->
             val stemId = source.audio.optString("id")
-            val busId = liveBusAssignments[stemId].orEmpty().ifBlank { "__main__" }
+            val busId = liveBusAssignments[stemId].orEmpty().ifBlank { defaultBusId }
             val route = routes[busId]
             PcmStemRoute(
                 id = stemId,
                 file = File(source.cache?.localPath.orEmpty()),
                 outputStartChannel = route?.optInt("output_start_channel", 1) ?: 1,
                 outputChannelCount = route?.optInt("output_channel_count", 2) ?: 2,
-                gainDb = (liveGains[stemId] ?: 0f) + (liveBusGains[busId.ifBlank { "__main__" }] ?: 0f) + liveMasterGain,
+                gainDb = (liveGains[stemId] ?: 0f) + (liveBusGains[busId] ?: 0f) + liveMasterGain,
                 pan = source.audio.optDouble("audio_pan", 0.0).toFloat(),
                 offsetMs = source.audio.optLong("audio_sync_offset_ms"),
-                muted = liveMutes[stemId] == true || liveBusMutes[busId.ifBlank { "__main__" }] == true || activeRouteMutes[busId] == true || (soloed && liveSolos[stemId] != true),
+                muted = liveMutes[stemId] == true || liveBusMutes[busId] == true || activeRouteMutes[busId] == true || (soloed && liveSolos[stemId] != true),
             )
         }
         MultichannelPcmEngine.open(pcmRoutes, profile.outputChannelCount, preferredDeviceInfo)
@@ -7470,7 +7476,7 @@ private fun PerformanceAudioControls(
         players.forEachIndexed { index, stemPlayer ->
             val source = sources[index]
             val stemId = source.audio.optString("id")
-            val busId = liveBusAssignments[stemId].orEmpty().ifBlank { "__main__" }
+            val busId = liveBusAssignments[stemId].orEmpty().ifBlank { defaultBusId }
             val muted = liveMutes[stemId] == true || liveBusMutes[busId] == true || activeRouteMutes[busId] == true || (soloed && liveSolos[stemId] != true)
             val totalGainDb = (liveGains[stemId] ?: 0f) + (liveBusGains[busId] ?: 0f) + liveMasterGain
             stemPlayer.volume = if (muted) 0f else Math.pow(10.0, totalGainDb.toDouble() / 20.0).toFloat().coerceIn(0f, 1f)
@@ -7491,7 +7497,7 @@ private fun PerformanceAudioControls(
         val routes = item.routesByProfile[selectedProfile?.id].orEmpty().associateBy { it.optString("bus_id") }
         sources.forEachIndexed { index, source ->
             val stemId = source.audio.optString("id")
-            val busId = liveBusAssignments[stemId].orEmpty().ifBlank { "__main__" }
+            val busId = liveBusAssignments[stemId].orEmpty().ifBlank { defaultBusId }
             val muted = liveMutes[stemId] == true || liveBusMutes[busId] == true || activeRouteMutes[busId] == true || (soloed && liveSolos[stemId] != true)
             val totalGainDb = (liveGains[stemId] ?: 0f) + (liveBusGains[busId] ?: 0f) + liveMasterGain
             if (discreteEngine != null) {
@@ -7698,7 +7704,7 @@ private fun PerformanceAudioControls(
                                 sources.forEach { source ->
                                     val stemId = source.audio.optString("id")
                                     val name = source.audio.optString("display_name", "Stem")
-                                    val selectedBusId = liveBusAssignments[stemId].orEmpty().ifBlank { "__main__" }
+                                    val selectedBusId = liveBusAssignments[stemId].orEmpty().ifBlank { defaultBusId }
                                     val selectedBus = busesById[selectedBusId]
                                     val detail = selectedBus?.optString("name")?.ifBlank { null } ?: "Main Mix"
                                     val color = sectionComposeColor(selectedBus?.optString("color", "#42D9FF") ?: "#42D9FF")
@@ -7714,7 +7720,7 @@ private fun PerformanceAudioControls(
                         } else {
                             sources.forEach { source ->
                                 val stemId = source.audio.optString("id")
-                                val selectedBusId = liveBusAssignments[stemId].orEmpty().ifBlank { "__main__" }
+                                val selectedBusId = liveBusAssignments[stemId].orEmpty().ifBlank { defaultBusId }
                                 val selectedBus = busesById[selectedBusId]
                                 LiveMixerGainStrip(
                                     name = source.audio.optString("display_name", "Stem"),
@@ -7741,7 +7747,7 @@ private fun PerformanceAudioControls(
                                 horizontalArrangement = Arrangement.spacedBy(7.dp),
                             ) {
                                 busesById.forEach { (busId, bus) ->
-                                    val presentation = mixerBusPresentation(busId, bus, selectedProfile, routes, sources, liveStemPeaks, liveBusAssignments)
+                                    val presentation = mixerBusPresentation(busId, bus, selectedProfile, routes, sources, liveStemPeaks, liveBusAssignments, defaultBusId)
                                     LiveMixerVerticalStrip(
                                         presentation.name, presentation.output, presentation.color, liveBusGains[busId] ?: 0f,
                                         { liveBusGains = liveBusGains + (busId to it) }, presentation.peak,
@@ -7751,7 +7757,7 @@ private fun PerformanceAudioControls(
                             }
                         } else {
                             busesById.forEach { (busId, bus) ->
-                                val presentation = mixerBusPresentation(busId, bus, selectedProfile, routes, sources, liveStemPeaks, liveBusAssignments)
+                                val presentation = mixerBusPresentation(busId, bus, selectedProfile, routes, sources, liveStemPeaks, liveBusAssignments, defaultBusId)
                                 LiveMixerGainStrip(
                                     presentation.name, presentation.output, presentation.color, liveBusGains[busId] ?: 0f,
                                     { liveBusGains = liveBusGains + (busId to it) }, presentation.peak,
@@ -7804,6 +7810,12 @@ private fun JSONObject.optionalId(key: String): String =
 private data class MixerBusPresentation(val name: String, val output: String, val color: Color, val peak: Float?)
 private data class MixerBusOption(val id: String, val name: String)
 
+internal fun defaultMixerBusId(audioBuses: List<JSONObject>): String =
+    audioBuses.firstOrNull { it.optString("name").trim().equals("Main Mix", ignoreCase = true) }
+        ?.optString("id")
+        ?.takeIf(String::isNotBlank)
+        ?: "__main__"
+
 private fun mixerBusPresentation(
     busId: String,
     bus: JSONObject?,
@@ -7812,6 +7824,7 @@ private fun mixerBusPresentation(
     sources: List<PerformanceAudioStem>,
     liveStemPeaks: Map<String, Float>,
     liveBusAssignments: Map<String, String>,
+    defaultBusId: String,
 ): MixerBusPresentation {
     val route = routes[busId]
     val start = route?.optInt("output_start_channel", 1) ?: 1
@@ -7822,7 +7835,7 @@ private fun mixerBusPresentation(
         else -> "Outputs $start-${start + width - 1}"
     }
     val peak = sources.asSequence()
-        .filter { source -> liveBusAssignments[source.audio.optString("id")].orEmpty().ifBlank { "__main__" } == busId }
+        .filter { source -> liveBusAssignments[source.audio.optString("id")].orEmpty().ifBlank { defaultBusId } == busId }
         .mapNotNull { liveStemPeaks[it.audio.optString("id")] }
         .maxOrNull()
     return MixerBusPresentation(
