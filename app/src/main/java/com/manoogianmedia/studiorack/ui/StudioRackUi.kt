@@ -7703,7 +7703,7 @@ private fun PerformanceAudioControls(
                             ) {
                                 sources.forEach { source ->
                                     val stemId = source.audio.optString("id")
-                                    val name = source.audio.optString("display_name", "Stem")
+                                    val name = mixerStemTitle(source.audio)
                                     val selectedBusId = liveBusAssignments[stemId].orEmpty().ifBlank { defaultBusId }
                                     val selectedBus = busesById[selectedBusId]
                                     val detail = selectedBus?.optString("name")?.ifBlank { null } ?: "Main Mix"
@@ -7723,7 +7723,7 @@ private fun PerformanceAudioControls(
                                 val selectedBusId = liveBusAssignments[stemId].orEmpty().ifBlank { defaultBusId }
                                 val selectedBus = busesById[selectedBusId]
                                 LiveMixerGainStrip(
-                                    name = source.audio.optString("display_name", "Stem"),
+                                    name = mixerStemTitle(source.audio),
                                     detail = selectedBus?.optString("name")?.ifBlank { null } ?: "Main Mix",
                                     color = sectionComposeColor(selectedBus?.optString("color", "#42D9FF") ?: "#42D9FF"),
                                     gainDb = liveGains[stemId] ?: 0f,
@@ -7815,6 +7815,18 @@ internal fun defaultMixerBusId(audioBuses: List<JSONObject>): String =
         ?.optString("id")
         ?.takeIf(String::isNotBlank)
         ?: "__main__"
+
+internal fun mixerStemTitle(audio: JSONObject): String {
+    val role = audio.optString("audio_stem_role").trim()
+    if (role.isNotBlank()) {
+        return role.replace('_', ' ').replace('-', ' ').split(' ')
+            .filter(String::isNotBlank)
+            .joinToString(" ") { word -> word.lowercase().replaceFirstChar(Char::titlecase) }
+    }
+    return audio.optString("display_name").ifBlank {
+        audio.optString("original_name").ifBlank { "Stem" }
+    }
+}
 
 private fun mixerBusPresentation(
     busId: String,

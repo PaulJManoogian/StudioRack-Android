@@ -8,6 +8,22 @@ import org.junit.Test
 
 class MultitrackSelectionTest {
     @Test
+    fun `mixer title prefers the stem role over the uploaded filename`() {
+        val stem = JSONObject()
+            .put("audio_stem_role", "lead_vocals")
+            .put("display_name", "5 Paranoid Jealous Boyfriend_2022-Aug-07_v1_vocals.wav")
+
+        assertEquals("Lead Vocals", mixerStemTitle(stem))
+    }
+
+    @Test
+    fun `mixer title falls back for legacy stems without a role`() {
+        val stem = JSONObject().put("display_name", "Legacy Track")
+
+        assertEquals("Legacy Track", mixerStemTitle(stem))
+    }
+
+    @Test
     fun `server main mix replaces synthetic fallback bus`() {
         val buses = listOf(
             JSONObject().put("id", "bus-main").put("name", "Main Mix"),
