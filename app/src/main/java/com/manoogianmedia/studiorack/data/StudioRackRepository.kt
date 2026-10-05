@@ -1014,7 +1014,7 @@ class StudioRackRepository(
     private companion object {
         const val BACKGROUND_SYNC_WIFI_ONLY = "background_sync_wifi_only"
         const val CANONICAL_SNAPSHOT_GENERATION = "canonical_snapshot_generation"
-        const val REQUIRED_CANONICAL_SNAPSHOT_GENERATION = 1
+        const val REQUIRED_CANONICAL_SNAPSHOT_GENERATION = 2
     }
 }
 

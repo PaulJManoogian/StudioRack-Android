@@ -5707,9 +5707,9 @@ private fun GigModeScreen(
                     })
                     .distinctBy { it.atMs to it.text }
                     .sortedBy(TimedLyricLine::atMs)
-                val selectedPlaybackId = entry.optString("playback_attachment_id")
+                val selectedPlaybackId = entry.optionalId("playback_attachment_id")
                 val selectedPlayback = songPlayback.firstOrNull { it.optString("id") == selectedPlaybackId }
-                val selectedArrangement = selectPlaybackArrangement(entry, arrangementById, arrangementsBySong)
+                val selectedArrangement = selectPlaybackArrangement(entry, arrangementById, arrangementsBySong, songPlayback)
                 val arrangementStems = selectedArrangement?.let { arrangement ->
                     songPlayback.filter { it.optString("audio_arrangement_id") == arrangement.optString("id") }
                 }.orEmpty()
@@ -7728,12 +7728,34 @@ internal fun selectPlaybackArrangement(
     entry: JSONObject,
     arrangementById: Map<String, JSONObject>,
     arrangementsBySong: Map<String, List<JSONObject>>,
+    playbackTracks: List<JSONObject> = emptyList(),
 ): JSONObject? {
-    val arrangementId = entry.optString("playback_arrangement_id")
+    val arrangementId = entry.optionalId("playback_arrangement_id")
     arrangementById[arrangementId]?.let { return it }
-    if (arrangementId.isNotBlank() || entry.optString("playback_attachment_id").isNotBlank()) return null
-    return arrangementsBySong[entry.optString("song_id")].orEmpty().singleOrNull()
+    if (entry.optionalId("playback_attachment_id").isNotBlank()) return null
+    if (arrangementId.isBlank()) {
+        arrangementsBySong[entry.optString("song_id")].orEmpty().singleOrNull()?.let { return it }
+    }
+
+    val inferredIds = playbackTracks
+        .map { it.optString("audio_arrangement_id") }
+        .filter(String::isNotBlank)
+        .distinct()
+    val inferredId = when {
+        arrangementId.isNotBlank() && arrangementId in inferredIds -> arrangementId
+        arrangementId.isBlank() && inferredIds.size == 1 -> inferredIds.single()
+        else -> return null
+    }
+    return JSONObject()
+        .put("id", inferredId)
+        .put("song_id", entry.optString("song_id"))
+        .put("name", "Multitrack Arrangement")
+        .put("enabled", 1)
+        .put("master_gain_db", 0.0)
 }
+
+private fun JSONObject.optionalId(key: String): String =
+    opt(key)?.takeUnless { it == JSONObject.NULL }?.toString()?.takeUnless { it == "null" }.orEmpty()
 
 private data class MixerBusPresentation(val name: String, val output: String, val color: Color, val peak: Float?)
 
