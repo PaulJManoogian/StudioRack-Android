@@ -219,6 +219,7 @@ import java.text.DateFormat
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 import java.time.temporal.ChronoUnit
@@ -5619,11 +5620,13 @@ private fun GigModeScreen(
     val liveAudioRoutes by model.liveAudioRoutes.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
     val workspaceModules by model.workspaceModules.collectAsState()
+    val storagePolicy by model.storagePolicy.collectAsState()
     val syncState by model.syncState.collectAsState()
     val localLive by model.localLive.collectAsState()
     val livePlaybackEnabled = remember(workspaceModules) {
         workspaceModules.any { it.entityId == "live_playback" && JSONObject(it.json).optBoolean("enabled") }
     }
+    val managedAudioLeaseActive = remember(storagePolicy) { managedAudioLeaseIsActive(storagePolicy) }
     val settings = remember(syncState?.performanceSettingsJson) {
         PerformanceSettings.fromJson(syncState?.performanceSettingsJson ?: "{}")
     }
@@ -5663,7 +5666,7 @@ private fun GigModeScreen(
         performanceCues.map(::recordJson).filter { it.optInt("enabled", 1) == 1 }.groupBy { it.optString("song_id") }
     }
     val cacheById = remember(cachedAttachments) { cachedAttachments.associateBy(CachedAttachment::attachmentId) }
-    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, arrangementById, arrangementsBySong, busById, routingProfiles, routesByProfile, cuesBySong, cacheById, settings.attachmentPreferences) {
+    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, arrangementById, arrangementsBySong, busById, routingProfiles, routesByProfile, cuesBySong, cacheById, managedAudioLeaseActive, settings.attachmentPreferences) {
         sectionRows.flatMap { section ->
             entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
                 val song = songMap[entry.optString("song_id")]
@@ -5719,11 +5722,13 @@ private fun GigModeScreen(
                     section.optString("name", "Set"), entry, song, attachment,
                     attachment?.optString("id")?.let(cacheById::get),
                     playbackAudio = playback,
-                    playbackCache = playback?.optString("id")?.let(cacheById::get),
+                    playbackCache = playback?.optString("id")?.let(cacheById::get)
+                        ?.takeIf { playbackAudioCacheAllowed(playback, managedAudioLeaseActive) },
                     playbackStems = arrangementStems.map { stem ->
                         PerformanceAudioStem(
                             audio = stem,
-                            cache = stem.optString("id").let(cacheById::get),
+                            cache = stem.optString("id").let(cacheById::get)
+                                ?.takeIf { playbackAudioCacheAllowed(stem, managedAudioLeaseActive) },
                             bus = busById[stem.optString("audio_bus_id")],
                         )
                     },
@@ -8723,6 +8728,19 @@ private fun EmptyCard(text: String) {
 }
 
 private fun recordJson(record: CachedRecord): JSONObject = runCatching { JSONObject(record.json) }.getOrDefault(JSONObject()).put("id", record.entityId)
+
+internal fun managedAudioLeaseIsActive(policy: List<SupportingRecord>, now: Instant = Instant.now()): Boolean {
+    val row = policy.firstOrNull { it.entityId == "managed_storage" } ?: return true
+    val expires = runCatching { Instant.parse(JSONObject(row.json).optString("offline_lease_expires_utc")) }.getOrNull() ?: return false
+    return expires.isAfter(now)
+}
+
+private fun playbackAudioCacheAllowed(audio: JSONObject, managedLeaseActive: Boolean): Boolean {
+    val provider = audio.optString("source_provider").trim().lowercase()
+    val sourceType = audio.optString("source_type", "file").trim().lowercase()
+    val managed = sourceType == "file" && provider in setOf("", "studio_leviathan", "local")
+    return !managed || managedLeaseActive
+}
 
 private data class GigSong(
     val sectionName: String,

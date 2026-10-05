@@ -43,6 +43,8 @@ Attachment metadata and attachment bytes are separate.
 - A song can appear before its PDF, image, or audio has finished downloading.
 - A linked external URL remains online-only unless Studio Leviathan has a cached copy.
 - Cached files are stored in app-private storage and validated against revision/checksum information.
+- Managed performance audio also carries an account offline lease. A successful authorized sync renews the lease; the app must warn before expiration and must not present expired managed audio as performance-ready.
+- Files connected from customer-controlled storage remain dependent on that provider until prepared locally. Never rely on live cloud streaming for multitrack performance.
 - A file is replaced only after a complete authenticated download.
 
 Open critical attachments before the show. A title in the list is not proof that the file bytes are ready.
