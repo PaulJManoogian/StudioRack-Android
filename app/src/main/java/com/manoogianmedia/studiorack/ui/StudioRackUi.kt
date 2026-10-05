@@ -51,7 +51,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7641,7 +7640,7 @@ private fun PerformanceAudioControls(
                         Text(routingStatus, color = if (discreteEngine != null) Cyan else TextSoft, fontSize = 10.sp)
                     }
                     Box {
-                        TextButton(onClick = { audioDeviceMenu = true }) { Text("Audio output", color = Cyan, fontSize = 11.sp) }
+                        LiveMixerMenuButton("Audio output", device.name, true) { audioDeviceMenu = true }
                         DropdownMenu(expanded = audioDeviceMenu, onDismissRequest = { audioDeviceMenu = false }) {
                             audioDevices.forEach { option ->
                                 DropdownMenuItem(
@@ -7663,9 +7662,7 @@ private fun PerformanceAudioControls(
                         }
                     }
                     Box {
-                        TextButton(onClick = { routingProfileMenu = true }, enabled = profileOptions.isNotEmpty()) {
-                            Text(selectedProfile?.name ?: "Routing profile", color = if (profileOptions.isNotEmpty()) Cyan else TextSoft, fontSize = 11.sp)
-                        }
+                        LiveMixerMenuButton("Routing", selectedProfile?.name ?: "Stereo fallback", profileOptions.isNotEmpty()) { routingProfileMenu = true }
                         DropdownMenu(expanded = routingProfileMenu, onDismissRequest = { routingProfileMenu = false }) {
                             profileOptions.forEach { option ->
                                 DropdownMenuItem(
@@ -7867,12 +7864,12 @@ private fun LiveMixerVerticalStrip(
             Text(name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             LiveMixerBusPicker(detail, busOptions, selectedBusId, onBusSelected, compact = true)
             Row(
-                Modifier.height(150.dp),
+                Modifier.height(120.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 LiveMixerVerticalMeter(signalLevel)
-                Box(Modifier.width(48.dp).height(140.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(48.dp).height(110.dp), contentAlignment = Alignment.Center) {
                     Slider(
                         value = gainDb,
                         onValueChange = onGainChanged,
@@ -7882,7 +7879,7 @@ private fun LiveMixerVerticalStrip(
                             activeTrackColor = Cyan,
                             inactiveTrackColor = Color(0xFF4E485C),
                         ),
-                        modifier = Modifier.width(140.dp).graphicsLayer { rotationZ = -90f }
+                        modifier = Modifier.width(110.dp).graphicsLayer { rotationZ = -90f }
                             .semantics { contentDescription = "$name gain" },
                     )
                 }
@@ -7899,7 +7896,7 @@ private fun LiveMixerVerticalMeter(signalLevel: Float?) {
     val db = if (safeLevel <= .0001f) -60f else (20f * log10(safeLevel)).coerceAtLeast(-60f)
     val fill = ((db + 60f) / 60f).coerceIn(0f, 1f)
     Box(
-        Modifier.width(13.dp).height(140.dp)
+        Modifier.width(13.dp).height(110.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(Color(0xFF292638))
             .semantics {
@@ -8022,8 +8019,21 @@ private fun LiveMixerBusPicker(
         return
     }
     Box {
-        TextButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-            Text("$label  v", color = Cyan, fontSize = if (compact) 9.sp else 10.sp, maxLines = 1)
+        Surface(
+            color = PanelRaised,
+            contentColor = Cyan,
+            border = BorderStroke(1.dp, Cyan.copy(alpha = .42f)),
+            shape = RoundedCornerShape(6.dp),
+            modifier = Modifier.heightIn(min = 36.dp).clickable { expanded = true },
+        ) {
+            Row(
+                Modifier.padding(horizontal = if (compact) 8.dp else 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("Bus: $label", color = Cyan, fontSize = if (compact) 9.sp else 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text("v", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Black)
+            }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
@@ -8073,25 +8083,49 @@ private fun LiveMixerDbReadout(gainDb: Float) {
 
 @Composable
 private fun LiveMixerChannelActions(name: String, muted: Boolean, onMute: (() -> Unit)?, soloed: Boolean, onSolo: (() -> Unit)?) {
-    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        if (onMute != null) LiveMixerActionButton("M", "Mute $name", muted, Amber, onMute)
-        if (onSolo != null) LiveMixerActionButton("S", "Solo $name", soloed, Cyan, onSolo)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (onMute != null) LiveMixerActionButton("Mute", "Mute $name", muted, Amber, onMute)
+        if (onSolo != null) LiveMixerActionButton("Solo", "Solo $name", soloed, Cyan, onSolo)
     }
 }
 
 @Composable
 private fun LiveMixerActionButton(label: String, description: String, active: Boolean, activeColor: Color, onClick: () -> Unit) {
     Box(
-        Modifier.size(36.dp)
+        Modifier.width(50.dp).height(44.dp)
             .background(if (active) activeColor else PanelRaised, RoundedCornerShape(6.dp))
-            .border(1.dp, if (active) activeColor else Color.White.copy(alpha = .08f), RoundedCornerShape(6.dp))
+            .border(1.dp, if (active) activeColor else Color.White.copy(alpha = .28f), RoundedCornerShape(6.dp))
             .semantics {
                 contentDescription = description
                 stateDescription = if (active) "On" else "Off"
             }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(label, color = if (active) Ink else TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Black) }
+    ) { Text(label, color = if (active) Ink else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black) }
+}
+
+@Composable
+private fun LiveMixerMenuButton(label: String, value: String, enabled: Boolean, onClick: () -> Unit) {
+    Surface(
+        color = PanelRaised,
+        contentColor = if (enabled) Cyan else TextSoft,
+        border = BorderStroke(1.dp, if (enabled) Cyan.copy(alpha = .52f) else Color.White.copy(alpha = .12f)),
+        shape = RoundedCornerShape(7.dp),
+        modifier = Modifier.widthIn(min = 132.dp, max = 170.dp).heightIn(min = 48.dp)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(label.uppercase(), color = TextSoft, fontSize = 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                Text(value, color = if (enabled) Color.White else TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+            Text("v", fontSize = 10.sp, fontWeight = FontWeight.Black)
+        }
+    }
 }
 
 private fun Float?.orZero(): Float = this ?: 0f
