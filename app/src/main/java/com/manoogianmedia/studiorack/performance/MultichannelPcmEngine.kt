@@ -9,8 +9,10 @@ import java.io.Closeable
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
+import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -34,6 +36,7 @@ class MultichannelPcmEngine private constructor(
     private val running = AtomicBoolean(false)
     private val released = AtomicBoolean(false)
     private val framePosition = AtomicLong(0)
+    private val masterPeakBits = AtomicInteger(0f.toBits())
     private val bytesPerOutputFrame = outputChannels * 2
     private val bufferFrames = 512
     private val track: AudioTrack
@@ -42,6 +45,9 @@ class MultichannelPcmEngine private constructor(
     val positionMs: Long get() = framePosition.get() * 1000L / sampleRate
     val durationMs: Long = stems.maxOfOrNull { it.durationFrames * 1000L / sampleRate } ?: 0L
     val isPlaying: Boolean get() = running.get()
+    val masterPeak: Float get() = Float.fromBits(masterPeakBits.get())
+
+    fun stemPeaks(): Map<String, Float> = stems.associate { it.route.id to Float.fromBits(it.peakBits.get()) }
 
     fun updateStem(id: String, gainDb: Float, muted: Boolean) {
         stems.firstOrNull { it.route.id == id }?.route?.let { route ->
@@ -79,6 +85,7 @@ class MultichannelPcmEngine private constructor(
         worker?.join(500)
         worker = null
         if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause()
+        resetPeaks()
     }
 
     fun stop() {
@@ -113,11 +120,14 @@ class MultichannelPcmEngine private constructor(
                 break
             }
             var outputIndex = 0
+            var masterPeak = 0f
             mix.forEach { value ->
+                if (abs(value) > masterPeak) masterPeak = abs(value)
                 val sample = (value.coerceIn(-1f, 1f) * Short.MAX_VALUE).roundToInt().toShort().toInt()
                 output[outputIndex++] = (sample and 0xff).toByte()
                 output[outputIndex++] = ((sample shr 8) and 0xff).toByte()
             }
+            masterPeakBits.set(masterPeak.coerceIn(0f, 1f).toBits())
             val written = track.write(output, 0, output.size, AudioTrack.WRITE_BLOCKING)
             if (written <= 0) {
                 running.set(false)
@@ -125,11 +135,18 @@ class MultichannelPcmEngine private constructor(
             }
             framePosition.addAndGet((written / bytesPerOutputFrame).toLong())
         }
+        resetPeaks()
         if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause()
+    }
+
+    private fun resetPeaks() {
+        masterPeakBits.set(0f.toBits())
+        stems.forEach { it.peakBits.set(0f.toBits()) }
     }
 
     private class OpenStem(val route: PcmStemRoute, val wav: WavPcm16) : Closeable {
         val durationFrames: Long get() = wav.frameCount
+        val peakBits = AtomicInteger(0f.toBits())
         private val input = ShortArray(512 * wav.channels)
 
         fun seek(masterFrame: Long) {
@@ -140,9 +157,16 @@ class MultichannelPcmEngine private constructor(
         fun mix(masterFrame: Long, frames: Int, mix: FloatArray, outputChannels: Int): Boolean {
             seek(masterFrame)
             val readFrames = wav.readFrames(input, frames)
-            if (readFrames <= 0) return false
-            if (route.muted) return true
+            if (readFrames <= 0) {
+                peakBits.set(0f.toBits())
+                return false
+            }
+            if (route.muted) {
+                peakBits.set(0f.toBits())
+                return true
+            }
             val gain = 10.0.pow(route.gainDb.toDouble() / 20.0).toFloat()
+            var peak = 0f
             val start = (route.outputStartChannel - 1).coerceIn(0, outputChannels - 1)
             val width = route.outputChannelCount.coerceIn(1, outputChannels - start)
             for (frame in 0 until readFrames) {
@@ -152,12 +176,20 @@ class MultichannelPcmEngine private constructor(
                 val leftGain = if (pan > 0) 1f - pan else 1f
                 val rightGain = if (pan < 0) 1f + pan else 1f
                 val base = frame * outputChannels + start
-                if (width == 1) mix[base] += ((left + right) * .5f) * gain
+                if (width == 1) {
+                    val mono = ((left + right) * .5f) * gain
+                    mix[base] += mono
+                    peak = maxOf(peak, abs(mono))
+                }
                 else {
-                    mix[base] += left * gain * leftGain
-                    mix[base + 1] += right * gain * rightGain
+                    val routedLeft = left * gain * leftGain
+                    val routedRight = right * gain * rightGain
+                    mix[base] += routedLeft
+                    mix[base + 1] += routedRight
+                    peak = maxOf(peak, abs(routedLeft), abs(routedRight))
                 }
             }
+            peakBits.set(peak.coerceIn(0f, 1f).toBits())
             return true
         }
 

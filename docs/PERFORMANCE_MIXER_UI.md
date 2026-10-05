@@ -8,6 +8,8 @@ The Android mixer follows the Studio Leviathan cross-platform mixer contract whi
 - Do not move song navigation, Bluetooth page-turn commands, metronome timing, ChordPro parsing, section navigation, or multichannel playback into a mixer composable.
 - Visual work may be throttled or dropped under load. It must never delay playback, page-turn input, or song changes.
 - Signal meters must use measured engine data. Do not simulate activity from gain values or playback state.
+- The discrete PCM engine publishes lock-free peak snapshots from samples already passing through its mix loop. Compose reads those snapshots at the existing UI polling interval; it does not add work to transport timing or song navigation.
+- Playback paths that cannot expose measured samples leave the meter absent or idle. Never infer meter motion from elapsed time, gain, or the playing flag.
 
 ## Responsive Contract
 

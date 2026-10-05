@@ -222,6 +222,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.time.temporal.ChronoUnit
 import java.util.Date
 import kotlin.math.roundToInt
+import kotlin.math.log10
 
 private val Ink = Color(0xFF07090F)
 private val Panel = Color(0xFF121621)
@@ -7379,6 +7380,8 @@ private fun PerformanceAudioControls(
     var completed by remember(players) { mutableStateOf(false) }
     var audioDeviceMenu by remember { mutableStateOf(false) }
     var routingProfileMenu by remember { mutableStateOf(false) }
+    var liveStemPeaks by remember(discreteEngine) { mutableStateOf<Map<String, Float>>(emptyMap()) }
+    var liveMasterPeak by remember(discreteEngine) { mutableStateOf<Float?>(null) }
 
     fun seekAll(basePosition: Long) {
         if (discreteEngine != null) discreteEngine.seekTo(basePosition)
@@ -7471,6 +7474,8 @@ private fun PerformanceAudioControls(
         while (ready) {
             positionMs = discreteEngine?.positionMs ?: player.currentPosition.coerceAtLeast(0L)
             playing = discreteEngine?.isPlaying ?: player.isPlaying
+            liveStemPeaks = discreteEngine?.stemPeaks().orEmpty()
+            liveMasterPeak = discreteEngine?.masterPeak
             if (discreteEngine == null) players.drop(1).forEachIndexed { childIndex, stemPlayer ->
                 val target = (positionMs + sources[childIndex + 1].audio.optLong("audio_sync_offset_ms")).coerceAtLeast(0L)
                 if (player.isPlaying && kotlin.math.abs(stemPlayer.currentPosition - target) > 80L) stemPlayer.seekTo(target)
@@ -7544,6 +7549,7 @@ private fun PerformanceAudioControls(
                     color = Amber,
                     gainDb = liveMasterGain,
                     onGainChanged = { liveMasterGain = it },
+                    signalLevel = liveMasterPeak,
                 )
             }
             preferredDevice?.let { device ->
@@ -7610,6 +7616,7 @@ private fun PerformanceAudioControls(
                                 color = sectionComposeColor(source.bus?.optString("color", "#42D9FF") ?: "#42D9FF"),
                                 gainDb = liveGains[stemId] ?: 0f,
                                 onGainChanged = { liveGains = liveGains + (stemId to it) },
+                                signalLevel = liveStemPeaks[stemId],
                                 muted = liveMutes[stemId] == true,
                                 onMute = { liveMutes = liveMutes + (stemId to !(liveMutes[stemId] ?: false)) },
                                 soloed = liveSolos[stemId] == true,
@@ -7627,6 +7634,10 @@ private fun PerformanceAudioControls(
                                 width == 1 -> "Output $start"
                                 else -> "Outputs $start-${start + width - 1}"
                             }
+                            val busPeak = sources.asSequence()
+                                .filter { it.audio.optString("audio_bus_id").ifBlank { "__main__" } == busId }
+                                .mapNotNull { liveStemPeaks[it.audio.optString("id")] }
+                                .maxOrNull()
                             LiveMixerGainStrip(
                                 name = bus?.optString("name")?.ifBlank { null } ?: "Main Mix",
                                 detail = outputLabel,
@@ -7634,6 +7645,7 @@ private fun PerformanceAudioControls(
                                 detailActive = discreteEngine != null,
                                 gainDb = liveBusGains[busId] ?: 0f,
                                 onGainChanged = { liveBusGains = liveBusGains + (busId to it) },
+                                signalLevel = busPeak,
                                 muted = liveBusMutes[busId] == true,
                                 onMute = { liveBusMutes = liveBusMutes + (busId to !(liveBusMutes[busId] ?: false)) },
                             )
@@ -7652,6 +7664,7 @@ private fun LiveMixerGainStrip(
     color: Color,
     gainDb: Float,
     onGainChanged: (Float) -> Unit,
+    signalLevel: Float? = null,
     detailActive: Boolean = false,
     muted: Boolean = false,
     onMute: (() -> Unit)? = null,
@@ -7672,6 +7685,7 @@ private fun LiveMixerGainStrip(
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 LiveMixerChannelIdentity(name, detail, color, detailActive, Modifier.widthIn(min = 150.dp).weight(.38f))
+                if (signalLevel != null) LiveMixerSignalMeter(signalLevel, Modifier.width(74.dp))
                 LiveMixerDbControl(gainDb, onGainChanged, Modifier.weight(.62f))
                 LiveMixerDbReadout(gainDb)
                 LiveMixerChannelActions(name, muted, onMute, soloed, onSolo)
@@ -7683,9 +7697,32 @@ private fun LiveMixerGainStrip(
                     LiveMixerDbReadout(gainDb)
                     LiveMixerChannelActions(name, muted, onMute, soloed, onSolo)
                 }
+                if (signalLevel != null) LiveMixerSignalMeter(signalLevel, Modifier.fillMaxWidth())
                 LiveMixerDbControl(gainDb, onGainChanged, Modifier.fillMaxWidth(), showScale = false)
             }
         }
+    }
+}
+
+@Composable
+private fun LiveMixerSignalMeter(signalLevel: Float, modifier: Modifier = Modifier) {
+    val safeLevel = signalLevel.coerceIn(0f, 1f)
+    val db = if (safeLevel <= .0001f) -60f else (20f * log10(safeLevel)).coerceAtLeast(-60f)
+    val fill = ((db + 60f) / 60f).coerceIn(0f, 1f)
+    Box(
+        modifier.height(9.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(Color(0xFF292638))
+            .semantics {
+                contentDescription = "Signal level"
+                stateDescription = if (safeLevel <= .0001f) "Silent" else "${db.toInt()} decibels"
+            },
+    ) {
+        Box(
+            Modifier.fillMaxWidth(fill).fillMaxHeight().background(
+                Brush.horizontalGradient(listOf(Cyan, Color(0xFF58E99B), Amber, Color(0xFFF05D7A)))
+            )
+        )
     }
 }
 
