@@ -30,18 +30,24 @@ The list/chart control is a single toggle. Its icon indicates the view you will 
 
 ## Header controls
 
-Depending on width and configuration, the header can provide:
+Depending on width and configuration, the header provides the following buttons. Cyan means selected or active, orange means available, and a dimmed button is unavailable in the current position or song.
 
-- back to Schedule;
-- LIVE/local connection status;
-- Local Live hosting or joining;
-- edit the active set list;
-- toggle List/Chart view;
-- phone/standard format override on larger devices;
-- light/night document presentation;
-- playback enablement and autoplay;
-- metronome and metronome mute;
-- live hardware and audio routing.
+| Appearance | Button | Meaning |
+| --- | --- | --- |
+| Left arrow | **Back** | Leave Leviathan Live and return to Schedule or the event. |
+| Broadcast/rings | **Live network** | Open Local Live status, hosting, or joining. This reports synchronization, not audio output. |
+| Pencil | **Edit** | Open live set-list editing when the member has permission. |
+| List lines | **List / Chart** | Toggle the running order and current-song performance view. |
+| X | **Return to set list** | Close the current chart and show the running order. |
+| Phone/window | **Phone format** | Use compact responsive arrangement. It is automatic on a narrow phone. |
+| Sun or moon | **Appearance** | Change performance-material presentation for stage lighting. |
+| Play or disabled-play symbol | **Performance audio** | Enable or disable song playback tools. It does not immediately start the arrangement. |
+| Play with list lines | **Autoplay** | Arm automatic playback after later song changes. The first song still waits for Play. |
+| Sliders | **Live hardware** | Open audio output, routing-profile, MIDI, and show-control choices for this Android device. |
+| Metronome | **Metronome** | Start or stop the local metronome at the song tempo. |
+| Muted metronome | **Metronome sound** | Mute or restore the click without stopping metronome timing. |
+| Left chevron | **Previous song** | Move to the previous entry. Disabled at the beginning of the set list. |
+| Right chevron | **Next song** | Move to the next entry. Bluetooth page-turn commands use the same action. |
 
 On a phone, controls become a horizontally scrollable tool row and current-song information is moved earlier so the performer does not lose it below a large empty performance area. On a narrow screen, phone format is automatic.
 
@@ -119,6 +125,73 @@ Multitrack songs can contain stems assigned to virtual buses. The bus model sepa
 - mono/stereo is a single toggle-style control;
 - each route has an independent MUTE button;
 - the output selector only offers valid channels for the detected/configured hardware capacity.
+
+### Mixer at a glance
+
+![Leviathan Live Android tablet mixer showing arrangement transport, song master, output and routing selectors, Tracks Buses and Routing tabs, and four Stem Role channels](images/leviathan-live-mixer-tablet.png)
+
+This tablet example shows the whole performance context rather than an isolated control. Song navigation remains available above the mixer. The arrangement uses four tracks titled **Vocals**, **Drums**, **Guitar**, and **Bass**. These short labels come from each file's **Stem Role**, not its uploaded filename. The original filename and file identity remain unchanged.
+
+### Arrangement controls
+
+| Control | Meaning | Result |
+| --- | --- | --- |
+| **Full Arrangement** | The active multitrack arrangement. | Shows elapsed time, total duration, and synchronized track count. |
+| **Play / Pause** | Start or pause all stems. | Pause preserves position; Play resumes from that position. |
+| **Stop** | Stop every stem. | Returns the shared arrangement clock to the beginning. |
+| **Progress bar** | Display or change position. | Seeking moves all stems, timed sections, lyrics, and armed cues together. |
+| **Song master** | Final arrangement-level gain. | Applies after individual track and bus gain. |
+| **Song master meter** | Measured combined output activity. | A moving meter indicates in-app signal, not successful external cabling. |
+| **Audio Output** | Device-local playback destination. | Select the connected internal, USB, or other Android output. |
+| **Routing** | Active compatible routing profile. | Maps logical buses to the numbered outputs exposed by the selected device. |
+
+### Mixer views
+
+| View | What it shows | Use it for |
+| --- | --- | --- |
+| **Tracks** | Every stem in the active arrangement. | Individual gain, signal, bus assignment, Mute, and Solo. |
+| **Buses** | Every available virtual bus, including an unused bus. | Shared gain and Mute for Main Mix, Click, Guide, Backing, or a custom destination. |
+| **Routing** | The active hardware-routing choices. | Confirm or change the profile used by this Android device. |
+
+### Track strip controls
+
+Each track strip has the same reading order:
+
+1. **Color rail** - matches the assigned logical bus.
+2. **Stem Role title** - a short functional name such as Vocals, Drums, Bass, Click, or Guide. Legacy tracks without a role temporarily fall back to their display name.
+3. **Bus button** - opens a finger-sized menu of available buses. Choosing a bus moves this stem to that logical destination; it does not rename or duplicate the file.
+4. **Signal meter** - shows measured activity. It is not a gain control.
+5. **Gain fader** - adjusts this track from -60 dB to +12 dB. 0.0 dB is unity gain.
+6. **Mute button** - silences this track while preserving gain and routing. Active Mute is orange.
+7. **Solo button** - isolates one or more selected tracks. Active Solo is cyan.
+
+### Bus strip controls
+
+A bus strip represents a destination group rather than a source file. It shows the bus name, profile output such as **Output 3** or **Outputs 1-2**, measured signal, gain, and Mute. Bus Mute affects every track assigned to that bus. Buses do not have Solo because Solo is a source-track inspection control.
+
+### Four-output example
+
+| Stem Role | Logical bus | Profile route | Typical destination |
+| --- | --- | --- | --- |
+| Drums, Guitar, Bass, Vocals | Main Mix | Outputs 1-2, Stereo | Front-of-house backing mix |
+| Click | Click | Output 3, Mono | Drummer or in-ear mixer |
+| Guide | Guide | Output 4, Mono | Band monitor or in-ear mixer |
+
+The tracks can change from song to song while the logical buses and hardware profile remain stable. On a stereo-only device, use stereo fallback and verify whether private Click or Guide material should be muted or combined.
+
+### Gain, meter, and silence troubleshooting
+
+Gain settings add across the track, bus, Song master, and final device-volume stages. Avoid large positive gain at several stages. If a track is silent, check in this order:
+
+1. Arrangement playback is running and the progress clock is moving.
+2. The track is not muted and is not excluded by another track's Solo state.
+3. Track gain is above -60 dB and its meter shows activity during known audio.
+4. The assigned bus is not muted and its gain is audible.
+5. The routing profile does not mute the route and maps it to a valid output.
+6. The intended Audio Output and compatible Routing profile are selected.
+7. The physical cable, receiving mixer channel, and downstream gain are correct.
+
+A meter can remain idle when playback is stopped, the source contains silence, the channel is muted, or measurement is unavailable. Never treat meter movement alone as proof that the audience or monitor is receiving the intended signal.
 
 ### Detect hardware
 

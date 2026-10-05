@@ -81,6 +81,15 @@ internal fun studioLeviathanHelpSections(
                 "Local Host synchronizes participating devices on shared Wi-Fi when internet service disappears.",
                 "Bluetooth page turners use only configured performance actions. Clock, elapsed time, and set time remaining can each be shown or hidden.",
             )),
+            HelpTopic("Live Buttons And Mixer", points = listOf(
+                "Back returns to the event; Live Network opens Local Live status; Edit opens permitted set-list editing; List/Chart toggles the two performance views; X returns from a chart to the running order.",
+                "Phone Format changes responsive density; Sun/Moon changes material appearance; Performance Audio enables playback tools; Autoplay arms later song starts; Live Hardware opens audio output, routing profile, MIDI, and show-control choices.",
+                "Previous and Next move through the set list. Metronome starts or stops timing; Metronome Sound mutes the click without stopping its pulse. Arrangement Play/Pause and Stop control every stem together.",
+                "Tracks shows every stem. Its title uses the short Stem Role, such as Vocals, Drums, Guitar, Bass, Click, or Guide, rather than the uploaded filename. The Bus button changes that track's logical destination.",
+                "Buses shows every available logical bus. A bus strip controls shared gain and Mute for all assigned tracks. Routing selects how buses reach numbered hardware outputs.",
+                "Audio Output selects the device-local destination. Routing selects a compatible saved profile. Song Master applies final arrangement gain after track and bus gain.",
+                "Meters show measured signal activity. Gain faders change level. Mute silences while preserving settings; Solo isolates selected source tracks. A moving meter does not prove that external cabling or mixer channels are correct.",
+            )),
         ),
     ),
     HelpSection(

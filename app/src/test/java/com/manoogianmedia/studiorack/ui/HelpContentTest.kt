@@ -20,5 +20,8 @@ class HelpContentTest {
         assertTrue(content.contains("Performance Material"))
         assertTrue(content.contains("Guest Link"))
         assertTrue(content.contains("record_json"))
+        assertTrue(content.contains("Stem Role"))
+        assertTrue(content.contains("Song Master"))
+        assertTrue(content.contains("Routing selects"))
     }
 }
