@@ -7451,7 +7451,7 @@ private fun PerformanceAudioControls(
     var audioDeviceMenu by remember { mutableStateOf(false) }
     var routingProfileMenu by remember { mutableStateOf(false) }
     var liveStemPeaks by remember(discreteEngine) { mutableStateOf<Map<String, Float>>(emptyMap()) }
-    var liveMasterPeak by remember(discreteEngine) { mutableStateOf<Float?>(null) }
+    var liveMasterPeak by remember(discreteEngine) { mutableStateOf(0f) }
 
     fun seekAll(basePosition: Long) {
         if (discreteEngine != null) discreteEngine.seekTo(basePosition)
@@ -7550,7 +7550,7 @@ private fun PerformanceAudioControls(
             positionMs = discreteEngine?.positionMs ?: player.currentPosition.coerceAtLeast(0L)
             playing = discreteEngine?.isPlaying ?: player.isPlaying
             liveStemPeaks = discreteEngine?.stemPeaks().orEmpty()
-            liveMasterPeak = discreteEngine?.masterPeak
+            liveMasterPeak = discreteEngine?.masterPeak ?: liveStemPeaks.values.maxOrNull() ?: 0f
             if (discreteEngine == null) players.drop(1).forEachIndexed { childIndex, stemPlayer ->
                 val target = (positionMs + sources[childIndex + 1].audio.optLong("audio_sync_offset_ms")).coerceAtLeast(0L)
                 if (player.isPlaying && kotlin.math.abs(stemPlayer.currentPosition - target) > 80L) stemPlayer.seekTo(target)
@@ -7590,7 +7590,7 @@ private fun PerformanceAudioControls(
                     )
                 }
                 GigIconButton(
-                    if (playing) Icons.Rounded.Pause else Icons.Rounded.MusicNote,
+                    if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     if (playing) "Pause performance audio" else "Play performance audio",
                     onClick = {
                         completed = false
