@@ -83,6 +83,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Scaffold
@@ -7537,11 +7538,13 @@ private fun PerformanceAudioControls(
                     onValueChange = { seekAll(it.toLong().coerceAtLeast(trimStart)) },
                     valueRange = trimStart.toFloat()..durationMs.coerceAtLeast(trimStart + 1).toFloat(),
                 )
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Song master", color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Slider(value = liveMasterGain, onValueChange = { liveMasterGain = it }, valueRange = -60f..12f, modifier = Modifier.weight(1f))
-                    Text("${liveMasterGain.toInt()} dB", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
+                LiveMixerGainStrip(
+                    name = "Song master",
+                    detail = "All performance tracks",
+                    color = Amber,
+                    gainDb = liveMasterGain,
+                    onGainChanged = { liveMasterGain = it },
+                )
             }
             preferredDevice?.let { device ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -7601,26 +7604,17 @@ private fun PerformanceAudioControls(
                     if (mixerView == "tracks") {
                         sources.forEach { source ->
                             val stemId = source.audio.optString("id")
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Column(Modifier.widthIn(min = 110.dp).weight(.45f)) {
-                                    Text(source.audio.optString("display_name", "Stem"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                                    Text(source.bus?.optString("name")?.ifBlank { null } ?: "Main Mix", color = TextSoft, fontSize = 10.sp)
-                                }
-                                Slider(value = liveGains[stemId] ?: 0f, onValueChange = { liveGains = liveGains + (stemId to it) }, valueRange = -60f..12f, modifier = Modifier.weight(.55f))
-                                Text("${(liveGains[stemId] ?: 0f).toInt()} dB", color = TextSoft, fontSize = 10.sp)
-                                Box(
-                                    Modifier.size(32.dp).background(if (liveMutes[stemId] == true) Amber.copy(alpha = .25f) else PanelRaised, RoundedCornerShape(6.dp)).clickable {
-                                        liveMutes = liveMutes + (stemId to !(liveMutes[stemId] ?: false))
-                                    },
-                                    contentAlignment = Alignment.Center,
-                                ) { Text("M", color = if (liveMutes[stemId] == true) Amber else TextSoft, fontWeight = FontWeight.Black) }
-                                Box(
-                                    Modifier.size(32.dp).background(if (liveSolos[stemId] == true) Cyan.copy(alpha = .22f) else PanelRaised, RoundedCornerShape(6.dp)).clickable {
-                                        liveSolos = liveSolos + (stemId to !(liveSolos[stemId] ?: false))
-                                    },
-                                    contentAlignment = Alignment.Center,
-                                ) { Text("S", color = if (liveSolos[stemId] == true) Cyan else TextSoft, fontWeight = FontWeight.Black) }
-                            }
+                            LiveMixerGainStrip(
+                                name = source.audio.optString("display_name", "Stem"),
+                                detail = source.bus?.optString("name")?.ifBlank { null } ?: "Main Mix",
+                                color = sectionComposeColor(source.bus?.optString("color", "#42D9FF") ?: "#42D9FF"),
+                                gainDb = liveGains[stemId] ?: 0f,
+                                onGainChanged = { liveGains = liveGains + (stemId to it) },
+                                muted = liveMutes[stemId] == true,
+                                onMute = { liveMutes = liveMutes + (stemId to !(liveMutes[stemId] ?: false)) },
+                                soloed = liveSolos[stemId] == true,
+                                onSolo = { liveSolos = liveSolos + (stemId to !(liveSolos[stemId] ?: false)) },
+                            )
                         }
                     } else {
                         val routes = item.routesByProfile[compatibleProfile?.id].orEmpty().associateBy { it.optString("bus_id") }
@@ -7633,27 +7627,132 @@ private fun PerformanceAudioControls(
                                 width == 1 -> "Output $start"
                                 else -> "Outputs $start-${start + width - 1}"
                             }
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Box(Modifier.size(7.dp).background(sectionComposeColor(bus?.optString("color", "#42D9FF") ?: "#42D9FF"), CircleShape))
-                                Column(Modifier.widthIn(min = 110.dp).weight(.45f)) {
-                                    Text(bus?.optString("name")?.ifBlank { null } ?: "Main Mix", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                                    Text(outputLabel, color = if (discreteEngine != null) Cyan else TextSoft, fontSize = 10.sp)
-                                }
-                                Slider(value = liveBusGains[busId] ?: 0f, onValueChange = { liveBusGains = liveBusGains + (busId to it) }, valueRange = -60f..12f, modifier = Modifier.weight(.55f))
-                                Text("${(liveBusGains[busId] ?: 0f).toInt()} dB", color = TextSoft, fontSize = 10.sp)
-                                Box(
-                                    Modifier.size(32.dp).background(if (liveBusMutes[busId] == true) Amber.copy(alpha = .25f) else PanelRaised, RoundedCornerShape(6.dp)).clickable {
-                                        liveBusMutes = liveBusMutes + (busId to !(liveBusMutes[busId] ?: false))
-                                    },
-                                    contentAlignment = Alignment.Center,
-                                ) { Text("M", color = if (liveBusMutes[busId] == true) Amber else TextSoft, fontWeight = FontWeight.Black) }
-                            }
+                            LiveMixerGainStrip(
+                                name = bus?.optString("name")?.ifBlank { null } ?: "Main Mix",
+                                detail = outputLabel,
+                                color = sectionComposeColor(bus?.optString("color", "#42D9FF") ?: "#42D9FF"),
+                                detailActive = discreteEngine != null,
+                                gainDb = liveBusGains[busId] ?: 0f,
+                                onGainChanged = { liveBusGains = liveBusGains + (busId to it) },
+                                muted = liveBusMutes[busId] == true,
+                                onMute = { liveBusMutes = liveBusMutes + (busId to !(liveBusMutes[busId] ?: false)) },
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun LiveMixerGainStrip(
+    name: String,
+    detail: String,
+    color: Color,
+    gainDb: Float,
+    onGainChanged: (Float) -> Unit,
+    detailActive: Boolean = false,
+    muted: Boolean = false,
+    onMute: (() -> Unit)? = null,
+    soloed: Boolean = false,
+    onSolo: (() -> Unit)? = null,
+) {
+    val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
+    Surface(
+        color = Color(0xD9121927),
+        shape = RoundedCornerShape(7.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = .10f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        if (tabletLayout) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                LiveMixerChannelIdentity(name, detail, color, detailActive, Modifier.widthIn(min = 150.dp).weight(.38f))
+                LiveMixerDbControl(gainDb, onGainChanged, Modifier.weight(.62f))
+                LiveMixerDbReadout(gainDb)
+                LiveMixerChannelActions(name, muted, onMute, soloed, onSolo)
+            }
+        } else {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    LiveMixerChannelIdentity(name, detail, color, detailActive, Modifier.weight(1f))
+                    LiveMixerDbReadout(gainDb)
+                    LiveMixerChannelActions(name, muted, onMute, soloed, onSolo)
+                }
+                LiveMixerDbControl(gainDb, onGainChanged, Modifier.fillMaxWidth(), showScale = false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveMixerChannelIdentity(name: String, detail: String, color: Color, detailActive: Boolean, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.width(6.dp).height(38.dp).background(color, RoundedCornerShape(3.dp)))
+        Column(Modifier.weight(1f)) {
+            Text(name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(detail, color = if (detailActive) Cyan else TextSoft, fontSize = 10.sp, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun LiveMixerDbControl(gainDb: Float, onGainChanged: (Float) -> Unit, modifier: Modifier = Modifier, showScale: Boolean = true) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Slider(
+            value = gainDb,
+            onValueChange = onGainChanged,
+            valueRange = -60f..12f,
+            colors = SliderDefaults.colors(
+                thumbColor = Cyan,
+                activeTrackColor = Cyan,
+                inactiveTrackColor = Color(0xFF4E485C),
+            ),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Gain" },
+        )
+        if (showScale) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            listOf("-60", "-24", "-12", "0", "+12").forEach { tick -> Text(tick, color = TextSoft.copy(alpha = .72f), fontSize = 8.sp) }
+        }
+    }
+}
+
+@Composable
+private fun LiveMixerDbReadout(gainDb: Float) {
+    Text(
+        String.format(java.util.Locale.US, "%+.1f dB", gainDb),
+        color = Color.White,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        modifier = Modifier.width(58.dp),
+    )
+}
+
+@Composable
+private fun LiveMixerChannelActions(name: String, muted: Boolean, onMute: (() -> Unit)?, soloed: Boolean, onSolo: (() -> Unit)?) {
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        if (onMute != null) LiveMixerActionButton("M", "Mute $name", muted, Amber, onMute)
+        if (onSolo != null) LiveMixerActionButton("S", "Solo $name", soloed, Cyan, onSolo)
+    }
+}
+
+@Composable
+private fun LiveMixerActionButton(label: String, description: String, active: Boolean, activeColor: Color, onClick: () -> Unit) {
+    Box(
+        Modifier.size(36.dp)
+            .background(if (active) activeColor else PanelRaised, RoundedCornerShape(6.dp))
+            .border(1.dp, if (active) activeColor else Color.White.copy(alpha = .08f), RoundedCornerShape(6.dp))
+            .semantics {
+                contentDescription = description
+                stateDescription = if (active) "On" else "Off"
+            }
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, color = if (active) Ink else TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Black) }
 }
 
 private fun Float?.orZero(): Float = this ?: 0f
