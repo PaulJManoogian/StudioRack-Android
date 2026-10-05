@@ -19,8 +19,8 @@ import kotlin.math.roundToInt
 data class PcmStemRoute(
     val id: String,
     val file: File,
-    val outputStartChannel: Int,
-    val outputChannelCount: Int,
+    @Volatile var outputStartChannel: Int,
+    @Volatile var outputChannelCount: Int,
     @Volatile var gainDb: Float = 0f,
     val pan: Float = 0f,
     val offsetMs: Long = 0,
@@ -53,6 +53,13 @@ class MultichannelPcmEngine private constructor(
         stems.firstOrNull { it.route.id == id }?.route?.let { route ->
             route.gainDb = gainDb
             route.muted = muted
+        }
+    }
+
+    fun updateStemRoute(id: String, outputStartChannel: Int, outputChannelCount: Int) {
+        stems.firstOrNull { it.route.id == id }?.route?.let { route ->
+            route.outputStartChannel = outputStartChannel
+            route.outputChannelCount = outputChannelCount
         }
     }
 
