@@ -690,16 +690,20 @@ class StudioRackRepository(
     }
 
     suspend fun sync() {
-        _syncHealth.value = _syncHealth.value.copy(running = true, error = null)
+        updateSyncProgress("Preparing your library", "Checking local changes")
         try {
             pushPendingPerformanceSettings()
             pushPendingCrewBehaviorSettings()
             pushPendingAttachments()
             pushPending()
+            updateSyncProgress("Receiving library updates", "Checking the Studio Leviathan server")
             val refreshCanonicalSnapshot = deviceSettings.getInt(CANONICAL_SNAPSHOT_GENERATION, 0) < REQUIRED_CANONICAL_SNAPSHOT_GENERATION
             var cursor = if (refreshCanonicalSnapshot) 0 else dao.syncState()?.cursor ?: 0
+            var page = 0
             do {
                 val response = client.pull(cursor)
+                page += 1
+                updateSyncProgress("Receiving library updates", "Applying update batch $page")
                 applyPull(response)
                 cursor = response.getLong("cursor")
             } while (response.optBoolean("has_more", false))
@@ -709,7 +713,9 @@ class StudioRackRepository(
                     .apply()
             }
             refreshAttachmentCache()
+            updateSyncProgress("Caching artwork", "Preparing images for offline use")
             refreshImageCache()
+            updateSyncProgress("Updating reminders", "Reconciling performance notifications")
             notifications.reconcile()
             _syncHealth.value = RepositorySyncHealth(running = false, lastSuccessAt = System.currentTimeMillis())
         } catch (error: Exception) {
@@ -802,18 +808,23 @@ class StudioRackRepository(
     private suspend fun pushPendingAttachments() {
         val pending = dao.records("song_attachment").filter { JSONObject(it.json).optString("file_ref").startsWith("pending-upload://") }
         val cachedById = dao.cachedAttachments().associateBy(CachedAttachment::attachmentId)
-        pending.forEach { record ->
+        pending.forEachIndexed { index, record ->
             val data = JSONObject(record.json)
             val cached = cachedById[record.entityId] ?: error("The local attachment file is unavailable.")
             val localFile = cached.localPath?.let(::File)?.takeIf(File::isFile)
                 ?: error("The local attachment file is unavailable.")
-            val uploaded = client.uploadAttachment(localFile, localFile.name, cached.mimeType.orEmpty())
+            val displayName = data.optString("display_name").ifBlank { localFile.name }
+            updateSyncProgress("Uploading local files", displayName, index, pending.size)
+            val uploaded = client.uploadAttachment(localFile, localFile.name, cached.mimeType.orEmpty()) { bytes, totalBytes ->
+                updateSyncProgress("Uploading local files", displayName, index, pending.size, bytes, totalBytes)
+            }
             data.put("file_ref", uploaded.getString("file_ref"))
             data.put("download_path", "/api/v1/attachments/${record.entityId}")
             dao.putRecords(listOf(record.copy(json = data.toString())))
             dao.removePendingForEntity("song_attachment", record.entityId)
             dao.putPending(mutation("song_attachment", record.entityId, "upsert", record.revision, data.toString(), System.currentTimeMillis()))
             dao.putCachedAttachment(cached.copy(fileRef = data.getString("file_ref"), status = "ready", error = null))
+            updateSyncProgress("Uploading local files", displayName, index + 1, pending.size)
         }
     }
 
@@ -860,34 +871,46 @@ class StudioRackRepository(
             dao.deleteCachedAttachment(stale.attachmentId)
         }
 
-        records.forEach { record ->
+        records.forEachIndexed { index, record ->
             val data = JSONObject(record.json)
+            val displayName = data.optString("display_name").ifBlank {
+                data.optString("original_name").ifBlank { "Library item ${index + 1}" }
+            }
+            updateSyncProgress("Updating offline library", displayName, index, records.size)
             val fileRef = data.optString("file_ref")
             val current = existing[record.entityId]
             if (data.optString("source_type") == "text") {
                 current?.localPath?.let { runCatching { File(it).delete() } }
                 dao.putCachedAttachment(record.toManifest(data, status = "ready", mimeType = "text/plain", cachedAt = System.currentTimeMillis()))
-                return@forEach
+                updateSyncProgress("Updating offline library", displayName, index + 1, records.size)
+                return@forEachIndexed
             }
             if (fileRef.isBlank()) {
                 current?.localPath?.let { runCatching { File(it).delete() } }
                 dao.putCachedAttachment(record.toManifest(data, status = "unavailable"))
-                return@forEach
+                updateSyncProgress("Updating offline library", displayName, index + 1, records.size)
+                return@forEachIndexed
             }
             if (fileRef.startsWith("http://", true) || fileRef.startsWith("https://", true)) {
                 current?.localPath?.let { runCatching { File(it).delete() } }
                 dao.putCachedAttachment(record.toManifest(data, status = "remote_only"))
-                return@forEach
+                updateSyncProgress("Updating offline library", displayName, index + 1, records.size)
+                return@forEachIndexed
             }
             val currentFile = current?.localPath?.let(::File)
             if (current?.status == "ready" && current.revision == record.revision && current.fileRef == fileRef &&
                 currentFile?.isFile == true && current.sha256 != null && current.sha256 == sha256(currentFile)
             ) {
-                return@forEach
+                updateSyncProgress("Updating offline library", displayName, index + 1, records.size)
+                return@forEachIndexed
             }
 
             val destination = File(attachmentDirectory(), record.entityId + attachmentExtension(fileRef))
-            runCatching { client.downloadAttachment(data.getString("download_path"), destination) }
+            runCatching {
+                client.downloadAttachment(data.getString("download_path"), destination) { bytes, totalBytes ->
+                    updateSyncProgress("Downloading performance files", displayName, index, records.size, bytes, totalBytes)
+                }
+            }
                 .onSuccess { download ->
                     if (download.localFile != null) {
                         dao.putCachedAttachment(
@@ -919,7 +942,27 @@ class StudioRackRepository(
                         )
                     )
                 }
+            updateSyncProgress("Updating offline library", displayName, index + 1, records.size)
         }
+    }
+
+    private fun updateSyncProgress(
+        phase: String,
+        detail: String,
+        completedItems: Int = 0,
+        totalItems: Int = 0,
+        bytesTransferred: Long = 0L,
+        totalBytes: Long? = null,
+    ) {
+        _syncHealth.value = RepositorySyncHealth(
+            running = true,
+            phase = phase,
+            detail = detail,
+            completedItems = completedItems,
+            totalItems = totalItems,
+            bytesTransferred = bytesTransferred,
+            totalBytes = totalBytes,
+        )
     }
 
     private suspend fun refreshImageCache() = withContext(Dispatchers.IO) {
@@ -1047,6 +1090,12 @@ data class RepositorySyncHealth(
     val error: String? = null,
     val lastSuccessAt: Long? = null,
     val status: Int? = null,
+    val phase: String = "",
+    val detail: String = "",
+    val completedItems: Int = 0,
+    val totalItems: Int = 0,
+    val bytesTransferred: Long = 0L,
+    val totalBytes: Long? = null,
 )
 
 private fun sha256(file: File): String {

@@ -80,6 +80,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -184,6 +185,7 @@ import com.manoogianmedia.studiorack.data.SupportingRecord
 import com.manoogianmedia.studiorack.data.SongAttachmentInput
 import com.manoogianmedia.studiorack.data.NotificationRoute
 import com.manoogianmedia.studiorack.data.NotificationReceipt
+import com.manoogianmedia.studiorack.data.RepositorySyncHealth
 import com.manoogianmedia.studiorack.data.LocalLivePeer
 import com.manoogianmedia.studiorack.data.LocalLiveRole
 import com.manoogianmedia.studiorack.data.cacheImageFile
@@ -249,6 +251,7 @@ fun StudioRackApp(
     onGigModeActive: (Boolean) -> Unit,
 ) {
     val uiState by model.uiState.collectAsState()
+    val syncHealth by model.syncHealth.collectAsState()
     val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) model.refreshNotifications()
@@ -274,7 +277,7 @@ fun StudioRackApp(
                 onDispose { onGigModeActive(false) }
             }
             when {
-                uiState.starting -> StudioRackSplash()
+                uiState.starting -> StudioRackSplash(syncHealth)
                 !uiState.signedIn -> LoginScreen(model, uiState)
                 selectedEvent != null -> GigModeScreen(model, selectedEvent!!, hardwareKeys) { selectedEvent = null }
                 else -> MainShell(model, uiState, notificationRoutes) { selectedEvent = it }
@@ -544,15 +547,21 @@ private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: (
 }
 
 @Composable
-private fun StudioRackSplash() {
+private fun StudioRackSplash(syncHealth: RepositorySyncHealth) {
     val productName = stringResource(R.string.app_name_marked)
+    val itemProgress = if (syncHealth.totalItems > 0) {
+        val fileProgress = syncHealth.totalBytes?.takeIf { it > 0L }?.let {
+            (syncHealth.bytesTransferred.toFloat() / it.toFloat()).coerceIn(0f, 1f)
+        } ?: 0f
+        ((syncHealth.completedItems + fileProgress) / syncHealth.totalItems.toFloat()).coerceIn(0f, 1f)
+    } else null
     Box(
         Modifier
             .fillMaxSize()
             .background(Brush.radialGradient(listOf(Color(0xFF183246), Ink), radius = 1100f)),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.widthIn(max = 440.dp).padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
                 modifier = Modifier.size(112.dp),
                 color = Panel.copy(alpha = 0.92f),
@@ -568,11 +577,42 @@ private fun StudioRackSplash() {
             }
             Spacer(Modifier.height(22.dp))
             Text(productName, color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
-            Text("SYNCING YOUR STUDIO", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            Text("SYNCING YOUR LIBRARY", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(22.dp))
-            CircularProgressIndicator(color = Cyan, strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
+            if (itemProgress != null) {
+                LinearProgressIndicator(
+                    progress = { itemProgress },
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                    color = Cyan,
+                    trackColor = Color(0xFF343246),
+                )
+            } else {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                    color = Cyan,
+                    trackColor = Color(0xFF343246),
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(syncHealth.phase.ifBlank { "Preparing your library" }, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(syncHealth.detail.ifBlank { "Checking your offline performance files" }, color = TextSoft, fontSize = 12.sp, maxLines = 2)
+            if (syncHealth.totalItems > 0 || syncHealth.bytesTransferred > 0L) {
+                Spacer(Modifier.height(7.dp))
+                val itemLabel = if (syncHealth.totalItems > 0) "${syncHealth.completedItems.coerceAtMost(syncHealth.totalItems)} of ${syncHealth.totalItems}" else ""
+                val byteLabel = syncHealth.bytesTransferred.takeIf { it > 0L }?.let { transferred ->
+                    val total = syncHealth.totalBytes?.takeIf { it > 0L }?.let { " of ${formatFileSize(it)}" }.orEmpty()
+                    "${formatFileSize(transferred)}$total"
+                }.orEmpty()
+                Text(listOf(itemLabel, byteLabel).filter(String::isNotBlank).joinToString("  |  "), color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1_048_576L -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1_048_576.0)
+    bytes >= 1_024L -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1_024.0)
+    else -> "$bytes B"
 }
 
 @Composable
@@ -5611,6 +5651,11 @@ private fun GigModeScreen(
         if (livePlaybackEnabled) attachmentRows.filter { it.optInt("performance_audio") == 1 }.groupBy { it.optString("song_id") } else emptyMap()
     }
     val arrangementById = remember(liveAudioArrangements) { liveAudioArrangements.associate { it.entityId to recordJson(it) } }
+    val arrangementsBySong = remember(liveAudioArrangements) {
+        liveAudioArrangements.map(::recordJson)
+            .filter { it.optInt("enabled", 1) == 1 }
+            .groupBy { it.optString("song_id") }
+    }
     val busById = remember(liveAudioBuses) { liveAudioBuses.associate { it.entityId to recordJson(it) } }
     val routingProfiles = remember(liveAudioRouteProfiles) { liveAudioRouteProfiles.map(::recordJson) }
     val routesByProfile = remember(liveAudioRoutes) { liveAudioRoutes.map(::recordJson).groupBy { it.optString("profile_id") } }
@@ -5618,7 +5663,7 @@ private fun GigModeScreen(
         performanceCues.map(::recordJson).filter { it.optInt("enabled", 1) == 1 }.groupBy { it.optString("song_id") }
     }
     val cacheById = remember(cachedAttachments) { cachedAttachments.associateBy(CachedAttachment::attachmentId) }
-    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, arrangementById, busById, routingProfiles, routesByProfile, cuesBySong, cacheById, settings.attachmentPreferences) {
+    val rawPerformanceSongs = remember(sectionRows, entryRows, songMap, attachmentsBySong, playbackBySong, arrangementById, arrangementsBySong, busById, routingProfiles, routesByProfile, cuesBySong, cacheById, settings.attachmentPreferences) {
         sectionRows.flatMap { section ->
             entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }.map { entry ->
                 val song = songMap[entry.optString("song_id")]
@@ -5664,12 +5709,12 @@ private fun GigModeScreen(
                     .sortedBy(TimedLyricLine::atMs)
                 val selectedPlaybackId = entry.optString("playback_attachment_id")
                 val selectedPlayback = songPlayback.firstOrNull { it.optString("id") == selectedPlaybackId }
-                val selectedArrangement = arrangementById[entry.optString("playback_arrangement_id")]
+                val selectedArrangement = selectPlaybackArrangement(entry, arrangementById, arrangementsBySong)
                 val arrangementStems = selectedArrangement?.let { arrangement ->
                     songPlayback.filter { it.optString("audio_arrangement_id") == arrangement.optString("id") }
                 }.orEmpty()
                 // An attached track may be started manually without becoming an automatic default.
-                val playback = selectedPlayback ?: songPlayback.firstOrNull()
+                val playback = if (selectedArrangement == null) selectedPlayback ?: songPlayback.firstOrNull() else null
                 GigSong(
                     section.optString("name", "Set"), entry, song, attachment,
                     attachment?.optString("id")?.let(cacheById::get),
@@ -6123,7 +6168,7 @@ private fun GigModeScreen(
                         }
                     }
                     val grouped = gigSong?.performanceGroup != null
-                    SongRow(entry, song, attachment, cached, displayPosition = entryIndex + 1, grouped = grouped, hasPlayback = gigSong?.playbackAudio != null, controlAssets = gigSong?.controlAssets.orEmpty(), modifier = if (grouped) Modifier.padding(start = 32.dp) else Modifier) {
+                    SongRow(entry, song, attachment, cached, displayPosition = entryIndex + 1, grouped = grouped, hasPlayback = gigSong?.let { it.playbackAudio != null || it.playbackStems.isNotEmpty() } == true, controlAssets = gigSong?.controlAssets.orEmpty(), modifier = if (grouped) Modifier.padding(start = 32.dp) else Modifier) {
                         currentSong = performanceSongs.indexOfFirst { it.entry.optString("id") == entry.optString("id") }.coerceAtLeast(0)
                         currentEntryId = performanceSongs[currentSong].entry.optString("id")
                         playbackAutoStartRequest = 0
@@ -6706,8 +6751,8 @@ private fun PerformanceSongScreen(
     LaunchedEffect(path, attachmentVersion, isPdf, page) {
         if (!rendered.complete) rendered = withContext(Dispatchers.IO) { loadPerformanceAttachment(path, attachmentVersion, isPdf, page) }
     }
-    LaunchedEffect(item.entry.optString("id"), item.playbackAudio, metronomeState.running, metronomeState.startedAtEpochMs, countInDurationMs) {
-        if (item.playbackAudio != null) return@LaunchedEffect
+    LaunchedEffect(item.entry.optString("id"), item.playbackAudio, item.playbackStems, metronomeState.running, metronomeState.startedAtEpochMs, countInDurationMs) {
+        if (item.playbackAudio != null || item.playbackStems.isNotEmpty()) return@LaunchedEffect
         if (!metronomeState.running || metronomeState.startedAtEpochMs <= 0L) {
             countInRemainingMs = 0L
             return@LaunchedEffect
@@ -7059,7 +7104,7 @@ private fun PerformanceSongScreen(
                 }
             }
         }
-        if ((layoutVisible("timeline") || layoutVisible("mixer")) && playbackActive && item.playbackAudio != null) {
+        if ((layoutVisible("timeline") || layoutVisible("mixer")) && playbackActive && (item.playbackAudio != null || item.playbackStems.isNotEmpty())) {
             PerformanceAudioControls(
                 item = item,
                 autoStartRequest = autoStartRequest,
@@ -7280,6 +7325,7 @@ private fun PerformanceAudioControls(
     onOpenLiveHardware: () -> Unit,
 ) {
     val context = LocalContext.current
+    val tabletMixer = LocalConfiguration.current.screenWidthDp >= 600
     val sources = remember(item.entry.optString("id"), item.playbackStems, item.playbackAudio, item.playbackCache) {
         item.playbackStems.ifEmpty {
             listOfNotNull(item.playbackAudio?.let { PerformanceAudioStem(it, item.playbackCache, null) })
@@ -7608,52 +7654,190 @@ private fun PerformanceAudioControls(
                         GigPill("Routing", active = false, onClick = onOpenLiveHardware)
                     }
                     if (mixerView == "tracks") {
-                        sources.forEach { source ->
-                            val stemId = source.audio.optString("id")
-                            LiveMixerGainStrip(
-                                name = source.audio.optString("display_name", "Stem"),
-                                detail = source.bus?.optString("name")?.ifBlank { null } ?: "Main Mix",
-                                color = sectionComposeColor(source.bus?.optString("color", "#42D9FF") ?: "#42D9FF"),
-                                gainDb = liveGains[stemId] ?: 0f,
-                                onGainChanged = { liveGains = liveGains + (stemId to it) },
-                                signalLevel = liveStemPeaks[stemId],
-                                muted = liveMutes[stemId] == true,
-                                onMute = { liveMutes = liveMutes + (stemId to !(liveMutes[stemId] ?: false)) },
-                                soloed = liveSolos[stemId] == true,
-                                onSolo = { liveSolos = liveSolos + (stemId to !(liveSolos[stemId] ?: false)) },
-                            )
+                        if (tabletMixer) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                sources.forEach { source ->
+                                    val stemId = source.audio.optString("id")
+                                    val name = source.audio.optString("display_name", "Stem")
+                                    val detail = source.bus?.optString("name")?.ifBlank { null } ?: "Main Mix"
+                                    val color = sectionComposeColor(source.bus?.optString("color", "#42D9FF") ?: "#42D9FF")
+                                    LiveMixerVerticalStrip(
+                                        name, detail, color, liveGains[stemId] ?: 0f,
+                                        { liveGains = liveGains + (stemId to it) }, liveStemPeaks[stemId],
+                                        liveMutes[stemId] == true, { liveMutes = liveMutes + (stemId to !(liveMutes[stemId] ?: false)) },
+                                        liveSolos[stemId] == true, { liveSolos = liveSolos + (stemId to !(liveSolos[stemId] ?: false)) },
+                                    )
+                                }
+                            }
+                        } else {
+                            sources.forEach { source ->
+                                val stemId = source.audio.optString("id")
+                                LiveMixerGainStrip(
+                                    name = source.audio.optString("display_name", "Stem"),
+                                    detail = source.bus?.optString("name")?.ifBlank { null } ?: "Main Mix",
+                                    color = sectionComposeColor(source.bus?.optString("color", "#42D9FF") ?: "#42D9FF"),
+                                    gainDb = liveGains[stemId] ?: 0f,
+                                    onGainChanged = { liveGains = liveGains + (stemId to it) },
+                                    signalLevel = liveStemPeaks[stemId],
+                                    muted = liveMutes[stemId] == true,
+                                    onMute = { liveMutes = liveMutes + (stemId to !(liveMutes[stemId] ?: false)) },
+                                    soloed = liveSolos[stemId] == true,
+                                    onSolo = { liveSolos = liveSolos + (stemId to !(liveSolos[stemId] ?: false)) },
+                                )
+                            }
                         }
                     } else {
                         val routes = item.routesByProfile[compatibleProfile?.id].orEmpty().associateBy { it.optString("bus_id") }
-                        busesById.forEach { (busId, bus) ->
-                            val route = routes[busId]
-                            val start = route?.optInt("output_start_channel", 1) ?: 1
-                            val width = route?.optInt("output_channel_count", 2) ?: 2
-                            val outputLabel = when {
-                                compatibleProfile == null -> "Stereo fallback"
-                                width == 1 -> "Output $start"
-                                else -> "Outputs $start-${start + width - 1}"
+                        if (tabletMixer) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                busesById.forEach { (busId, bus) ->
+                                    val presentation = mixerBusPresentation(busId, bus, compatibleProfile, routes, sources, liveStemPeaks)
+                                    LiveMixerVerticalStrip(
+                                        presentation.name, presentation.output, presentation.color, liveBusGains[busId] ?: 0f,
+                                        { liveBusGains = liveBusGains + (busId to it) }, presentation.peak,
+                                        liveBusMutes[busId] == true, { liveBusMutes = liveBusMutes + (busId to !(liveBusMutes[busId] ?: false)) },
+                                    )
+                                }
                             }
-                            val busPeak = sources.asSequence()
-                                .filter { it.audio.optString("audio_bus_id").ifBlank { "__main__" } == busId }
-                                .mapNotNull { liveStemPeaks[it.audio.optString("id")] }
-                                .maxOrNull()
-                            LiveMixerGainStrip(
-                                name = bus?.optString("name")?.ifBlank { null } ?: "Main Mix",
-                                detail = outputLabel,
-                                color = sectionComposeColor(bus?.optString("color", "#42D9FF") ?: "#42D9FF"),
-                                detailActive = discreteEngine != null,
-                                gainDb = liveBusGains[busId] ?: 0f,
-                                onGainChanged = { liveBusGains = liveBusGains + (busId to it) },
-                                signalLevel = busPeak,
-                                muted = liveBusMutes[busId] == true,
-                                onMute = { liveBusMutes = liveBusMutes + (busId to !(liveBusMutes[busId] ?: false)) },
-                            )
+                        } else {
+                            busesById.forEach { (busId, bus) ->
+                                val presentation = mixerBusPresentation(busId, bus, compatibleProfile, routes, sources, liveStemPeaks)
+                                LiveMixerGainStrip(
+                                    presentation.name, presentation.output, presentation.color, liveBusGains[busId] ?: 0f,
+                                    { liveBusGains = liveBusGains + (busId to it) }, presentation.peak,
+                                    detailActive = discreteEngine != null,
+                                    muted = liveBusMutes[busId] == true,
+                                    onMute = { liveBusMutes = liveBusMutes + (busId to !(liveBusMutes[busId] ?: false)) },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+internal fun selectPlaybackArrangement(
+    entry: JSONObject,
+    arrangementById: Map<String, JSONObject>,
+    arrangementsBySong: Map<String, List<JSONObject>>,
+): JSONObject? {
+    val arrangementId = entry.optString("playback_arrangement_id")
+    arrangementById[arrangementId]?.let { return it }
+    if (arrangementId.isNotBlank() || entry.optString("playback_attachment_id").isNotBlank()) return null
+    return arrangementsBySong[entry.optString("song_id")].orEmpty().singleOrNull()
+}
+
+private data class MixerBusPresentation(val name: String, val output: String, val color: Color, val peak: Float?)
+
+private fun mixerBusPresentation(
+    busId: String,
+    bus: JSONObject?,
+    compatibleProfile: CompatibleRoutingProfile?,
+    routes: Map<String, JSONObject>,
+    sources: List<PerformanceAudioStem>,
+    liveStemPeaks: Map<String, Float>,
+): MixerBusPresentation {
+    val route = routes[busId]
+    val start = route?.optInt("output_start_channel", 1) ?: 1
+    val width = route?.optInt("output_channel_count", 2) ?: 2
+    val output = when {
+        compatibleProfile == null -> "Stereo fallback"
+        width == 1 -> "Output $start"
+        else -> "Outputs $start-${start + width - 1}"
+    }
+    val peak = sources.asSequence()
+        .filter { it.audio.optString("audio_bus_id").ifBlank { "__main__" } == busId }
+        .mapNotNull { liveStemPeaks[it.audio.optString("id")] }
+        .maxOrNull()
+    return MixerBusPresentation(
+        bus?.optString("name")?.ifBlank { null } ?: "Main Mix",
+        output,
+        sectionComposeColor(bus?.optString("color", "#42D9FF") ?: "#42D9FF"),
+        peak,
+    )
+}
+
+@Composable
+private fun LiveMixerVerticalStrip(
+    name: String,
+    detail: String,
+    color: Color,
+    gainDb: Float,
+    onGainChanged: (Float) -> Unit,
+    signalLevel: Float?,
+    muted: Boolean,
+    onMute: (() -> Unit)?,
+    soloed: Boolean = false,
+    onSolo: (() -> Unit)? = null,
+) {
+    Surface(
+        color = Color(0xD9121927),
+        shape = RoundedCornerShape(7.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = .10f)),
+        modifier = Modifier.width(126.dp),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.width(34.dp).height(4.dp).background(color, RoundedCornerShape(2.dp)))
+            Text(name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(detail, color = TextSoft, fontSize = 9.sp, maxLines = 1)
+            Row(
+                Modifier.height(150.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LiveMixerVerticalMeter(signalLevel)
+                Box(Modifier.width(48.dp).height(140.dp), contentAlignment = Alignment.Center) {
+                    Slider(
+                        value = gainDb,
+                        onValueChange = onGainChanged,
+                        valueRange = -60f..12f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Cyan,
+                            activeTrackColor = Cyan,
+                            inactiveTrackColor = Color(0xFF4E485C),
+                        ),
+                        modifier = Modifier.width(140.dp).graphicsLayer { rotationZ = -90f }
+                            .semantics { contentDescription = "$name gain" },
+                    )
+                }
+            }
+            LiveMixerDbReadout(gainDb)
+            LiveMixerChannelActions(name, muted, onMute, soloed, onSolo)
+        }
+    }
+}
+
+@Composable
+private fun LiveMixerVerticalMeter(signalLevel: Float?) {
+    val safeLevel = (signalLevel ?: 0f).coerceIn(0f, 1f)
+    val db = if (safeLevel <= .0001f) -60f else (20f * log10(safeLevel)).coerceAtLeast(-60f)
+    val fill = ((db + 60f) / 60f).coerceIn(0f, 1f)
+    Box(
+        Modifier.width(13.dp).height(140.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF292638))
+            .semantics {
+                contentDescription = "Signal level"
+                stateDescription = if (safeLevel <= .0001f) "Silent" else "${db.toInt()} decibels"
+            },
+    ) {
+        Box(
+            Modifier.fillMaxWidth().fillMaxHeight(fill).align(Alignment.BottomCenter).background(
+                Brush.verticalGradient(listOf(Color(0xFFF05D7A), Amber, Color(0xFF58E99B), Cyan))
+            )
+        )
     }
 }
 

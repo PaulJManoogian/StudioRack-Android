@@ -207,7 +207,12 @@ class SyncClient(
         }
     }
 
-    suspend fun uploadAttachment(file: File, displayName: String, mimeType: String): JSONObject = withContext(Dispatchers.IO) {
+    suspend fun uploadAttachment(
+        file: File,
+        displayName: String,
+        mimeType: String,
+        onProgress: ((Long, Long?) -> Unit)? = null,
+    ): JSONObject = withContext(Dispatchers.IO) {
         val boundary = "ApplicationAttachment-${System.currentTimeMillis()}"
         val connection = URL("$baseUrl/attachments/upload").openConnection() as HttpURLConnection
         try {
@@ -224,7 +229,17 @@ class SyncClient(
                 output.writeBytes("--$boundary\r\n")
                 output.writeBytes("Content-Disposition: form-data; name=\"upload\"; filename=\"$safeName\"\r\n")
                 output.writeBytes("Content-Type: ${mimeType.ifBlank { "application/octet-stream" }}\r\n\r\n")
-                file.inputStream().use { it.copyTo(output) }
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var transferred = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        transferred += count
+                        onProgress?.invoke(transferred, file.length().takeIf { it > 0L })
+                    }
+                }
                 output.writeBytes("\r\n--$boundary--\r\n")
                 output.flush()
             }
@@ -239,7 +254,11 @@ class SyncClient(
         }
     }
 
-    suspend fun downloadAttachment(path: String, destination: File): AttachmentDownload = withContext(Dispatchers.IO) {
+    suspend fun downloadAttachment(
+        path: String,
+        destination: File,
+        onProgress: ((Long, Long?) -> Unit)? = null,
+    ): AttachmentDownload = withContext(Dispatchers.IO) {
         val url = URL(resolveDownloadUrl(baseUrl, path))
         val connection = url.openConnection() as HttpURLConnection
         try {
@@ -263,6 +282,7 @@ class SyncClient(
             val temporary = File(destination.parentFile, destination.name + ".part")
             val digest = MessageDigest.getInstance("SHA-256")
             var byteCount = 0L
+            val expectedBytes = connection.contentLengthLong.takeIf { it > 0L }
             connection.inputStream.use { input ->
                 FileOutputStream(temporary).use { output ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -272,6 +292,7 @@ class SyncClient(
                         output.write(buffer, 0, count)
                         digest.update(buffer, 0, count)
                         byteCount += count
+                        onProgress?.invoke(byteCount, expectedBytes)
                     }
                     output.fd.sync()
                 }
