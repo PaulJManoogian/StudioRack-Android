@@ -56,5 +56,7 @@
 
 - Increase each module's version code for every subsequent upload.
 - Keep phone/tablet and Wear version codes unique within the shared package.
+- Review `../docs/index.md`, the affected workflow guides, and **More > Help** whenever a release changes user-visible behavior.
+- Verify that documentation describes the shipped Android and Wear capabilities without implying access to web-only administration.
 - Build and test releases locally. Do not add a GitHub Android build workflow.
 - Promote the tested artifact instead of rebuilding different code for production.

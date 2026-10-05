@@ -5,3 +5,4 @@ Studio Leviathan closed beta
 - Full calendar views, multi-day events, reminders, participant delivery, and calendar export.
 - Wear OS companion controls for supported live-performance workflows.
 - Updated privacy, support, and release-readiness information.
+- Complete in-app and written guidance for setup, calendar, offline work, sharing, Leviathan Live, audio routing, and Wear OS.

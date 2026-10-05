@@ -25,11 +25,11 @@ internal fun studioLeviathanHelpSections(
         "Everyday instructions collected in one place for fast reference.",
         listOf(
             HelpTopic("First Steps", points = listOf(
-                "Dashboard: See studio value, upcoming work, care priorities, recent $agentName activity, equipment flow, and curation totals.",
-                "Create Item: Choose the category first. $productName changes the fields to fit the equipment.",
-                "Create Kit: Group equipment into drum sets, travel rigs, stage packs, session bundles, or other reusable collections.",
+                "Home: See workspace identity, studio value, upcoming work, care priorities, recent $agentName activity, and synchronized totals.",
+                "Gear: Search synchronized equipment, record field notes, review service history, complete maintenance, and export the visible list.",
+                "Library: Add and edit songs, lyrics, charts, and set lists. Sessions contains the full calendar and Leviathan Live settings.",
             )),
-            HelpTopic("Items", listOf("Items are the main equipment records. Record identity, asset and serial numbers, status, location, value, care details, photos, and files. Category-specific fields cover details such as drum heads, tuning, software licenses, cable length, and computer specifications.")),
+            HelpTopic("Items", listOf("Items are the main equipment records. Android displays synchronized identity, category/type, location, status, units, serials, category-specific details, images, notes, and maintenance. Use the canonical web application for complete item creation and comprehensive equipment-field editing.")),
             HelpTopic(agentName, listOf("$agentName watches care details, sends trackable reminders, reads replies, updates matching actions, and keeps an action history. Configure timing and quiet hours, test delivery, and teach enabled skills how your organization works.")),
             HelpTopic("Reports", listOf("Reports review equipment, value, care, scheduled work, and supporting notes. Filter first, then export the records currently in view.")),
         ),
@@ -38,12 +38,11 @@ internal fun studioLeviathanHelpSections(
         "equipment", "Equipment & Kits", "INVENTORY", "Equipment, assets, kits, and care.",
         "Build a useful record once, then use it for insurance, valuation, maintenance, packing, and performance preparation.",
         listOf(
-            HelpTopic("Creating And Editing Items", points = listOf(
-                "Open Create Item or select an item from Reports.",
-                "Choose its category and equipment type so the appropriate fields appear.",
-                "Record identity, asset code, serial number, purchase details, values, location, condition, and status.",
-                "Add photos and supporting files that help identify, insure, or service the item.",
-                "Use Save and Continue when entering several items.",
+            HelpTopic("Equipment On Android", points = listOf(
+                "Open Gear and search by name, category, type, status, location, serial detail, or other synchronized text.",
+                "Expand a strip to review details, units, specifications, open field notes, and maintenance history.",
+                "Use Add Maintenance Note for a new issue, or Maintenance / History to record completed service and resolve reminders.",
+                "Use the canonical web application for complete equipment creation, valuation, image/file management, and comprehensive field editing.",
             )),
             HelpTopic("Value And Depreciation", points = listOf(
                 "Purchase value records the original transaction amount and date.",
@@ -52,14 +51,14 @@ internal fun studioLeviathanHelpSections(
                 "Curated, irreplaceable, vintage, and out-of-production equipment can be identified separately.",
             )),
             HelpTopic("Maintenance Records", listOf("Open an item's maintenance page to record completed service. Each completion becomes a permanent history entry. Completing maintenance records the date, work, performer, and notes, dismisses resolved reminders, and can establish the next due date.")),
-            HelpTopic("Kits", listOf("Kits are reusable equipment collections. Search and assign items, set designation and location, and add a photo. Events may include multiple kits, and printed event packets include kit checklists.")),
+            HelpTopic("Kits", listOf("Kits are reusable equipment collections. Android can search synchronized kits, review location, notes, item assignments and quantities, and export the visible list. Create or comprehensively edit kit composition and images in the canonical web application. Events may include multiple kits, and printed event packets include kit checklists.")),
         ),
     ),
     HelpSection(
         "music", "Songs & Live", "MUSIC LIBRARY", "Songs, performance material, set lists, and $liveName.",
         "Keep rehearsal sources and stage-critical information together, then make it available offline.",
         listOf(
-            HelpTopic("Songs", listOf("Add or browse songs in Sessions. Song records support title, artist, album, style, key, tempo, time signature, length, who starts, patch, notes, favorite status, and listening links."), listOf(
+            HelpTopic("Songs", listOf("Add or browse songs in Library. Song records support title, artist, album, style, key, tempo, time signature, length, who starts, patch, notes, favorite status, and listening links."), listOf(
                 "GetSongBPM can search metadata while preserving fields you already populated.",
                 "Where possible, LRCLIB duration is combined with metadata results.",
             )),
@@ -86,15 +85,18 @@ internal fun studioLeviathanHelpSections(
     ),
     HelpSection(
         "schedule", "Schedule", "SESSIONS", "Performances, rehearsals, studio sessions, and other work.",
-        "All scheduled work uses one searchable list, with Type distinguishing the event.",
+        "Use the visual month calendar or chronological agenda for performances, rehearsals, studio sessions, travel, and other work.",
         listOf(
             HelpTopic("Creating An Event", points = listOf(
                 "Choose Performance, Rehearsal, Studio Session, or Other.",
-                "Enter start and required end date/time, title, venue or location, directions, and notes.",
+                "Enter title, start and required end date/time, or choose All-day. Multi-day work must use its actual final date.",
+                "Choose calendar color, importance, and the Private designation. Private is a classification; workspace permissions remain the access boundary.",
+                "Select a reusable venue when possible, then add room, entrance, directions, and one-off location notes.",
                 "Attach a set list, select kits and gear, and associate groups or individual contacts.",
                 "Configure the $agentName reminder and save. Copy an existing event when most details repeat.",
             )),
-            HelpTopic("Finding And Using Events", listOf("Search and filter by event details, type, and status. Tap an event to review its session information, open directions in a map or navigation app, or open its set list for the performance. Event actions also provide $liveName, People, editing, copying, printing, sharing, and deletion. People can text or email direct participants, a selected band or group, venue contacts, everyone, or a custom selection, and still provides individual call, text, email, and profile actions.")),
+            HelpTopic("Finding And Using Events", listOf("Month view provides Previous, Today, and Next navigation plus a Sunday/Monday week-start preference. Select a day to add an event. Agenda view can search and filter by event details, type, and status. Event actions provide details, directions, $liveName, People, calendar-file delivery, editing, copying, sharing, and deletion according to permission. People can text or email direct participants, a selected band/group, venue contacts, everyone, or a custom selection; sliders include or exclude each person.")),
+            HelpTopic("Calendar Files", listOf("The event calendar action creates an .ics file from the event's dates, times, location, and supported details. Choose recipients and email or text from the event. Android opens the selected messaging application for review; some texting applications cannot attach calendar files, so email or the Android share sheet may be required.")),
             HelpTopic("Printed Event Packets", listOf("Packets include event and venue details, directions, people in readable columns, kit checklists, set and medley headings, song order and metadata, notes, and selected printable performance material.")),
         ),
     ),
@@ -146,7 +148,7 @@ internal fun studioLeviathanHelpSections(
                 "Offline ready: Previously synchronized records and attachments remain available locally.",
                 "Attention: A sync error or conflicting revision needs review.",
             )),
-            HelpTopic("Offline Changes", listOf("Create and edit equipment, kits, songs, performance material, set lists, events, contacts, groups, venues, shares, and maintenance notes locally. Changes enter a queue and push when connectivity returns. Dictation appears where it improves a real workflow.")),
+            HelpTopic("Offline Changes", listOf("Supported Android editors can save songs, written performance material, set lists, events, directory records, maintenance notes, and service completions locally. Changes enter a queue and push when connectivity returns. Secure invitations, billing, share-token creation/revocation, provider authentication, and server AI require a connection. Complete equipment and kit creation remain web management workflows.")),
             HelpTopic("Performance Preparation", points = listOf(
                 "Synchronize before leaving for the venue.",
                 "Confirm the event's offline packet and attachments are ready.",
@@ -167,8 +169,11 @@ internal fun studioLeviathanHelpSections(
                 "Bluetooth Page Turner preserves the classic previous, next, metronome, and mute defaults. Configure the canonical 2-, 4-, or 6-button layout and learned actions in the web application; Android synchronizes and applies them locally in Leviathan Live.",
                 "Assignable actions include song and page navigation, manual scrolling, playback and autoplay toggles, current-audio play/pause or stop, and metronome controls. Pedal presses are handled locally without database or network work.",
                 "Clocks independently control wall time, elapsed performance time, and estimated set time remaining.",
+                "Wear OS reports companion status and can open the shared Play listing on a connected watch. The watch remains a companion to the phone/tablet performance authority.",
+                "Audio Routing maps named virtual buses to valid mono or stereo physical outputs. Each profile is collapsible, each route can be muted, and removing a profile does not delete buses or audio files.",
+                "Performance layout templates are visually authored and published on the web. Android applies the published phone/tablet layout with device-safe constraints.",
             )),
-            HelpTopic("Access And Security", listOf("Start with an approved Studio Leviathan membership. Accept the invitation, then sign in with the approved email, access code, and authenticator verification. Google, Microsoft, and passkeys are optional additional sign-in methods, not separate Studio Leviathan accounts.", "To connect Google or Microsoft, open Settings > Sign-in & Security and choose Manage Connected Accounts. Complete the connection in the secure web page. Provider email addresses may differ from the Studio Leviathan login email, but they must be deliberately linked while signed in.", "To add a passkey, open Settings > Sign-in & Security and choose Add Passkey. Android can then use fingerprint, face recognition, or the device screen lock for later sign-ins. The existing access code and authenticator remain available for recovery.", "An unlinked Google or Microsoft account, or an unknown passkey, cannot create or enter a Studio Leviathan account. Connecting a method does not change the workspace, licensed seat, role, or permissions.", "Each workspace owns its records. The Owner controls billing, membership, and ownership transfer. Account Managers may invite and manage Editors and Viewers; Editors change operational records; Viewers have read-only access. Each role applies only within that workspace.", "A pending invitation reserves a licensed member seat. Verification activates the login. Revoking access releases the seat and disconnects that member's synchronized devices. Guest sharing does not consume seats.", "Never share passwords, API keys, MFA secrets, or private guest tokens.")),
+            HelpTopic("Access And Security", listOf("Start with an approved $productName membership. Accept the invitation, then sign in with the approved email, access code, and authenticator verification. Google, Microsoft, and passkeys are optional additional sign-in methods, not separate $productName accounts.", "To connect Google or Microsoft, open Settings > Sign-in & Security and choose Manage Connected Accounts. Complete the connection in the secure web page. Provider email addresses may differ from the $productName login email, but they must be deliberately linked while signed in.", "To add a passkey, open Settings > Sign-in & Security and choose Add Passkey. Android can then use fingerprint, face recognition, or the device screen lock for later sign-ins. The existing access code and authenticator remain available for recovery.", "An unlinked Google or Microsoft account, or an unknown passkey, cannot create or enter a $productName account. Connecting a method does not change the workspace, licensed seat, role, or permissions.", "Each workspace owns its records. The Owner controls billing, membership, and ownership transfer. Account Managers may invite and manage Editors and Viewers; Editors change operational records; Viewers have read-only access. Each role applies only within that workspace.", "A pending invitation reserves a licensed member seat. Verification activates the login. Revoking access releases the seat and disconnects that member's synchronized devices. Guest sharing does not consume seats.", "Never share passwords, API keys, MFA secrets, or private guest tokens.")),
         ),
     ),
     HelpSection(
@@ -191,6 +196,7 @@ internal fun studioLeviathanHelpSections(
                 "Print a packet when the performance needs a physical fallback.",
             )),
             HelpTopic("Getting Help", listOf("Include the device, page, approximate time, connection state, record name, and action taken. Do not send passwords, API keys, MFA secrets, or private guest tokens in ordinary support messages.")),
+            HelpTopic("Alpha And Beta Feedback", listOf("Eligible tester accounts see a circular music-themed feedback button in the top bar. Choose the issue type, product area, impact, summary, and reproducible detail. Feedback is for product behavior and ideas; use support for account access, security, or urgent recovery. Never include access codes, authenticator secrets, private client information, API keys, or guest tokens.")),
         ),
     ),
 )

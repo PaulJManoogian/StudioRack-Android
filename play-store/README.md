@@ -2,6 +2,8 @@
 
 This directory contains Studio Leviathan's Play listing copy, compliance working notes, reproducible store artwork, screenshots, and release checklist.
 
+The complete tester/user documentation begins at [`../docs/index.md`](../docs/index.md). Play listing and reviewer copy should remain consistent with those guides.
+
 Generate the icon and feature graphic from the approved Studio Leviathan brand assets:
 
 ```powershell
