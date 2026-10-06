@@ -8,11 +8,12 @@ This documentation describes the Android phone, Android tablet, and Wear OS appl
 2. [Android User Guide](android-user-guide.md) - every main navigation area and its common workflows.
 3. [Calendar and Events](calendar-and-events.md) - create events, use month and agenda views, notify participants, and share calendar files.
 4. [Leviathan Live](leviathan-live.md) - prepare and run a set list, use performance material, playback, timing, pedals, Local Live, and audio routing.
-5. [People, Membership, and Sharing](people-membership-sharing.md) - directory records, workspace seats, band membership, material access, and guest links.
-6. [Offline Work and Synchronization](offline-and-sync.md) - queued changes, attachment readiness, conflicts, and recovery.
-7. [Wear OS Companion](wear-os.md) - installation, connection states, controls, and limitations.
-8. [Troubleshooting and Support](troubleshooting.md) - symptom-based checks and the information to include with a support request.
-9. [Glossary](glossary.md) - product terms used across the web, Android, and Wear applications.
+5. [Hardware Performance Qualification](hardware-performance-qualification.md) - understand how Android compatibility, Leviathan Live minimums, and recommended multitrack hardware are measured.
+6. [People, Membership, and Sharing](people-membership-sharing.md) - directory records, workspace seats, band membership, material access, and guest links.
+7. [Offline Work and Synchronization](offline-and-sync.md) - queued changes, attachment readiness, conflicts, and recovery.
+8. [Wear OS Companion](wear-os.md) - installation, connection states, controls, and limitations.
+9. [Troubleshooting and Support](troubleshooting.md) - symptom-based checks and the information to include with a support request.
+10. [Glossary](glossary.md) - product terms used across the web, Android, and Wear applications.
 
 ## Product boundaries
 
