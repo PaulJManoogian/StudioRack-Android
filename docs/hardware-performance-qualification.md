@@ -26,3 +26,12 @@ Public support profiles are:
 Stage-critical qualification requires three clean workflow runs and one clean two-hour soak. Synthetic processing checks remain advisory and cannot promote a device into a supported tier.
 
 No Android hardware minimum is published until physical-device results populate the matrix. Test results must identify whether they used the native multichannel PCM engine or Media3 stereo fallback because those paths have different capabilities and performance characteristics.
+
+## Initial Android Hardware
+
+The first physical-device evidence comes from the product owner's real Teclast Android tablet and Samsung Galaxy S26 Ultra. Feedback from those devices is field evidence, not emulator or synthetic-test evidence. Both are initial qualification targets.
+
+- **Teclast Android tablet:** active tablet testing covers synchronization, chart mode, performance controls, multitrack mixer, buses, routing profiles, and touch usability. The exact model, Android build, SoC, and RAM must be captured with the formal runs.
+- **Samsung Galaxy S26 Ultra:** active phone testing covers native behavior and Web/Android parity. The Android build and repeatable workflow results must be captured with the formal runs.
+
+Existing observations must not be discarded when the formal suite begins. Record them as **Field Observation**, then promote a device only after the applicable repeat runs and soak test pass.
