@@ -12,8 +12,9 @@ This documentation describes the Android phone, Android tablet, and Wear OS appl
 6. [People, Membership, and Sharing](people-membership-sharing.md) - directory records, workspace seats, band membership, material access, and guest links.
 7. [Offline Work and Synchronization](offline-and-sync.md) - queued changes, attachment readiness, conflicts, and recovery.
 8. [Wear OS Companion](wear-os.md) - installation, connection states, controls, and limitations.
-9. [Troubleshooting and Support](troubleshooting.md) - symptom-based checks and the information to include with a support request.
-10. [Glossary](glossary.md) - product terms used across the web, Android, and Wear applications.
+9. [Theme System](theme-system.md) - planned cross-platform appearance choices, accessibility, persistence, and Leviathan Live behavior.
+10. [Troubleshooting and Support](troubleshooting.md) - symptom-based checks and the information to include with a support request.
+11. [Glossary](glossary.md) - product terms used across the web, Android, and Wear applications.
 
 ## Product boundaries
 
