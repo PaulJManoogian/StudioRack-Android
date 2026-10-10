@@ -79,9 +79,9 @@ The **Music & Live** library contains **Songs**, **Set Lists**, and **Tuners**.
 
 ### Tuners
 
-Tuners provides separate **Tuned Instruments** and **Percussion** modes. Instrument mode includes chromatic tuning, standard string tunings, a selectable string target, adjustable concert pitch, and a reference tone. Percussion mode separates the instrument family from its size or traditional voice and supports snares, toms, bass drums, timpani, djembes, congas, timbales, bongos, and tabla. Its Musical Range Map compares related sizes or voices on one chromatic scale. Measurement choices follow the instrument: double-headed drums offer batter and resonant heads, single-headed instruments offer a playing head, and djembe and tabla use tension points.
+Tuners provides separate **Tuned** and **Percussion** modes. Tuned mode includes chromatic tuning, standard string tunings, a selectable string target, adjustable concert pitch, and a reference tone. Percussion mode separates the instrument family from its size or traditional voice and supports snares, toms, bass drums, timpani, djembes, congas, timbales, bongos, and tabla. Its Musical Range Map compares related sizes or voices on one chromatic scale. Measurement choices follow the instrument: double-headed drums offer batter and resonant heads, single-headed instruments offer a playing head, and djembe and tabla use tension points.
 
-Select **Start Tuner** to grant microphone access and begin local pitch analysis. The meter shows flat, centered, or sharp position; the confidence bar and status distinguish a clear reading from weak audio, clipping, or an uncertain pitch. **Save tuning to...** associates the result with an existing Gear item and queues the update when offline. See [Instrument and Drum Tuners](tuners.md) for the complete control guide and drum procedure.
+Select **Listen** to grant microphone access and begin local pitch analysis. The meter shows flat, centered, or sharp position; the confidence bar and status distinguish a clear reading from weak audio, clipping, or an uncertain pitch. **Save tuning to...** associates the result with an existing Gear item and queues the update when offline. See [Instrument and Drum Tuners](tuners.md) for the complete control guide and drum procedure.
 
 ### Browse songs
 

@@ -71,11 +71,11 @@ internal fun studioLeviathanHelpSections(
             )),
             HelpTopic("Set Lists", listOf("Create sets, search and add songs, then drag to reorder. Rename, copy, print, share, favorite, or export a list. Named medley and tribute groups indent only their songs and show each song's position in Chart mode. Song lengths calculate estimated set time.")),
             HelpTopic("Instrument And Drum Tuners", points = listOf(
-                "Open Music & Live > Tuners. Tuned Instruments provides chromatic mode, common guitar/bass/ukulele/orchestral string standards, a string target, concert-pitch adjustment, and a reference tone.",
+                "Open Music & Live > Tuners. Tuned mode provides chromatic mode, common guitar/bass/ukulele/orchestral string standards, a string target, concert-pitch adjustment, and a reference tone.",
                 "Percussion separates type from size or voice and supports snares, toms, bass drums, timpani, djembes, congas, timbales, bongos, and tabla. Measurements follow the instrument: only double-headed drums show a resonant head, while djembe and tabla use tension points.",
                 "The drum map guides star or clockwise lug order. Capture a clear reading to mark a lug high, low, or in range; Lock Current Reading preserves a sound as the target. Saving retains the environment, order, and captured lugs with the Gear item.",
                 "Typical comparisons include both note spans and frequencies. The Musical Range Map places every supported diameter in the selected drum family on one pitch scale and highlights the selected size.",
-                "Start Tuner requests microphone permission and analyzes audio only on this device. Center is in tune; left is flat; right is sharp. Weak, clipping, or uncertain states are not precise readings.",
+                "Listen requests microphone permission and analyzes audio only on this device. Center is in tune; left is flat; right is sharp. Weak, clipping, or uncertain states are not precise readings.",
                 "Save tuning to... associates the target, measurement, zone, and notes with existing Gear. The change queues offline and synchronizes later.",
             )),
             HelpTopic(liveName, points = listOf(

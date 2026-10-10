@@ -6,16 +6,15 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 
 | Control | What it does |
 | --- | --- |
-| Tuned Instruments / Percussion | Switches the standards and measurement workflow. Stopping or switching releases the current reading. |
+| Tuned / Percussion | Switches the standards and measurement workflow. Stopping or switching releases the current reading. |
 | Standard tuning | Selects a known open-string arrangement such as Guitar Standard, Drop D, DADGAD, Open G, Bass, Ukulele, Violin/Mandolin, or Viola/Cello. |
 | String / target | Chooses the particular string with a compact one-tap pitch button. Every string in the selected tuning remains visible beside the meter so you can move through an instrument without leaving the tuning view. Chromatic mode follows the closest detected pitch. |
 | Concert pitch | Sets A4 from 430 through 450 Hz. Use 440 Hz unless the ensemble or source requires another reference. |
 | Percussion type | Selects snare, tom, bass drum, timpani, djembe, conga, timbales, bongos, or tabla. |
 | Size / voice | Selects the diameter or traditional voice within that family, such as quinto, tumba, macho, hembra, dayan, or bayan. |
 | Measurement | Adapts to the selected instrument. Double-headed drums offer batter and resonant heads. Single-headed drums offer the playing head only. Djembe and tabla use tension-point terminology. |
-| Start Tuner | Requests microphone permission when needed, then begins local analysis. |
-| Stop Tuner | Releases the microphone. Stop when finished so another app can use it. |
-| Reference Tone | Plays the selected target through the device's media-audio path. The fundamental stays exact while musical overtones keep low targets audible on compact phone and tablet speakers. Use the device media-volume control and do not play the tone while measuring through the same microphone. |
+| Listen / Stop | Starts or releases local microphone analysis. Stop when finished so another app can use the microphone. |
+| Reference | Plays the selected target through the device's media-audio path. The fundamental stays exact while musical overtones keep low targets audible on compact phone and tablet speakers. Use the device media-volume control and do not play the tone while measuring through the same microphone. |
 | Pitch meter | The segmented arc shows direction and distance: left is flat, right is sharp, and center is in tune. The detected pitch is red when substantially wrong, yellow when close, and green when exact. About three cents from center is displayed as in tune. |
 | Confidence | Shows whether one stable pitch dominates the signal. Do not save a low-confidence result as a precise measurement. |
 | Environment sensitivity | Studio, Quiet, Noisy, and Gig adjust the input gate, confidence requirement, smoothing, and practical in-tune tolerance. Use the quietest profile that remains stable. |
@@ -30,11 +29,11 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 
 ## Tune a pitched instrument
 
-1. Select **Tuned Instruments**.
+1. Select **Tuned**.
 2. Choose the standard tuning. Use **Chromatic** for wind instruments, unlisted alternate tunings, or any sustained pitched source.
 3. Choose the string or target note.
 4. Confirm concert pitch.
-5. Select **Start Tuner**, play one clear sustained note, and let the reading settle.
+5. Select **Listen**, play one clear sustained note, and let the reading settle.
 6. Adjust until the needle is centered and the display says **In tune**.
 7. Optionally choose the physical instrument under **Save tuning to...**, add a note, and save.
 

@@ -191,7 +191,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
     val brands by model.brands.collectAsState()
     val tunings by model.tunings.collectAsState()
     val engine = remember { AndroidTunerEngine() }
-    var mode by remember { mutableStateOf("Tuned Instruments") }
+    var mode by remember { mutableStateOf("Tuned") }
     var instrumentPreset by remember { mutableStateOf(instrumentTunings[1]) }
     var stringIndex by remember { mutableStateOf(0) }
     var drumFamily by remember { mutableStateOf("snare") }
@@ -240,7 +240,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
     }
 
     val nearest = nearestNote(reading.frequencyHz, concertPitch.toDouble())
-    val baseTarget = if (mode == "Tuned Instruments") {
+    val baseTarget = if (mode == "Tuned") {
         instrumentPreset.notes.getOrNull(stringIndex)?.let { NoteTarget(it, noteFrequency(it, concertPitch.toDouble())) }
             ?: nearest
     } else {
@@ -257,13 +257,13 @@ internal fun TunerPanel(model: StudioRackViewModel) {
         Text("TUNERS", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Text("Tune on this device", color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Black)
         Text("Pitch analysis stays on the device. Choose a standard, tune, then save the result with an existing gear item.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TunerChoices(listOf("Tuned Instruments", "Percussion"), mode) {
+        TunerChoices(listOf("Tuned", "Percussion"), mode) {
             engine.stop(); listening = false; reading = PitchReading(); selectedItem = null; recentReadings.clear(); mode = it
         }
 
         Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape = RoundedCornerShape(8.dp)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (mode == "Tuned Instruments") {
+                if (mode == "Tuned") {
                     TunerDropdown("Standard tuning", instrumentPreset.name, instrumentTunings, text = { it.name }, choose = { instrumentPreset = it; stringIndex = 0 })
                     if (instrumentPreset.notes.isNotEmpty()) {
                         Text("String / target", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -304,17 +304,17 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                         if (listening) { engine.stop(); listening = false }
                         else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
                         else permission.launch(Manifest.permission.RECORD_AUDIO)
-                    }) { Text(if (listening) "Stop Tuner" else "Start Tuner", fontWeight = FontWeight.Black) }
+                    }) { Text(if (listening) "Stop" else "Listen", fontWeight = FontWeight.Black) }
                     StudioButton(onClick = {
                         referenceToneStatus = if (TunerReferenceTone.play(referenceToneTarget.frequency)) {
                             "Reference tone: ${referenceToneTarget.label} at ${"%.2f".format(referenceToneTarget.frequency)} Hz."
                         } else {
                             "Reference tone could not start. Check the media volume and selected audio output."
                         }
-                    }, kind = StudioButtonKind.Secondary) { Text("Reference Tone", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+                    }, kind = StudioButtonKind.Secondary) { Text("Reference", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
                 Text(referenceToneStatus ?: tunerStatus(listening, reading.state), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (mode == "Tuned Instruments") {
+                if (mode == "Tuned") {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("A = ${concertPitch.roundToInt()} Hz", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Slider(value = concertPitch, onValueChange = { concertPitch = it }, valueRange = 430f..450f, steps = 19, modifier = Modifier.weight(1f))
