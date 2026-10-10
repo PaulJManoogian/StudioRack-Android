@@ -23,7 +23,8 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 | Star / Clockwise | Selects the guided lug order. Star alternates opposing lugs; Clockwise visits adjacent lugs. |
 | Drum head map | Orange is selected, green is in range, cyan is low, and coral is high. Select a numbered lug or use Previous and Next. |
 | Capture Lug | Stores the clear reading for the selected lug, colors it on the map, and advances using the selected order. |
-| Practical comparison | Shows typical fundamental, batter-lug, and resonant-lug ranges for the selected drum size. These are comparison bands, not required tunings. |
+| Practical comparison | Shows typical fundamental, batter-lug, and resonant-lug ranges as both musical note spans and exact frequencies. These are comparison bands, not required tunings. |
+| Musical range map | Places every supported diameter in the selected drum family on one chromatic pitch scale. The selected diameter is orange, making overlaps and useful registers easy to compare. |
 | Save tuning to... | Selects an existing Gear item and saves the target, measurement, zone, and notes. |
 
 ## Tune a pitched instrument
@@ -46,7 +47,7 @@ The supplied values are useful starting points, not mandatory tunings for every 
 4. For a head measurement, lightly damp the opposite head. For a whole-drum reading, let both heads respond.
 5. For lugs, hold the device microphone about 2 inches / 5 cm from the head, select **Star** while balancing the head, and strike consistently near the selected tension rod.
 6. Wait for a clear confidence reading and choose **Capture Lug**. The map records high, low, or in-range state and advances to the next lug.
-7. Compare the result with the typical range panel. A musical choice outside the band is valid; shell, heads, interval, damping, and sustain determine the final sound.
+7. Compare the result with the note and frequency spans in the typical range panel. Use the Musical Range Map to compare the selected diameter with the other drums in that family. A musical choice outside the band is valid; shell, heads, interval, damping, and sustain determine the final sound.
 8. Select the matching Gear item and save. The environment, lug order, and captured readings are included in the saved tuning history.
 
 Batter and resonant measurements update their dedicated Gear tuning values. Whole-drum and lug measurements remain in the tuning history with their target, measured frequency, cents difference, and any notes. Timpani presets show starting ranges; tune to the score and verify pedal range mechanically.

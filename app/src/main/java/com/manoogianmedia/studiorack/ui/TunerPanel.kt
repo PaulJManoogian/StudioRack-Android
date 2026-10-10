@@ -56,6 +56,7 @@ import kotlin.math.roundToInt
 private data class TuningPreset(val id: String, val name: String, val notes: List<String>)
 private data class DrumStandard(val id: String, val name: String, val note: String, val wholeHz: Double, val batterHz: Double = wholeHz, val resonantHz: Double = wholeHz, val lugs: Int = 8, val fundamentalRange: ClosedFloatingPointRange<Double>, val batterRange: ClosedFloatingPointRange<Double>? = null, val resonantRange: ClosedFloatingPointRange<Double>? = null)
 private data class TunerEnvironment(val id: String, val name: String, val description: String, val gate: Float, val confidence: Double, val smoothing: Int, val toleranceHz: Double)
+private data class DrumVisualRange(val family: String, val name: String, val diameter: Int, val lowHz: Double, val highHz: Double)
 private data class NoteTarget(val label: String, val frequency: Double)
 
 private val instrumentTunings = listOf(
@@ -95,6 +96,29 @@ private val tunerEnvironments = listOf(
     TunerEnvironment("quiet", "Quiet", "Practice room or quiet stage", .008f, .64, 5, 1.0),
     TunerEnvironment("noisy", "Noisy", "Nearby conversation or instruments", .018f, .71, 4, 2.0),
     TunerEnvironment("gig", "Gig", "High ambient stage level", .035f, .78, 3, 4.0),
+)
+
+private val drumVisualRanges = listOf(
+    DrumVisualRange("snare", "10 in Snare", 10, 196.0, 293.5),
+    DrumVisualRange("snare", "12 in Snare", 12, 174.5, 261.5),
+    DrumVisualRange("snare", "13 in Snare", 13, 165.0, 247.0),
+    DrumVisualRange("snare", "14 in Snare", 14, 147.0, 247.0),
+    DrumVisualRange("snare", "15 in Snare", 15, 131.0, 196.0),
+    DrumVisualRange("tom", "8 in Tom", 8, 146.83, 207.65),
+    DrumVisualRange("tom", "10 in Tom", 10, 130.81, 164.81),
+    DrumVisualRange("tom", "12 in Tom", 12, 98.0, 130.81),
+    DrumVisualRange("tom", "13 in Tom", 13, 87.31, 116.54),
+    DrumVisualRange("tom", "14 in Floor Tom", 14, 82.41, 103.83),
+    DrumVisualRange("tom", "16 in Floor Tom", 16, 60.0, 82.41),
+    DrumVisualRange("tom", "18 in Floor Tom", 18, 49.0, 71.0),
+    DrumVisualRange("kick", "18 in Bass Drum", 18, 43.65, 73.42),
+    DrumVisualRange("kick", "20 in Bass Drum", 20, 38.89, 65.41),
+    DrumVisualRange("kick", "22 in Bass Drum", 22, 36.0, 61.74),
+    DrumVisualRange("kick", "24 in Bass Drum", 24, 30.87, 55.0),
+    DrumVisualRange("timpani", "23 in Timpani", 23, 146.83, 220.0),
+    DrumVisualRange("timpani", "26 in Timpani", 26, 116.54, 174.61),
+    DrumVisualRange("timpani", "29 in Timpani", 29, 87.31, 130.81),
+    DrumVisualRange("timpani", "32 in Timpani", 32, 73.42, 110.0),
 )
 
 @Composable
@@ -353,16 +377,62 @@ private fun DrumTuningConsole(
 private fun TypicalRangePanel(standard: DrumStandard, zone: String, frequency: Double) {
     val range = when (zone) { "Batter head", "Lug" -> standard.batterRange; "Resonant head" -> standard.resonantRange; else -> standard.fundamentalRange }
     val state = when { range == null -> "No comparison range"; frequency < range.start -> "Below typical range"; frequency > range.endInclusive -> "Above typical range"; else -> "Within typical range" }
-    val rangeText: (ClosedFloatingPointRange<Double>?) -> String = { it?.let { value -> "%.0f–%.0f Hz".format(value.start, value.endInclusive) } ?: "Not applicable" }
+    val rangeText: (ClosedFloatingPointRange<Double>?) -> String = { it?.let { value -> "${pitchName(value.start)}–${pitchName(value.endInclusive)} · ${formatHz(value.start)}–${formatHz(value.endInclusive)} Hz" } ?: "Not applicable" }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("PRACTICAL COMPARISON", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Text(state, color = if (state.startsWith("Within")) Color(0xFF55E69B) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
         Text("Fundamental ${rangeText(standard.fundamentalRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Batter lug ${rangeText(standard.batterRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Resonant lug ${rangeText(standard.resonantRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        DrumFamilyRangeMap(standard)
         Text("Comparison bands are starting points; shell, heads, sustain, intervals, and the music determine the final sound.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
 }
+
+@Composable
+private fun DrumFamilyRangeMap(standard: DrumStandard) {
+    val family = when {
+        standard.id.startsWith("snare") -> "snare"
+        standard.id.startsWith("kick") -> "kick"
+        standard.id.startsWith("timpani") -> "timpani"
+        else -> "tom"
+    }
+    val ranges = drumVisualRanges.filter { it.family == family }.sortedBy { it.diameter }
+    if (ranges.isEmpty()) return
+    val lowMidi = kotlin.math.floor(ranges.minOf { 69 + 12 * log2(it.lowHz / 440.0) } - 1)
+    val highMidi = kotlin.math.ceil(ranges.maxOf { 69 + 12 * log2(it.highHz / 440.0) } + 1)
+    val position: (Double) -> Float = { hz -> ((69 + 12 * log2(hz / 440.0) - lowMidi) / (highMidi - lowMidi)).toFloat().coerceIn(0f, 1f) }
+    val familyTitle = when (family) { "snare" -> "Snare sizes"; "kick" -> "Bass drum sizes"; "timpani" -> "Timpani sizes"; else -> "Tom sizes" }
+    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .6f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape = RoundedCornerShape(7.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Text("MUSICAL RANGE MAP", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+            Text(familyTitle, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(pitchName(440.0 * 2.0.pow((lowMidi - 69) / 12.0)), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text(pitchName(440.0 * 2.0.pow((((lowMidi + highMidi) / 2) - 69) / 12.0)), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text(pitchName(440.0 * 2.0.pow((highMidi - 69) / 12.0)), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            ranges.forEach { item ->
+                val selected = item.diameter == standard.name.substringBefore(" in").toIntOrNull()
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${item.diameter} in", color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Black, modifier = Modifier.widthIn(min = 38.dp))
+                        Canvas(Modifier.weight(1f).height(18.dp)) {
+                            drawRoundRect(Color.White.copy(alpha = .07f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+                            val left = size.width * position(item.lowHz)
+                            val right = size.width * position(item.highHz)
+                            drawRoundRect(if (selected) Color(0xFFFFA000) else Color(0xFF4ECFF5), topLeft = Offset(left, 0f), size = androidx.compose.ui.geometry.Size((right - left).coerceAtLeast(4f), size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+                        }
+                    }
+                    Text("${pitchName(item.lowHz)}–${pitchName(item.highHz)} · ${formatHz(item.lowHz)}–${formatHz(item.highHz)} Hz", color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(start = 46.dp))
+                }
+            }
+        }
+    }
+}
+
+private fun pitchName(frequency: Double): String = nearestNote(frequency, 440.0).label
+private fun formatHz(frequency: Double): String = if (frequency % 1.0 == 0.0) "%.0f".format(frequency) else "%.1f".format(frequency)
 
 private fun adjacentLug(count: Int, current: Int, pattern: String, direction: Int): Int {
     val order = if (pattern == "Clockwise" || count % 2 != 0) (1..count).toList() else (1..count / 2).flatMap { listOf(it, it + count / 2) }
