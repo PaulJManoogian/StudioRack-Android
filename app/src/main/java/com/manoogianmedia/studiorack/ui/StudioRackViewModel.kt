@@ -332,6 +332,24 @@ class StudioRackViewModel(
         }
     }
 
+    fun saveAppearanceSettings(settings: AppearanceSettings) {
+        viewModelScope.launch {
+            runCatching { repository.saveAppearanceSettings(settings.toJson()) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        message = "Appearance saved. It will synchronize when connected.",
+                        syncError = false,
+                    )
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        message = it.message ?: "Could not save appearance.",
+                        syncError = true,
+                    )
+                }
+        }
+    }
+
     fun updateWorkspaceProfile(profileId: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(busy = true, message = "Updating workspace modules...")

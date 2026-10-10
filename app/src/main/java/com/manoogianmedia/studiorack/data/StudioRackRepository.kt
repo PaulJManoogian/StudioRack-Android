@@ -684,6 +684,13 @@ class StudioRackRepository(
         syncNow()
     }
 
+    suspend fun saveAppearanceSettings(settings: JSONObject) {
+        val state = dao.syncState() ?: SyncState()
+        settings.put("_mobile_pending", 1)
+        dao.putState(state.copy(appearanceSettingsJson = settings.toString()))
+        syncNow()
+    }
+
     suspend fun updateWorkspaceProfile(profileId: String) {
         client.updateWorkspaceProfile(profileId)
         sync()
@@ -692,6 +699,7 @@ class StudioRackRepository(
     suspend fun sync() {
         updateSyncProgress("Preparing your library", "Checking local changes")
         try {
+            pushPendingAppearanceSettings()
             pushPendingPerformanceSettings()
             pushPendingCrewBehaviorSettings()
             pushPendingAttachments()
@@ -738,6 +746,15 @@ class StudioRackRepository(
         val saved = client.updatePerformanceSettings(settings).getJSONObject("performance_settings")
         if (layouts != null) saved.put("performance_layouts", layouts)
         dao.putState(state.copy(performanceSettingsJson = saved.toString()))
+    }
+
+    private suspend fun pushPendingAppearanceSettings() {
+        val state = dao.syncState() ?: return
+        val settings = runCatching { JSONObject(state.appearanceSettingsJson) }.getOrNull() ?: return
+        if (settings.optInt("_mobile_pending") != 1) return
+        settings.remove("_mobile_pending")
+        val saved = client.updateAppearanceSettings(settings).getJSONObject("appearance_settings")
+        dao.putState(state.copy(appearanceSettingsJson = saved.toString()))
     }
 
     private suspend fun pushPendingCrewBehaviorSettings() {
@@ -836,6 +853,7 @@ class StudioRackRepository(
             accountJson = response.getJSONObject("account").toString(),
             performanceSettingsJson = performanceSettings.toString(),
             crewBehaviorSettingsJson = response.optJSONObject("crew_behavior_settings")?.toString() ?: "{}",
+            appearanceSettingsJson = response.optJSONObject("appearance_settings")?.toString() ?: "{}",
             lastSyncAt = System.currentTimeMillis(),
         )
         val supporting = flattenSupporting(response.getJSONObject("supporting_entities")) +

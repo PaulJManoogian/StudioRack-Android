@@ -119,7 +119,6 @@ import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.TabletAndroid
 import androidx.compose.material.icons.rounded.WifiTethering
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
@@ -253,7 +252,18 @@ fun StudioRackApp(
 ) {
     val uiState by model.uiState.collectAsState()
     val syncHealth by model.syncHealth.collectAsState()
+    val syncState by model.syncState.collectAsState()
+    val appearance = remember(syncState?.appearanceSettingsJson) {
+        AppearanceSettings.fromJson(syncState?.appearanceSettingsJson ?: "{}")
+    }
     val context = LocalContext.current
+    var selectedEvent by remember { mutableStateOf<String?>(null) }
+    val activeTheme = if (selectedEvent != null && appearance.performanceTheme == "stage_black") {
+        "stage_black"
+    } else {
+        appearance.appTheme
+    }
+    val colors = studioColorScheme(activeTheme)
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) model.refreshNotifications()
     }
@@ -263,16 +273,11 @@ fun StudioRackApp(
         ) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
     MaterialTheme(
-        colorScheme = darkColorScheme(
-            background = Ink, surface = Panel, surfaceVariant = PanelRaised, primary = Amber, onPrimary = Color(0xFF170E03),
-            secondary = Cyan, onSecondary = Color(0xFF06111A), onBackground = Color(0xFFF7F7FB), onSurface = Color(0xFFF7F7FB),
-            onSurfaceVariant = TextSoft, outline = Color(0x33FFFFFF), error = Color(0xFFE55757),
-        ),
+        colorScheme = colors,
         typography = StudioTypography,
         shapes = Shapes(small = RoundedCornerShape(6.dp), medium = RoundedCornerShape(8.dp), large = RoundedCornerShape(12.dp), extraLarge = RoundedCornerShape(50)),
     ) {
-        Surface(Modifier.fillMaxSize(), color = Ink) {
-            var selectedEvent by remember { mutableStateOf<String?>(null) }
+        Surface(Modifier.fillMaxSize(), color = colors.background) {
             DisposableEffect(selectedEvent) {
                 onGigModeActive(selectedEvent != null)
                 onDispose { onGigModeActive(false) }
@@ -343,11 +348,11 @@ private fun MainShell(
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                     Image(painterResource(R.drawable.brand_logo), productName, Modifier.size(38.dp))
                     Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                        Text(productName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text(productName, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Black)
                         Text(connection.label, color = when (connection.kind) { ConnectionKind.ONLINE -> Color(0xFF63E6A4); ConnectionKind.OFFLINE -> Cyan; ConnectionKind.WARNING -> Amber; ConnectionKind.ERROR -> Color(0xFFFF6B6B) }, fontSize = 9.sp, fontWeight = FontWeight.Black)
                     }
                     if (conflicts.isNotEmpty()) Surface(color = Color(0xFF8B2F3A), shape = RoundedCornerShape(8.dp)) {
-                        Text("${conflicts.size} CONFLICT${if (conflicts.size == 1) "" else "S"}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+                        Text("${conflicts.size} CONFLICT${if (conflicts.size == 1) "" else "S"}", color = MaterialTheme.colorScheme.onSurface, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
                     }
                     if (uiState.testerPhase in setOf("alpha", "beta")) TesterFeedbackButton {
                         showingFeedback = true
@@ -355,7 +360,7 @@ private fun MainShell(
                     }
                     if (notificationCount > 0) Surface(
                         modifier = Modifier.padding(start = 7.dp).clickable { showingAlerts = true; showingFeedback = false },
-                        color = Amber,
+                        color = MaterialTheme.colorScheme.primary,
                         contentColor = Ink,
                         shape = RoundedCornerShape(50),
                     ) {
@@ -401,7 +406,7 @@ private fun MainShell(
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                         Text("SYSTEM MAINTENANCE", fontSize = 11.sp, fontWeight = FontWeight.Black)
                         Text(maintenanceMessage, fontSize = 12.sp, lineHeight = 16.sp)
-                        Text("Your offline copy remains available.", fontSize = 10.sp, color = Color.White.copy(alpha = .72f))
+                        Text("Your offline copy remains available.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f))
                     }
                 }
             }
@@ -442,13 +447,13 @@ private fun TesterFeedbackButton(open: () -> Unit) {
         shape = CircleShape,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.RateReview, "Tester feedback", Modifier.size(23.dp), tint = Amber)
+            Icon(Icons.Rounded.RateReview, "Tester feedback", Modifier.size(23.dp), tint = MaterialTheme.colorScheme.primary)
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).size(17.dp),
                 color = Ink,
                 shape = CircleShape,
             ) {
-                Icon(Icons.Rounded.MusicNote, null, Modifier.padding(2.dp), tint = Cyan)
+                Icon(Icons.Rounded.MusicNote, null, Modifier.padding(2.dp), tint = MaterialTheme.colorScheme.secondary)
             }
         }
     }
@@ -483,13 +488,13 @@ private fun TesterFeedbackScreen(model: StudioRackViewModel, testerPhase: String
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = close) { Icon(Icons.Rounded.ArrowBack, "Back", tint = Amber) }
+            TextButton(onClick = close) { Icon(Icons.Rounded.ArrowBack, "Back", tint = MaterialTheme.colorScheme.primary) }
             Column(Modifier.weight(1f)) {
-                Text("${testerPhase.uppercase()} TESTER", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                Text("Share Feedback", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                Text("${testerPhase.uppercase()} TESTER", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                Text("Share Feedback", color = MaterialTheme.colorScheme.onSurface, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Text("Tell us what happened, what you expected, or what would make the app more useful.", color = TextSoft)
+        Text("Tell us what happened, what you expected, or what would make the app more useful.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         LabeledChoice("Feedback type", feedbackValues.keys.toList(), feedbackType) { feedbackType = it }
         LabeledChoice("Product area", areaValues.keys.toList(), productArea) { productArea = it }
         LabeledChoice("Impact", impactValues.keys.toList(), impact) { impact = it }
@@ -536,7 +541,7 @@ private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: (
     Surface(
         modifier = modifier.height(48.dp).clickable(onClick = onClick),
         color = if (selected) Amber else PanelRaised,
-        contentColor = if (selected) Ink else Color.White,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, if (selected) Amber else Color(0x33FFFFFF)),
         shape = RoundedCornerShape(50),
         shadowElevation = if (selected) 5.dp else 0.dp,
@@ -577,26 +582,26 @@ private fun StudioRackSplash(syncHealth: RepositorySyncHealth) {
                 )
             }
             Spacer(Modifier.height(22.dp))
-            Text(productName, color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
-            Text("SYNCING YOUR LIBRARY", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            Text(productName, color = MaterialTheme.colorScheme.onSurface, fontSize = 34.sp, fontWeight = FontWeight.Black)
+            Text("SYNCING YOUR LIBRARY", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(22.dp))
             if (itemProgress != null) {
                 LinearProgressIndicator(
                     progress = { itemProgress },
                     modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                    color = Cyan,
+                    color = MaterialTheme.colorScheme.secondary,
                     trackColor = Color(0xFF343246),
                 )
             } else {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                    color = Cyan,
+                    color = MaterialTheme.colorScheme.secondary,
                     trackColor = Color(0xFF343246),
                 )
             }
             Spacer(Modifier.height(14.dp))
-            Text(syncHealth.phase.ifBlank { "Preparing your library" }, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(syncHealth.detail.ifBlank { "Checking your offline performance files" }, color = TextSoft, fontSize = 12.sp, maxLines = 2)
+            Text(syncHealth.phase.ifBlank { "Preparing your library" }, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(syncHealth.detail.ifBlank { "Checking your offline performance files" }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
             if (syncHealth.totalItems > 0 || syncHealth.bytesTransferred > 0L) {
                 Spacer(Modifier.height(7.dp))
                 val itemLabel = if (syncHealth.totalItems > 0) "${syncHealth.completedItems.coerceAtMost(syncHealth.totalItems)} of ${syncHealth.totalItems}" else ""
@@ -604,7 +609,7 @@ private fun StudioRackSplash(syncHealth: RepositorySyncHealth) {
                     val total = syncHealth.totalBytes?.takeIf { it > 0L }?.let { " of ${formatFileSize(it)}" }.orEmpty()
                     "${formatFileSize(transferred)}$total"
                 }.orEmpty()
-                Text(listOf(itemLabel, byteLabel).filter(String::isNotBlank).joinToString("  |  "), color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(listOf(itemLabel, byteLabel).filter(String::isNotBlank).joinToString("  |  "), color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -626,9 +631,9 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(painterResource(R.drawable.brand_logo), productName, Modifier.size(54.dp))
-            Text(productName, color = Amber, fontSize = 38.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 10.dp))
+            Text(productName, color = MaterialTheme.colorScheme.primary, fontSize = 38.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 10.dp))
         }
-        Text("Your performance library, available offline.", color = TextSoft)
+        Text("Your performance library, available offline.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(24.dp))
         StudioButton(
             onClick = { activity?.let(model::signInWithPasskey) },
@@ -637,11 +642,11 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
         ) { Text("Sign in with a passkey", color = Ink, fontWeight = FontWeight.Black) }
         Text(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) "Use your fingerprint, face recognition, or device screen lock." else "Passkeys require Android 9 or newer.",
-            color = TextSoft,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(10.dp))
-        Text("Or use your existing login", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Or use your existing login", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(code, { code = it }, label = { Text("$productName access code") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
@@ -651,7 +656,7 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
             Text("Connect this device", color = Ink, fontWeight = FontWeight.Black)
         }
         if (uiState.busy) CircularProgressIndicator(Modifier.padding(top = 16.dp))
-        if (uiState.message.isNotBlank()) Text(uiState.message, color = TextSoft, modifier = Modifier.padding(top = 16.dp))
+        if (uiState.message.isNotBlank()) Text(uiState.message, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp))
     }
 }
 
@@ -704,7 +709,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
             ) {
                 Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF2B1B09), Color(0xFF132532), Color(0xFF121621))))) {
                     Column(Modifier.padding(18.dp)) {
-                        Text("STUDIO OVERVIEW", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                        Text("STUDIO OVERVIEW", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
                         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             val logoUrl = account.optString("studio_logo_url")
                             if (logoUrl.isNotBlank()) {
@@ -720,14 +725,14 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
                                 Spacer(Modifier.width(13.dp))
                             }
                             Column(Modifier.weight(1f)) {
-                                Text(account.optString("studio_name").ifBlank { account.optString("organization", productName) }, color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.Bold)
-                                Text(studioAddress(account), color = TextSoft)
+                                Text(account.optString("studio_name").ifBlank { account.optString("organization", productName) }, color = MaterialTheme.colorScheme.onSurface, fontSize = 29.sp, fontWeight = FontWeight.Bold)
+                                Text(studioAddress(account), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Text("Estimated Studio Value", color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 14.dp))
-                        Text("$${"%,.2f".format(estimatedStudioValue)}", color = Cyan, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                        Text("Estimated Studio Value", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 14.dp))
+                        Text("$${"%,.2f".format(estimatedStudioValue)}", color = MaterialTheme.colorScheme.secondary, fontSize = 22.sp, fontWeight = FontWeight.Black)
                         Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(state?.lastSyncAt?.let { "Synced ${DateFormat.getDateTimeInstance().format(Date(it))}" } ?: "Not synchronized", color = TextSoft, fontSize = 11.sp)
+                            Text(state?.lastSyncAt?.let { "Synced ${DateFormat.getDateTimeInstance().format(Date(it))}" } ?: "Not synchronized", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                             StudioButton(onClick = model::sync, enabled = !uiState.busy) { Text(if (uiState.busy) "Syncing" else "Sync now", color = Ink, fontWeight = FontWeight.Black) }
                         }
                     }
@@ -809,7 +814,7 @@ private fun AlertsScreen(model: StudioRackViewModel, openDestination: (String, S
         item {
             Spacer(Modifier.height(18.dp))
             SectionHeading("ALERTS", "Items needing your attention")
-            Text("Open an alert to review it in the relevant area.", color = TextSoft, fontSize = 12.sp)
+            Text("Open an alert to review it in the relevant area.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
         if (alerts.isEmpty()) item { EmptyCard("You have no unread alerts.") }
         items(alerts, key = { it.sourceId }) { alert ->
@@ -826,23 +831,23 @@ private fun AlertsScreen(model: StudioRackViewModel, openDestination: (String, S
             ) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(presentation.area.uppercase(), color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Text(presentation.area.uppercase(), color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black)
                         Spacer(Modifier.weight(1f))
                         Text(
                             DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(alert.notifiedAt)),
-                            color = TextSoft,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 10.sp,
                         )
                     }
                     Text(presentation.title, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
                     if (presentation.body.isNotBlank()) Text(
                         presentation.body,
-                        color = TextSoft,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         modifier = Modifier.padding(top = 4.dp),
                     )
-                    Text("OPEN", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 10.dp))
+                    Text("OPEN", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 10.dp))
                 }
             }
         }
@@ -927,7 +932,7 @@ private fun EquipmentScreen(model: StudioRackViewModel) {
                 enabled = filtered.isNotEmpty() && !reportState.busy,
                 modifier = Modifier.fillMaxWidth(),
                 kind = StudioButtonKind.Secondary,
-            ) { Text("Export visible equipment (${filtered.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+            ) { Text("Export visible equipment (${filtered.size})", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
         }
         if (filtered.isEmpty()) item { EmptyCard("No equipment matches this search.") }
         items(filtered, key = { it.entityId }) { record ->
@@ -989,7 +994,7 @@ private fun MaintenanceHistoryDialog(itemId: String, itemName: String, model: St
             tab = it
         }
         if (tab == "History") {
-            if (itemHistory.isEmpty()) Text("No completed service records yet.", color = TextSoft)
+            if (itemHistory.isEmpty()) Text("No completed service records yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             itemHistory.sortedWith(compareByDescending<CachedRecord> { recordJson(it).optString("completed_on") }.thenByDescending { recordJson(it).optString("created_utc") }).forEach { record ->
                 val row = recordJson(record)
                 DetailLine(row.optString("completed_on") + if (record.revision == 0) " - Pending sync" else "", row.optString("summary"))
@@ -1003,7 +1008,7 @@ private fun MaintenanceHistoryDialog(itemId: String, itemName: String, model: St
             StudioField("Work completed", summary, singleLine = false) { summary = it }
             StudioField("Performed by (optional)", performedBy) { performedBy = it }
             StudioField("Next service date (optional, YYYY-MM-DD)", nextDue, dictation = false) { nextDue = it }
-            Text("Leave the next date blank to use the service interval, or clear a one-time reminder.", color = TextSoft)
+            Text("Leave the next date blank to use the service interval, or clear a one-time reminder.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (expectedDue.isNotBlank()) DetailLine("Scheduled service being completed", expectedDue)
             activeNotes.forEach { note ->
                 val id = note.optString("id")
@@ -1012,7 +1017,7 @@ private fun MaintenanceHistoryDialog(itemId: String, itemName: String, model: St
             val date = parseLocalDate(completedOn)
             val next = parseLocalDate(nextDue)
             val valid = date != null && !date.isAfter(LocalDate.now()) && (nextDue.isBlank() || (next != null && next.isAfter(date)))
-            if (!valid) Text("Use a valid completion date, and a later date for the next service.", color = Amber)
+            if (!valid) Text("Use a valid completion date, and a later date for the next service.", color = MaterialTheme.colorScheme.primary)
             EditorActions(canSave = !saving && valid && summary.trim().isNotEmpty() && summary.length <= 4000, save = {
                 saving = true
                 model.completeMaintenance(JSONObject().put("item_id", itemId).put("completed_on", completedOn.trim())
@@ -1031,7 +1036,7 @@ private fun MaintenanceNoteEditor(items: List<SupportingRecord>, model: StudioRa
     var note by remember { mutableStateOf("") }
     val matches = items.filter { query.isBlank() || supportingJson(it).optString("display_name").contains(query, true) }.take(12)
     EditorDialog("Add Maintenance Note", close) {
-        Text("Equipment", color = TextSoft, fontWeight = FontWeight.Bold)
+        Text("Equipment", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
         StudioField("Find equipment", query) { query = it }
         Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             matches.forEach { item ->
@@ -1040,7 +1045,7 @@ private fun MaintenanceNoteEditor(items: List<SupportingRecord>, model: StudioRa
                 Surface(
                     modifier = Modifier.fillMaxWidth().clickable { selectedId = item.entityId },
                     color = if (selected) Amber else Panel,
-                    contentColor = if (selected) Ink else Color.White,
+                    contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                     border = BorderStroke(1.dp, if (selected) Amber else Color(0x33FFFFFF)),
                     shape = RoundedCornerShape(8.dp),
                 ) { Text(label, fontWeight = FontWeight.Bold, modifier = Modifier.padding(12.dp)) }
@@ -1076,7 +1081,7 @@ private fun KitsScreen(model: StudioRackViewModel) {
                 enabled = filtered.isNotEmpty() && !reportState.busy,
                 modifier = Modifier.fillMaxWidth(),
                 kind = StudioButtonKind.Secondary,
-            ) { Text("Export visible kits (${filtered.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+            ) { Text("Export visible kits (${filtered.size})", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
         }
         if (filtered.isEmpty()) item { EmptyCard("No kits match this search.") }
         items(filtered, key = { it.entityId }) { record ->
@@ -1149,7 +1154,7 @@ private fun SessionsScreen(
                     StudioButton(onClick = { editingEvent = EditorTarget(null, newCalendarEvent()) }) { Text("Add Event", color = Ink, fontWeight = FontWeight.Black) }
                 }
             }
-            item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = Color.White, fontWeight = FontWeight.Bold) } }
+            item { StudioButton(onClick = { localLiveEvent = null; showLocalLive = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Local Live Network", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) } }
             if (scheduleView == "Month") {
                 item {
                     CalendarMonthPanel(
@@ -1176,7 +1181,7 @@ private fun SessionsScreen(
                         enabled = rows.isNotEmpty() && !reportState.busy,
                         modifier = Modifier.fillMaxWidth(),
                         kind = StudioButtonKind.Secondary,
-                    ) { Text("Export visible scheduled items (${rows.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+                    ) { Text("Export visible scheduled items (${rows.size})", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
                 if (rows.isEmpty()) item { EmptyCard("No scheduled work matches these filters.") }
                 items(rows, key = { it.getString("id") }) { event ->
@@ -1247,14 +1252,14 @@ private fun CalendarMonthPanel(
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 EventToolIconButton(Icons.Rounded.NavigateBefore, "Previous month", previousMonth)
-                Text(month.format(DateTimeFormatter.ofPattern("MMMM yyyy")), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-                StudioButton(onClick = today, kind = StudioButtonKind.Secondary) { Text("Today", color = Color.White, fontWeight = FontWeight.Bold) }
+                Text(month.format(DateTimeFormatter.ofPattern("MMMM yyyy")), color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                StudioButton(onClick = today, kind = StudioButtonKind.Secondary) { Text("Today", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 EventToolIconButton(Icons.Rounded.NavigateNext, "Next month", nextMonth)
             }
             SettingToggle("Week starts Sunday", weekStartsSunday, changeWeekStart)
             Row(Modifier.fillMaxWidth()) {
                 weekdayLabels.forEach { label ->
-                    Text(label, color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
             }
             days.chunked(7).forEach { week ->
@@ -1280,10 +1285,10 @@ private fun CalendarMonthPanel(
                                     border = BorderStroke(1.dp, eventColor),
                                     shape = RoundedCornerShape(4.dp),
                                 ) {
-                                    Text(event.optString("title", "Event"), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 2, modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp))
+                                    Text(event.optString("title", "Event"), color = MaterialTheme.colorScheme.onSurface, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 2, modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp))
                                 }
                             }
-                            if (day.events.size > 2) Text("+${day.events.size - 2} more", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            if (day.events.size > 2) Text("+${day.events.size - 2} more", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1376,10 +1381,10 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 )
             }
             item {
-                Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Crew: Fill Missing Song Lengths", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text("Checks only songs without a length. Existing lengths are never changed.", color = TextSoft, fontSize = 11.sp)
+                        Text("Crew: Fill Missing Song Lengths", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                        Text("Checks only songs without a length. Existing lengths are never changed.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         StudioButton(onClick = {
                             durationBusy = true; durationMessage = "Crew is checking missing song lengths..."; appliedDurationSongs = emptySet()
                             scope.launch {
@@ -1391,18 +1396,18 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                         }, enabled = online && !durationBusy, modifier = Modifier.fillMaxWidth()) {
                             Text(if (durationBusy) "Crew is checking..." else "Fill Missing Song Lengths", color = Ink, fontWeight = FontWeight.Black)
                         }
-                        if (!online) Text("Connect to search LRCLIB and MusicBrainz.", color = Amber, fontSize = 11.sp)
-                        if (durationMessage.isNotBlank()) Text(durationMessage, color = TextSoft, fontSize = 12.sp)
+                        if (!online) Text("Connect to search LRCLIB and MusicBrainz.", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp)
+                        if (durationMessage.isNotBlank()) Text(durationMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         durationResult?.let { payload ->
                             val updated = payload.optJSONArray("updated").jsonObjects()
                             val review = payload.optJSONArray("review").jsonObjects()
                             val unmatched = payload.optJSONArray("unmatched").jsonObjects()
-                            Text("Filled ${updated.size}. Review ${review.size}. No match ${unmatched.size}.", color = Color.White, fontWeight = FontWeight.Bold)
-                            updated.forEach { item -> Text("${item.optString("title")} - ${item.optString("duration_label")} (${item.optString("source")})", color = TextSoft, fontSize = 11.sp) }
+                            Text("Filled ${updated.size}. Review ${review.size}. No match ${unmatched.size}.", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            updated.forEach { item -> Text("${item.optString("title")} - ${item.optString("duration_label")} (${item.optString("source")})", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) }
                             review.forEach { song ->
                                 Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                                    Text(listOf(song.optString("title"), song.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = Color.White, fontWeight = FontWeight.Bold)
-                                    if (song.optString("song_id") in appliedDurationSongs) Text("Duration saved.", color = Cyan, fontWeight = FontWeight.Bold)
+                                    Text(listOf(song.optString("title"), song.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                                    if (song.optString("song_id") in appliedDurationSongs) Text("Duration saved.", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                                     else song.optJSONArray("candidates").jsonObjects().forEach { candidate ->
                                         StudioButton(onClick = {
                                             durationBusy = true
@@ -1413,7 +1418,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                                                 durationBusy = false
                                             }
                                         }, enabled = !durationBusy, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                                            Text("Use ${candidate.optString("duration_label")} from ${candidate.optString("source")}", color = Color.White, fontWeight = FontWeight.Bold)
+                                            Text("Use ${candidate.optString("duration_label")} from ${candidate.optString("source")}", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
@@ -1428,7 +1433,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     enabled = filteredSongs.isNotEmpty() && !reportState.busy,
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
-                ) { Text("Export visible songs (${filteredSongs.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+                ) { Text("Export visible songs (${filteredSongs.size})", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
             }
             items(filteredSongs, key = { it.entityId }) { record ->
                 val song = recordJson(record)
@@ -1452,29 +1457,29 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                         val remoteLink = normalizedMediaLink(attachment.optString("file_ref"))
                         val textContent = attachment.optString("content_text").takeIf { attachment.optString("source_type") == "text" && it.isNotBlank() }
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Attachment", color = TextSoft, modifier = Modifier.weight(1f))
+                            Text("Attachment", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             when {
                                 textContent != null -> StudioButton(
                                     onClick = { textAttachmentPreview = attachmentLabel(attachment) to textContent },
                                     kind = StudioButtonKind.Secondary,
-                                ) { Text(attachmentLabel(attachment), color = Color.White) }
+                                ) { Text(attachmentLabel(attachment), color = MaterialTheme.colorScheme.onSurface) }
                                 cached?.status == "ready" && !cached.localPath.isNullOrBlank() -> StudioButton(
                                     onClick = {
                                         if (cachedAttachmentCanPreview(cached)) attachmentPreview = cached
                                         else openCachedAttachment(context, cached)
                                     },
                                     kind = StudioButtonKind.Secondary,
-                                ) { Text(attachmentLabel(attachment), color = Color.White) }
+                                ) { Text(attachmentLabel(attachment), color = MaterialTheme.colorScheme.onSurface) }
                                 remoteLink != null -> StudioButton(
                                     onClick = { openMediaLink(context, remoteLink) },
                                     kind = StudioButtonKind.Secondary,
-                                ) { Text(attachmentLabel(attachment), color = Color.White) }
-                                else -> Text("${attachmentLabel(attachment)} - synchronize to open", color = Amber, fontSize = 12.sp)
+                                ) { Text(attachmentLabel(attachment), color = MaterialTheme.colorScheme.onSurface) }
+                                else -> Text("${attachmentLabel(attachment)} - synchronize to open", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                             }
                         }
                     }
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { editingSong = EditorTarget(record.entityId, song) }) { Text("Edit", color = Amber) }
+                        TextButton(onClick = { editingSong = EditorTarget(record.entityId, song) }) { Text("Edit", color = MaterialTheme.colorScheme.primary) }
                     }
                 }
             }
@@ -1486,7 +1491,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     enabled = filteredSetLists.isNotEmpty() && !reportState.busy,
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
-                ) { Text("Export visible set lists (${filteredSetLists.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+                ) { Text("Export visible set lists (${filteredSetLists.size})", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
             }
             items(filteredSetLists, key = { it.entityId }) { record ->
                 val row = recordJson(record)
@@ -1501,17 +1506,17 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                 ) {
                     setSections.sortedBy { recordJson(it).optInt("position") }.forEach { section ->
                         val sectionJson = recordJson(section)
-                        Text(sectionJson.optString("name", "Set"), color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                        Text(sectionJson.optString("name", "Set"), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         setEntries.filter { recordJson(it).optString("section_id") == section.entityId }.sortedBy { recordJson(it).optInt("position") }.forEach { entry ->
                             val entryJson = recordJson(entry)
                             DetailLine((entryJson.optInt("position") + 1).toString(), songNames[entryJson.optString("song_id")].orEmpty().ifBlank { entryJson.optString("manual_title") })
                         }
                     }
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { editingSetList = record }) { Text("Edit Set List", color = Amber) }
-                        TextButton(onClick = { exportTarget = ExportTarget("setlists", row.optString("name", "Set List"), listOf(record.entityId)) }) { Text("Export", color = Amber) }
-                        TextButton(onClick = { renamingSetList = record }) { Text("Rename", color = Amber) }
-                        TextButton(onClick = { copyingSetList = record }) { Text("Copy", color = Amber) }
+                        TextButton(onClick = { editingSetList = record }) { Text("Edit Set List", color = MaterialTheme.colorScheme.primary) }
+                        TextButton(onClick = { exportTarget = ExportTarget("setlists", row.optString("name", "Set List"), listOf(record.entityId)) }) { Text("Export", color = MaterialTheme.colorScheme.primary) }
+                        TextButton(onClick = { renamingSetList = record }) { Text("Rename", color = MaterialTheme.colorScheme.primary) }
+                        TextButton(onClick = { copyingSetList = record }) { Text("Copy", color = MaterialTheme.colorScheme.primary) }
                     }
                 }
             }
@@ -1573,12 +1578,12 @@ private fun BrandLegalCard() {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(painterResource(R.drawable.brand_logo), productName, Modifier.size(42.dp))
             Column(Modifier.padding(start = 10.dp)) {
-                Text(productName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                Text(brandTagline, color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(productName, color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text(brandTagline, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Text("Copyright ${java.time.Year.now().value} $copyrightHolder. All rights reserved.", color = TextSoft, fontSize = 11.sp)
-        Text(trademarkNotice, color = TextSoft, fontSize = 10.sp, lineHeight = 14.sp)
+        Text("Copyright ${java.time.Year.now().value} $copyrightHolder. All rights reserved.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+        Text(trademarkNotice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 14.sp)
     }
 }
 
@@ -1615,11 +1620,11 @@ private fun WorkspaceMembersPanel(model: StudioRackViewModel) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeading("WORKSPACE ACCESS", "Members")
         if (state.message.isNotBlank()) Text(state.message, color = if (state.error) Color(0xFFFF8A8A) else TextSoft)
-        if (state.busy && payload == null) CircularProgressIndicator(color = Amber)
+        if (state.busy && payload == null) CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         if (payload != null) {
             InfoCard {
-                Text("${seats?.optInt("available") ?: 0} seats available", color = Amber, fontSize = 26.sp, fontWeight = FontWeight.Black)
-                Text("${seats?.optInt("reserved") ?: 0} of ${seats?.optInt("licensed") ?: 0} licensed member seats reserved", color = TextSoft)
+                Text("${seats?.optInt("available") ?: 0} seats available", color = MaterialTheme.colorScheme.primary, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                Text("${seats?.optInt("reserved") ?: 0} of ${seats?.optInt("licensed") ?: 0} licensed member seats reserved", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if ((seats?.optInt("available") ?: 0) > 0) StudioButton(onClick = { showInvite = true }) { Text("Invite Member", color = Ink, fontWeight = FontWeight.Black) }
             }
             members.forEach { member ->
@@ -1629,12 +1634,12 @@ private fun WorkspaceMembersPanel(model: StudioRackViewModel) {
                 InfoCard {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f)) {
-                            Text(member.optString("name").ifBlank { member.optString("email") }, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                            Text(member.optString("email"), color = TextSoft, fontSize = 13.sp)
+                            Text(member.optString("name").ifBlank { member.optString("email") }, color = MaterialTheme.colorScheme.onSurface, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                            Text(member.optString("email"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(role.replaceFirstChar(Char::uppercase), color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                            Text(status.replaceFirstChar(Char::uppercase), color = TextSoft, fontSize = 11.sp)
+                            Text(role.replaceFirstChar(Char::uppercase), color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            Text(status.replaceFirstChar(Char::uppercase), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         }
                     }
                     if (canManage) {
@@ -1643,17 +1648,17 @@ private fun WorkspaceMembersPanel(model: StudioRackViewModel) {
                             role.replaceFirstChar(Char::uppercase),
                         ) { selected -> model.workspaceMemberAction(member.getString("id"), "role", selected.lowercase()) }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (status == "pending") StudioButton(onClick = { model.workspaceMemberAction(member.getString("id"), "resend") }, kind = StudioButtonKind.Secondary) { Text("Resend", color = Color.White) }
-                            if (currentRole == "owner" && status == "active") StudioButton(onClick = { pendingAction = member to "transfer" }, kind = StudioButtonKind.Secondary) { Text("Make Owner", color = Color.White) }
-                            StudioButton(onClick = { pendingAction = member to "revoke" }, kind = StudioButtonKind.Danger) { Text("Revoke", color = Color.White) }
+                            if (status == "pending") StudioButton(onClick = { model.workspaceMemberAction(member.getString("id"), "resend") }, kind = StudioButtonKind.Secondary) { Text("Resend", color = MaterialTheme.colorScheme.onSurface) }
+                            if (currentRole == "owner" && status == "active") StudioButton(onClick = { pendingAction = member to "transfer" }, kind = StudioButtonKind.Secondary) { Text("Make Owner", color = MaterialTheme.colorScheme.onSurface) }
+                            StudioButton(onClick = { pendingAction = member to "revoke" }, kind = StudioButtonKind.Danger) { Text("Revoke", color = MaterialTheme.colorScheme.onSurface) }
                         }
                     }
                 }
             }
             InfoCard {
-                Text("Access levels", color = Amber, fontWeight = FontWeight.Bold)
-                Text("Owner: billing, members, settings, and ownership transfer.\nAccount Manager: Editors and Viewers plus operational work.\nEditor: operational changes.\nViewer: read-only.", color = TextSoft, lineHeight = 20.sp)
-                Text("Roles control access only within this workspace.", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Access levels", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text("Owner: billing, members, settings, and ownership transfer.\nAccount Manager: Editors and Viewers plus operational work.\nEditor: operational changes.\nViewer: read-only.", color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 20.sp)
+                Text("Roles control access only within this workspace.", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1678,7 +1683,7 @@ private fun WorkspaceInviteDialog(currentRole: String, contacts: List<JSONObject
     var contactMenu by remember { mutableStateOf(false) }
     EditorDialog("Invite Workspace Member", close) {
         Box(Modifier.fillMaxWidth()) {
-            StudioButton(onClick = { contactMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text(contacts.firstOrNull { it.optString("id") == contactId }?.optString("display_name") ?: "Link Existing Contact", color = Color.White) }
+            StudioButton(onClick = { contactMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text(contacts.firstOrNull { it.optString("id") == contactId }?.optString("display_name") ?: "Link Existing Contact", color = MaterialTheme.colorScheme.onSurface) }
             DropdownMenu(expanded = contactMenu, onDismissRequest = { contactMenu = false }) {
                 contacts.forEach { contact -> DropdownMenuItem(text = { Text(contact.optString("display_name")) }, onClick = {
                     contactId = contact.optString("id"); name = contact.optString("display_name"); email = contact.optString("email"); contactMenu = false
@@ -1687,10 +1692,10 @@ private fun WorkspaceInviteDialog(currentRole: String, contacts: List<JSONObject
         }
         StudioField("Name", name) { name = it }
         StudioField("Email", email) { email = it }
-        Text("Role", color = TextSoft)
+        Text("Role", color = MaterialTheme.colorScheme.onSurfaceVariant)
         ChoiceStrip(buildList { if (currentRole == "owner") add("Manager"); add("Editor"); add("Viewer") }, role.replaceFirstChar(Char::uppercase)) { role = it.lowercase() }
         StudioButton(onClick = { model.inviteWorkspaceMember(name, email, role, contactId, close) }, enabled = name.isNotBlank() && email.contains("@"), modifier = Modifier.fillMaxWidth()) { Text("Send Invitation", color = Ink, fontWeight = FontWeight.Black) }
-        Text("Invitations require a connection and reserve a licensed member seat immediately.", color = TextSoft, fontSize = 11.sp)
+        Text("Invitations require a connection and reserve a licensed member seat immediately.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     }
 }
 
@@ -1715,22 +1720,22 @@ private fun WorkspaceModulesPanel(model: StudioRackViewModel) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeading("WORKSPACE FOCUS", "Modules")
         InfoCard {
-            Text(profile?.optString("name")?.ifBlank { "Complete Studio" } ?: "Complete Studio", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
-            profile?.optString("description")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft, lineHeight = 20.sp) }
-            Text("Module access and choices synchronize from the workspace. Records from an inactive paid module remain safely retained on the server, but are removed from operational views and offline storage until access is restored.", color = TextSoft, fontSize = 13.sp, lineHeight = 19.sp)
+            Text(profile?.optString("name")?.ifBlank { "Complete Studio" } ?: "Complete Studio", color = MaterialTheme.colorScheme.onSurface, fontSize = 21.sp, fontWeight = FontWeight.Black)
+            profile?.optString("description")?.takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 20.sp) }
+            Text("Module access and choices synchronize from the workspace. Records from an inactive paid module remain safely retained on the server, but are removed from operational views and offline storage until access is restored.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 19.sp)
             if (workspaceRole == "owner") {
                 StudioButton(
                     onClick = { openMediaLink(context, context.getString(R.string.public_base_url) + "/billing") },
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
-                ) { Text("Manage Module Billing", color = Color.White, fontWeight = FontWeight.Bold) }
+                ) { Text("Manage Module Billing", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
             }
             if (profileRows.size > 1 && workspaceRole in setOf("owner", "manager")) {
                 Box(Modifier.fillMaxWidth()) {
-                    StudioButton(onClick = { profileMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Change Workspace Focus", color = Color.White, fontWeight = FontWeight.Bold) }
+                    StudioButton(onClick = { profileMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) { Text("Change Workspace Focus", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     DropdownMenu(expanded = profileMenu, onDismissRequest = { profileMenu = false }, modifier = Modifier.background(PanelRaised)) {
                         profileRows.forEach { option -> DropdownMenuItem(
-                            text = { Column { Text(option.optString("name"), color = if (option.optBoolean("current")) Amber else Color.White, fontWeight = FontWeight.Bold); Text(option.optString("description"), color = TextSoft, fontSize = 11.sp) } },
+                            text = { Column { Text(option.optString("name"), color = if (option.optBoolean("current")) Amber else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold); Text(option.optString("description"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) } },
                             onClick = { profileMenu = false; model.updateWorkspaceProfile(option.optString("id")) },
                         ) }
                     }
@@ -1754,7 +1759,7 @@ private fun WorkspaceModulesPanel(model: StudioRackViewModel) {
                             lockedCount > 0 -> "$lockedCount retained equipment record${if (lockedCount == 1) "" else "s"} locked until this module is restored"
                             else -> "Not active for this workspace"
                         },
-                        color = TextSoft,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                     )
                 }
@@ -1779,7 +1784,7 @@ private fun HelpPanel() {
         SectionHeading("DOCUMENTATION", "$productName Help")
         Text(
             "Manage equipment, prepare performances, work offline, share safely, and use $agentName across the studio.",
-            color = TextSoft,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 14.sp,
             lineHeight = 20.sp,
         )
@@ -1789,7 +1794,7 @@ private fun HelpPanel() {
                 modifier = Modifier.fillMaxWidth(),
                 kind = StudioButtonKind.Secondary,
             ) {
-                Text(selected.label, color = Color.White, fontWeight = FontWeight.Bold)
+                Text(selected.label, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             }
             DropdownMenu(
                 expanded = menuExpanded,
@@ -1801,7 +1806,7 @@ private fun HelpPanel() {
                         text = {
                             Text(
                                 section.label,
-                                color = if (section.id == selected.id) Amber else Color.White,
+                                color = if (section.id == selected.id) Amber else MaterialTheme.colorScheme.onSurface,
                                 fontWeight = if (section.id == selected.id) FontWeight.Bold else FontWeight.Normal,
                             )
                         },
@@ -1814,20 +1819,20 @@ private fun HelpPanel() {
             }
         }
         SectionHeading(selected.eyebrow, selected.title)
-        Text(selected.introduction, color = TextSoft, fontSize = 14.sp, lineHeight = 20.sp)
+        Text(selected.introduction, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, lineHeight = 20.sp)
         selected.topics.forEach { topic ->
             InfoCard {
-                Text(topic.title, color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(topic.title, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 topic.paragraphs.forEach { paragraph ->
-                    Text(paragraph, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
+                    Text(paragraph, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, lineHeight = 20.sp)
                 }
                 topic.points.forEach { point ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                        Text("-", color = Cyan, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                        Text("-", color = MaterialTheme.colorScheme.secondary, fontSize = 14.sp, fontWeight = FontWeight.Black)
                         Text(
                             point,
                             modifier = Modifier.padding(start = 8.dp).weight(1f),
-                            color = TextSoft,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
                         )
@@ -1883,7 +1888,7 @@ private fun JoinedBandsPanel(model: StudioRackViewModel) {
     var noteText by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Band sets and role-appropriate performance materials remain available from the last successful sync.", color = TextSoft)
+        Text("Band sets and role-appropriate performance materials remain available from the last successful sync.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (bands.isEmpty()) EmptyCard("No band memberships are connected to this account yet.")
         bands.forEach { record ->
             val band = supportingJson(record)
@@ -1893,14 +1898,14 @@ private fun JoinedBandsPanel(model: StudioRackViewModel) {
             InfoCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(band.optString("name", "Band"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                        Text(band.optString("workspace_name"), color = Cyan)
+                        Text(band.optString("name", "Band"), color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text(band.optString("workspace_name"), color = MaterialTheme.colorScheme.secondary)
                         Text(
                             bandRoles.joinToString(", ") { it.optString("role_label") }.ifBlank { "No performance role assigned" },
-                            color = TextSoft,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 13.sp,
                         )
-                        Text("${band.optString("material_profile", "role_based").humanize()} materials | ${band.optString("authority_role", "performer").humanize()}", color = TextSoft, fontSize = 12.sp)
+                        Text("${band.optString("material_profile", "role_based").humanize()} materials | ${band.optString("authority_role", "performer").humanize()}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                     StudioButton(
                         onClick = {
@@ -1909,32 +1914,32 @@ private fun JoinedBandsPanel(model: StudioRackViewModel) {
                         },
                         enabled = band.optString("membership_status") == "active" && bandEvents.isNotEmpty(),
                         kind = StudioButtonKind.Secondary,
-                    ) { Text(if (selectedBand == ensembleId) "Close" else "Open", color = Color.White, fontWeight = FontWeight.Bold) }
+                    ) { Text(if (selectedBand == ensembleId) "Close" else "Open", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
-                if (band.optString("membership_status") != "active") Text("MEMBERSHIP ${band.optString("membership_status").uppercase()}", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                else if (bandEvents.isEmpty()) Text("No scheduled set lists are available for this band.", color = TextSoft)
+                if (band.optString("membership_status") != "active") Text("MEMBERSHIP ${band.optString("membership_status").uppercase()}", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                else if (bandEvents.isEmpty()) Text("No scheduled set lists are available for this band.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (selectedBand == ensembleId) {
                     bandEvents.forEach { event ->
                         val eventId = event.optString("id")
                         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(event.optString("title", "Scheduled set"), color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                    Text(listOf(event.optString("event_date"), event.optString("start_time"), event.optString("location")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 12.sp)
+                                    Text(event.optString("title", "Scheduled set"), color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    Text(listOf(event.optString("event_date"), event.optString("start_time"), event.optString("location")).filter(String::isNotBlank).joinToString(" | "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                                 }
                                 StudioButton(onClick = { selectedEvent = if (selectedEvent == eventId) null else eventId }, kind = StudioButtonKind.Secondary) {
-                                    Text(if (selectedEvent == eventId) "Hide Set" else "View Set", color = Color.White)
+                                    Text(if (selectedEvent == eventId) "Hide Set" else "View Set", color = MaterialTheme.colorScheme.onSurface)
                                 }
                             }
                             if (selectedEvent == eventId) {
                                 val setListId = event.optString("set_list_id")
                                 val setList = setListData.firstOrNull { it.optString("ensemble_id") == ensembleId && it.optString("id") == setListId }
-                                setList?.let { Text(it.optString("name"), color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 8.dp)) }
+                                setList?.let { Text(it.optString("name"), color = MaterialTheme.colorScheme.onSurface, fontSize = 21.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 8.dp)) }
                                 sectionData
                                     .filter { it.optString("ensemble_id") == ensembleId && it.optString("set_list_id") == setListId }
                                     .sortedBy { it.optInt("position") }
                                     .forEach { section ->
-                                        Text(section.optString("name", "Set"), color = Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                                        Text(section.optString("name", "Set"), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
                                         entryData
                                             .filter { it.optString("ensemble_id") == ensembleId && it.optString("set_list_id") == setListId && it.optString("section_id") == section.optString("id") }
                                             .sortedBy { it.optInt("position") }
@@ -1948,9 +1953,9 @@ private fun JoinedBandsPanel(model: StudioRackViewModel) {
                                                     }
                                                     val note = overlayData.firstOrNull { it.optString("ensemble_id") == ensembleId && it.optString("source_song_id") == songId }
                                                     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                                        Text("${entry.optInt("position")}. ${value.optString("title", "Untitled")}", color = Color.White, fontWeight = FontWeight.Bold)
-                                                        if (value.optString("artist").isNotBlank()) Text(value.optString("artist"), color = TextSoft)
-                                                        Text(listOf(value.optString("starts_by"), displaySongKey(value.optString("song_key")), value.optString("tempo"), value.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 12.sp)
+                                                        Text("${entry.optInt("position")}. ${value.optString("title", "Untitled")}", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                                                        if (value.optString("artist").isNotBlank()) Text(value.optString("artist"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        Text(listOf(value.optString("starts_by"), displaySongKey(value.optString("song_key")), value.optString("tempo"), value.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                                                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                             songAttachments.forEach { attachment ->
                                                                 val data = attachmentData.getValue(attachment)
@@ -1962,17 +1967,17 @@ private fun JoinedBandsPanel(model: StudioRackViewModel) {
                                                                     },
                                                                     enabled = cachedAttachment?.status == "ready" || normalizedMediaLink(data.optString("file_ref")) != null,
                                                                     kind = StudioButtonKind.Secondary,
-                                                                ) { Text(attachmentLabel(data), color = Color.White) }
+                                                                ) { Text(attachmentLabel(data), color = MaterialTheme.colorScheme.onSurface) }
                                                             }
                                                             StudioButton(onClick = {
                                                                 noteTarget = JSONObject(value.toString()).put("set_list_id", setListId).put("set_list_entry_id", entry.optString("id"))
                                                                 noteText = note?.optString("content_text").orEmpty()
                                                             }, enabled = online, kind = StudioButtonKind.Secondary) {
-                                                                Text(if (note == null) "Private Note" else "Edit Private Note", color = Color.White)
+                                                                Text(if (note == null) "Private Note" else "Edit Private Note", color = MaterialTheme.colorScheme.onSurface)
                                                             }
-                                                            if (note != null) StudioButton(onClick = { model.deleteMemberOverlay(note.optString("id")) }, enabled = online, kind = StudioButtonKind.Danger) { Text("Remove Note", color = Color.White) }
+                                                            if (note != null) StudioButton(onClick = { model.deleteMemberOverlay(note.optString("id")) }, enabled = online, kind = StudioButtonKind.Danger) { Text("Remove Note", color = MaterialTheme.colorScheme.onSurface) }
                                                         }
-                                                        note?.optString("content_text")?.takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp)) }
+                                                        note?.optString("content_text")?.takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp)) }
                                                     }
                                                 }
                                             }
@@ -1989,10 +1994,10 @@ private fun JoinedBandsPanel(model: StudioRackViewModel) {
         val ensembleId = selectedBand.orEmpty()
         val existing = overlayData.firstOrNull { it.optString("ensemble_id") == ensembleId && it.optString("source_song_id") == song.optString("id") }
         EditorDialog("Private Performance Note", { noteTarget = null }) {
-            Text(song.optString("title"), color = Amber, fontWeight = FontWeight.Bold)
+            Text(song.optString("title"), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             OutlinedTextField(noteText, { noteText = it.take(10_000) }, label = { Text("Only you can see this note") }, minLines = 4, modifier = Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StudioButton(onClick = { noteTarget = null }, kind = StudioButtonKind.Secondary, modifier = Modifier.weight(1f)) { Text("Cancel", color = Color.White) }
+                StudioButton(onClick = { noteTarget = null }, kind = StudioButtonKind.Secondary, modifier = Modifier.weight(1f)) { Text("Cancel", color = MaterialTheme.colorScheme.onSurface) }
                 StudioButton(onClick = {
                     model.saveMemberOverlay(JSONObject()
                         .put("id", existing?.optString("id").orEmpty())
@@ -2041,7 +2046,7 @@ private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean =
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (showHeading) SectionHeading("COLLABORATION", "Shared With Me")
-        Text("Live sessions and set lists shared with your account remain available from the last successful sync.", color = TextSoft)
+        Text("Live sessions and set lists shared with your account remain available from the last successful sync.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (accessRows.isEmpty()) EmptyCard("Nothing has been shared with this account.")
         accessRows.forEach { record ->
             val access = supportingJson(record)
@@ -2053,41 +2058,41 @@ private fun SharedWithMePanel(model: StudioRackViewModel, showHeading: Boolean =
             InfoCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                        Text("From ${access.optString("owner_organization").ifBlank { access.optString("owner_name", "Another $productName user") }}", color = Cyan)
-                        Text("${access.optString("access_role", "performer").humanize()} access | Expires ${access.optString("expires_utc")}", color = TextSoft, fontSize = 12.sp)
+                        Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text("From ${access.optString("owner_organization").ifBlank { access.optString("owner_name", "Another $productName user") }}", color = MaterialTheme.colorScheme.secondary)
+                        Text("${access.optString("access_role", "performer").humanize()} access | Expires ${access.optString("expires_utc")}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                     StudioButton(onClick = { selectedGrant = if (selectedGrant == grantId) null else grantId }, kind = StudioButtonKind.Secondary) {
-                        Text(if (selectedGrant == grantId) "Close" else "Open", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(if (selectedGrant == grantId) "Close" else "Open", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                     }
                 }
                 if (selectedGrant == grantId) {
                     Text(if (liveShareConnected) "LIVE UPDATES CONNECTED" else "OFFLINE COPY", color = if (liveShareConnected) Color(0xFF58E99B) else TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black)
                     event?.let {
-                        Text(listOf(it.optString("event_date"), it.optString("start_time"), it.optString("event_type").humanize()).filter(String::isNotBlank).joinToString(" | "), color = Amber, fontWeight = FontWeight.Bold)
+                        Text(listOf(it.optString("event_date"), it.optString("start_time"), it.optString("event_type").humanize()).filter(String::isNotBlank).joinToString(" | "), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     }
                     venues.map(::supportingJson).firstOrNull { it.optString("grant_id") == grantId }?.let { venue ->
-                        Text(listOf(venue.optString("name"), venue.optString("address_line1"), venue.optString("city"), venue.optString("region")).filter(String::isNotBlank).joinToString(", "), color = TextSoft)
-                        normalizedMediaLink(venue.optString("maps_url"))?.let { mapUrl -> StudioButton(onClick = { openMediaLink(context, mapUrl) }, kind = StudioButtonKind.Secondary) { Text("Directions", color = Color.White) } }
+                        Text(listOf(venue.optString("name"), venue.optString("address_line1"), venue.optString("city"), venue.optString("region")).filter(String::isNotBlank).joinToString(", "), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        normalizedMediaLink(venue.optString("maps_url"))?.let { mapUrl -> StudioButton(onClick = { openMediaLink(context, mapUrl) }, kind = StudioButtonKind.Secondary) { Text("Directions", color = MaterialTheme.colorScheme.onSurface) } }
                     }
                     setList?.let { list ->
-                        Text(list.optString("name"), color = Amber, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 8.dp))
+                        Text(list.optString("name"), color = MaterialTheme.colorScheme.primary, fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 8.dp))
                         sections.map(::supportingJson).filter { it.optString("grant_id") == grantId }.sortedBy { it.optInt("position") }.forEach { section ->
-                            Text(section.optString("name", "Set"), color = Cyan, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                            Text(section.optString("name", "Set"), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                             entries.map(::supportingJson).filter { it.optString("grant_id") == grantId && it.optString("section_id") == section.optString("id") }.sortedBy { it.optInt("position") }.forEach { entry ->
                                 val song = songs.map(::supportingJson).firstOrNull { it.optString("grant_id") == grantId && it.optString("id") == entry.optString("song_id") }
                                 Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
-                                    Text("${entry.optInt("position")}. ${song?.optString("title")?.ifBlank { entry.optString("manual_title", "Untitled") } ?: entry.optString("manual_title", "Untitled")}", color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text("${entry.optInt("position")}. ${song?.optString("title")?.ifBlank { entry.optString("manual_title", "Untitled") } ?: entry.optString("manual_title", "Untitled")}", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                                     song?.let { value ->
-                                        if (value.optString("artist").isNotBlank()) Text(value.optString("artist"), color = TextSoft)
-                                        Text(listOf(value.optString("starts_by"), displaySongKey(value.optString("song_key")), value.optString("style"), value.optString("tempo"), value.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 12.sp)
+                                        if (value.optString("artist").isNotBlank()) Text(value.optString("artist"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(listOf(value.optString("starts_by"), displaySongKey(value.optString("song_key")), value.optString("style"), value.optString("tempo"), value.optString("time_signature")).filter(String::isNotBlank).joinToString(" | "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            normalizedMediaLink(value.optString("media_ref"))?.let { media -> StudioButton(onClick = { openMediaLink(context, media) }, kind = StudioButtonKind.Secondary) { Text("Listen", color = Color.White) } }
+                                            normalizedMediaLink(value.optString("media_ref"))?.let { media -> StudioButton(onClick = { openMediaLink(context, media) }, kind = StudioButtonKind.Secondary) { Text("Listen", color = MaterialTheme.colorScheme.onSurface) } }
                                             attachments.filter { supportingJson(it).optString("grant_id") == grantId && supportingJson(it).optString("song_id") == value.optString("id") }.forEach { attachment ->
                                                 val attachmentData = supportingJson(attachment)
                                                 val cachedAttachment = cacheById[attachment.entityId]
-                                                if (cachedAttachment?.status == "ready") StudioButton(onClick = { preview = cachedAttachment }, kind = StudioButtonKind.Secondary) { Text(attachmentLabel(attachmentData), color = Color.White) }
-                                                else normalizedMediaLink(attachmentData.optString("file_ref"))?.let { attachmentUrl -> StudioButton(onClick = { openMediaLink(context, attachmentUrl) }, kind = StudioButtonKind.Secondary) { Text(attachmentLabel(attachmentData), color = Color.White) } }
+                                                if (cachedAttachment?.status == "ready") StudioButton(onClick = { preview = cachedAttachment }, kind = StudioButtonKind.Secondary) { Text(attachmentLabel(attachmentData), color = MaterialTheme.colorScheme.onSurface) }
+                                                else normalizedMediaLink(attachmentData.optString("file_ref"))?.let { attachmentUrl -> StudioButton(onClick = { openMediaLink(context, attachmentUrl) }, kind = StudioButtonKind.Secondary) { Text(attachmentLabel(attachmentData), color = MaterialTheme.colorScheme.onSurface) } }
                                             }
                                         }
                                     }
@@ -2113,7 +2118,7 @@ private fun MySharesPanel(model: StudioRackViewModel) {
     var revokingShare by remember { mutableStateOf<SupportingRecord?>(null) }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Active and previous access you have given others remains visible from the last successful sync.", color = TextSoft)
+        Text("Active and previous access you have given others remains visible from the last successful sync.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (orderedShares.isEmpty()) EmptyCard("You have not shared anything yet.")
         orderedShares.forEach { record ->
             val share = supportingJson(record)
@@ -2133,10 +2138,10 @@ private fun MySharesPanel(model: StudioRackViewModel) {
             InfoCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
-                        Text(share.optString("object_name", "Removed object"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                        Text(recipient, color = Cyan, fontWeight = FontWeight.Bold)
+                        Text(share.optString("object_name", "Removed object"), color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        Text(recipient, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                         if (share.optString("recipient_email").isNotBlank() && share.optString("recipient_email") != recipient) {
-                            Text(share.optString("recipient_email"), color = TextSoft, fontSize = 13.sp)
+                            Text(share.optString("recipient_email"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                         }
                     }
                     Text(
@@ -2153,7 +2158,7 @@ private fun MySharesPanel(model: StudioRackViewModel) {
                     DetailLine("Keep a copy", if (share.optInt("allow_copy") == 1) "Allowed" else "Not allowed")
                 }
                 if (status == "active") FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StudioButton(onClick = { editingShare = record }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Edit", color = Color.White, fontWeight = FontWeight.Bold) }
+                    StudioButton(onClick = { editingShare = record }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Edit", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     if (share.optString("share_mode") == "guest_link") {
                         StudioButton(onClick = {
                             model.copyShareLink(record.entityId) { link ->
@@ -2163,14 +2168,14 @@ private fun MySharesPanel(model: StudioRackViewModel) {
                                     Toast.makeText(context, "Guest link copied.", Toast.LENGTH_SHORT).show()
                                 }
                             }
-                        }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Copy Link", color = Color.White, fontWeight = FontWeight.Bold) }
+                        }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Copy Link", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                         if (share.optString("recipient_email").isNotBlank()) {
-                            StudioButton(onClick = { model.emailShare(record.entityId) }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Email Link", color = Color.White, fontWeight = FontWeight.Bold) }
+                            StudioButton(onClick = { model.emailShare(record.entityId) }, enabled = online, kind = StudioButtonKind.Secondary) { Text("Email Link", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                         }
                     }
-                    StudioButton(onClick = { revokingShare = record }, enabled = online, kind = StudioButtonKind.Danger) { Text("Revoke", color = Color.White, fontWeight = FontWeight.Bold) }
+                    StudioButton(onClick = { revokingShare = record }, enabled = online, kind = StudioButtonKind.Danger) { Text("Revoke", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
-                if (!online && status == "active") Text("Connect to edit, copy, email, or revoke this share.", color = Amber, fontSize = 11.sp)
+                if (!online && status == "active") Text("Connect to edit, copy, email, or revoke this share.", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp)
             }
         }
     }
@@ -2178,10 +2183,10 @@ private fun MySharesPanel(model: StudioRackViewModel) {
     revokingShare?.let { record ->
         val share = supportingJson(record)
         EditorDialog("Revoke Shared Access", { revokingShare = null }) {
-            Text("Revoke access to ${share.optString("object_name", "this shared item")}? The recipient will no longer be able to open it.", color = Color.White)
+            Text("Revoke access to ${share.optString("object_name", "this shared item")}? The recipient will no longer be able to open it.", color = MaterialTheme.colorScheme.onSurface)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StudioButton(onClick = { revokingShare = null }, modifier = Modifier.weight(1f), kind = StudioButtonKind.Secondary) { Text("Cancel", color = Color.White) }
-                StudioButton(onClick = { model.revokeShare(record.entityId) { revokingShare = null } }, enabled = online, modifier = Modifier.weight(1f), kind = StudioButtonKind.Danger) { Text("Revoke", color = Color.White, fontWeight = FontWeight.Bold) }
+                StudioButton(onClick = { revokingShare = null }, modifier = Modifier.weight(1f), kind = StudioButtonKind.Secondary) { Text("Cancel", color = MaterialTheme.colorScheme.onSurface) }
+                StudioButton(onClick = { model.revokeShare(record.entityId) { revokingShare = null } }, enabled = online, modifier = Modifier.weight(1f), kind = StudioButtonKind.Danger) { Text("Revoke", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -2205,13 +2210,13 @@ private fun ShareEditor(record: SupportingRecord, model: StudioRackViewModel, on
     var selectedScopes by remember(record.entityId) { mutableStateOf(originalScopes) }
 
     EditorDialog("Edit Shared Access", close) {
-        Text(original.optString("object_name", "Shared item"), color = Amber, fontSize = 20.sp, fontWeight = FontWeight.Black)
+        Text(original.optString("object_name", "Shared item"), color = MaterialTheme.colorScheme.primary, fontSize = 20.sp, fontWeight = FontWeight.Black)
         StudioField("Recipient name", recipientName) { recipientName = it }
         StudioField("Recipient email", recipientEmail, dictation = false) { recipientEmail = it }
-        Text("Access role", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Access role", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         ChoiceStrip(listOf("Performer", "Crew", "Guest"), role.humanize()) { role = it.lowercase() }
         StudioField("Expires (UTC, for example 2026-09-08T20:00:00Z)", expires, dictation = false) { expires = it }
-        Text("Allowed information", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Allowed information", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         availableScopes.forEach { (value, label) ->
             SettingToggle(label, value in selectedScopes) { checked -> selectedScopes = if (checked) selectedScopes + value else selectedScopes - value }
         }
@@ -2228,7 +2233,7 @@ private fun ShareEditor(record: SupportingRecord, model: StudioRackViewModel, on
             enabled = online && recipientEmail.length <= 320 && selectedScopes.isNotEmpty() && expires.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Save Share Changes", color = Ink, fontWeight = FontWeight.Black) }
-        Text("Share management requires an internet connection and is applied directly to the server.", color = TextSoft, fontSize = 11.sp)
+        Text("Share management requires an internet connection and is applied directly to the server.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     }
 }
 
@@ -2293,20 +2298,20 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
         }
         if (mode != "Add") StudioField("Find ${tab.lowercase()}", query) { query = it }
         if (mode == relationshipMode && entityType != "contact") {
-            if (contacts.isEmpty()) Text("Add contacts first, then return here to connect them.", color = TextSoft)
+            if (contacts.isEmpty()) Text("Add contacts first, then return here to connect them.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             filtered.forEach { record ->
                 val data = recordJson(record)
                 val count = if (entityType == "ensemble") ensembleContacts.count { recordJson(it).optString("ensemble_id") == record.entityId }
                     else venueContacts.count { recordJson(it).optString("venue_id") == record.entityId }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = PanelRaised),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     border = BorderStroke(1.dp, Color(0xFF343B4D)),
                 ) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text(data.optString("name"), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            Text("$count ${if (entityType == "ensemble") "member" else "contact"}${if (count == 1) "" else "s"}", color = TextSoft)
+                            Text(data.optString("name"), color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("$count ${if (entityType == "ensemble") "member" else "contact"}${if (count == 1) "" else "s"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         StudioButton(onClick = { managing = entityType to record }) {
                             Text(if (entityType == "ensemble") "Manage Members" else "Manage Contacts", color = Ink, fontWeight = FontWeight.Black)
@@ -2371,10 +2376,10 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
                         val emails = linkedContacts.map { recordJson(it.first).optString("email") }.filter(String::isNotBlank).distinct()
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (phones.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "smsto", phones) }) { Text("Text Group", color = Ink, fontWeight = FontWeight.Bold) }
-                            if (emails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", emails) }, kind = StudioButtonKind.Secondary) { Text("Email Group", color = Color.White, fontWeight = FontWeight.Bold) }
+                            if (emails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", emails) }, kind = StudioButtonKind.Secondary) { Text("Email Group", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                         }
                     }
-                    Text(if (entityType == "ensemble") "MEMBERS" else "VENUE CONTACTS", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    Text(if (entityType == "ensemble") "MEMBERS" else "VENUE CONTACTS", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, fontWeight = FontWeight.Black)
                     linkedContacts.forEach { (contact, role) ->
                         DirectoryContactRow(
                             recordJson(contact), role, context,
@@ -2385,32 +2390,32 @@ private fun DirectoryPanel(model: StudioRackViewModel) {
                 if (entityType != "contact") {
                     Spacer(Modifier.height(6.dp))
                     Surface(Modifier.fillMaxWidth().height(1.dp), color = Color(0xFF4A5265)) {}
-                    Text(if (entityType == "ensemble") "GROUP CONTROLS" else "VENUE CONTROLS", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    Text(if (entityType == "ensemble") "GROUP CONTROLS" else "VENUE CONTROLS", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, fontWeight = FontWeight.Black)
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (entityType == "contact" && recordMethods.isNotEmpty()) recordMethods.forEach { method ->
                         val methodData = recordJson(method); val value = methodData.optString("value"); val methodLabel = methodData.optString("label", "Other")
                         if (methodData.optString("method_type") == "email") {
-                            StudioButton(onClick = { openContactLink(context, "mailto", value) }, kind = StudioButtonKind.Secondary) { Text("Email $methodLabel", color = Color.White) }
+                            StudioButton(onClick = { openContactLink(context, "mailto", value) }, kind = StudioButtonKind.Secondary) { Text("Email $methodLabel", color = MaterialTheme.colorScheme.onSurface) }
                         } else {
-                            StudioButton(onClick = { openContactLink(context, "tel", value) }, kind = if (methodData.optInt("is_primary") == 1) StudioButtonKind.Primary else StudioButtonKind.Secondary) { Text("Call $methodLabel", color = if (methodData.optInt("is_primary") == 1) Ink else Color.White, fontWeight = FontWeight.Bold) }
-                            StudioButton(onClick = { openContactLink(context, "smsto", value) }, kind = StudioButtonKind.Secondary) { Text("Text $methodLabel", color = Color.White) }
+                            StudioButton(onClick = { openContactLink(context, "tel", value) }, kind = if (methodData.optInt("is_primary") == 1) StudioButtonKind.Primary else StudioButtonKind.Secondary) { Text("Call $methodLabel", color = if (methodData.optInt("is_primary") == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+                            StudioButton(onClick = { openContactLink(context, "smsto", value) }, kind = StudioButtonKind.Secondary) { Text("Text $methodLabel", color = MaterialTheme.colorScheme.onSurface) }
                         }
                     } else {
                         data.optString("phone").takeIf(String::isNotBlank)?.let { phone ->
                             StudioButton(onClick = { openContactLink(context, "tel", phone) }) { Text("Call", color = Ink, fontWeight = FontWeight.Bold) }
-                            StudioButton(onClick = { openContactLink(context, "smsto", phone) }, kind = StudioButtonKind.Secondary) { Text("Text", color = Color.White) }
+                            StudioButton(onClick = { openContactLink(context, "smsto", phone) }, kind = StudioButtonKind.Secondary) { Text("Text", color = MaterialTheme.colorScheme.onSurface) }
                         }
-                        data.optString("email").takeIf(String::isNotBlank)?.let { email -> StudioButton(onClick = { openContactLink(context, "mailto", email) }, kind = StudioButtonKind.Secondary) { Text("Email", color = Color.White) } }
+                        data.optString("email").takeIf(String::isNotBlank)?.let { email -> StudioButton(onClick = { openContactLink(context, "mailto", email) }, kind = StudioButtonKind.Secondary) { Text("Email", color = MaterialTheme.colorScheme.onSurface) } }
                     }
-                    normalizedMediaLink(data.optString("maps_url"))?.let { link -> StudioButton(onClick = { openMediaLink(context, link) }, kind = StudioButtonKind.Secondary) { Text("Directions", color = Color.White) } }
-                    normalizedMediaLink(data.optString("website"))?.let { link -> StudioButton(onClick = { openMediaLink(context, link) }, kind = StudioButtonKind.Secondary) { Text("Website", color = Color.White) } }
-                    StudioButton(onClick = { editing = EditorTarget(record.entityId, data) }, kind = StudioButtonKind.Secondary) { Text("Edit", color = Color.White) }
-                    if (entityType != "contact") StudioButton(onClick = { managing = entityType to record }, kind = StudioButtonKind.Secondary) { Text(if (entityType == "ensemble") "Manage Members" else "Manage Contacts", color = Color.White) }
+                    normalizedMediaLink(data.optString("maps_url"))?.let { link -> StudioButton(onClick = { openMediaLink(context, link) }, kind = StudioButtonKind.Secondary) { Text("Directions", color = MaterialTheme.colorScheme.onSurface) } }
+                    normalizedMediaLink(data.optString("website"))?.let { link -> StudioButton(onClick = { openMediaLink(context, link) }, kind = StudioButtonKind.Secondary) { Text("Website", color = MaterialTheme.colorScheme.onSurface) } }
+                    StudioButton(onClick = { editing = EditorTarget(record.entityId, data) }, kind = StudioButtonKind.Secondary) { Text("Edit", color = MaterialTheme.colorScheme.onSurface) }
+                    if (entityType != "contact") StudioButton(onClick = { managing = entityType to record }, kind = StudioButtonKind.Secondary) { Text(if (entityType == "ensemble") "Manage Members" else "Manage Contacts", color = MaterialTheme.colorScheme.onSurface) }
                 }
             }
         }
-        if (mode != "Add" && filtered.isEmpty()) Text("No ${tab.lowercase()} match this search.", color = TextSoft)
+        if (mode != "Add" && filtered.isEmpty()) Text("No ${tab.lowercase()} match this search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     editing?.let { target -> DirectoryEditor(entityType, target, model) { editing = null; mode = "Browse" } }
     managing?.let { (parentType, record) ->
@@ -2440,24 +2445,24 @@ private fun DirectoryContactRow(contact: JSONObject, relationshipRole: String, c
                 if (contact.optString("image_url").isNotBlank()) {
                     CachedNetworkImage(contact.optString("image_url"), displayName, photoModifier, ContentScale.Crop, fallbackText = displayName.take(1).uppercase())
                 } else Box(photoModifier, contentAlignment = Alignment.Center) {
-                    Text(displayName.take(1).uppercase(), color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                    Text(displayName.take(1).uppercase(), color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(displayName, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(displayName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                     val role = relationshipRole.ifBlank { contact.optString("job_title") }
-                    if (role.isNotBlank()) Text(role, color = TextSoft, fontSize = 12.sp)
+                    if (role.isNotBlank()) Text(role, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 contact.optString("phone").takeIf(String::isNotBlank)?.let { phone ->
                     StudioButton(onClick = { openContactLink(context, "tel", phone) }) { Text("Call", color = Ink, fontWeight = FontWeight.Bold) }
-                    StudioButton(onClick = { openContactLink(context, "smsto", phone) }, kind = StudioButtonKind.Secondary) { Text("Text", color = Color.White) }
+                    StudioButton(onClick = { openContactLink(context, "smsto", phone) }, kind = StudioButtonKind.Secondary) { Text("Text", color = MaterialTheme.colorScheme.onSurface) }
                 }
                 contact.optString("email").takeIf(String::isNotBlank)?.let { email ->
-                    StudioButton(onClick = { openContactLink(context, "mailto", email) }, kind = StudioButtonKind.Secondary) { Text("Email", color = Color.White) }
+                    StudioButton(onClick = { openContactLink(context, "mailto", email) }, kind = StudioButtonKind.Secondary) { Text("Email", color = MaterialTheme.colorScheme.onSurface) }
                 }
-                StudioButton(onClick = { expanded = !expanded }, kind = StudioButtonKind.Secondary) { Text(if (expanded) "Close Profile" else "Profile", color = Color.White) }
+                StudioButton(onClick = { expanded = !expanded }, kind = StudioButtonKind.Secondary) { Text(if (expanded) "Close Profile" else "Profile", color = MaterialTheme.colorScheme.onSurface) }
             }
             if (expanded) {
                 DetailLine("Organization", contact.optString("organization_name"))
@@ -2470,10 +2475,10 @@ private fun DirectoryContactRow(contact: JSONObject, relationshipRole: String, c
                 if (methods.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     methods.forEach { method ->
                         val value = method.optString("value"); val label = method.optString("label", "Other")
-                        if (method.optString("method_type") == "email") StudioButton(onClick = { openContactLink(context, "mailto", value) }, kind = StudioButtonKind.Secondary) { Text("Email $label", color = Color.White) }
+                        if (method.optString("method_type") == "email") StudioButton(onClick = { openContactLink(context, "mailto", value) }, kind = StudioButtonKind.Secondary) { Text("Email $label", color = MaterialTheme.colorScheme.onSurface) }
                         else {
-                            StudioButton(onClick = { openContactLink(context, "tel", value) }, kind = StudioButtonKind.Secondary) { Text("Call $label", color = Color.White) }
-                            StudioButton(onClick = { openContactLink(context, "smsto", value) }, kind = StudioButtonKind.Secondary) { Text("Text $label", color = Color.White) }
+                            StudioButton(onClick = { openContactLink(context, "tel", value) }, kind = StudioButtonKind.Secondary) { Text("Call $label", color = MaterialTheme.colorScheme.onSurface) }
+                            StudioButton(onClick = { openContactLink(context, "smsto", value) }, kind = StudioButtonKind.Secondary) { Text("Text $label", color = MaterialTheme.colorScheme.onSurface) }
                         }
                     }
                 }
@@ -2579,7 +2584,7 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
                 StudioField("Phone", phone) { phone = it }; StudioField("Email", email) { email = it }
                 if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current venue photo", Modifier.size(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop, fallbackText = name.take(1).uppercase())
                 StudioButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                    Text(if (selectedImageName.isBlank()) "Choose Venue Photo" else "Photo: $selectedImageName", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (selectedImageName.isBlank()) "Choose Venue Photo" else "Photo: $selectedImageName", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 }
                 StudioField("Venue Photo URL", imageUrl) { imageUrl = it }
                 StudioField("Website", website) { website = it }; StudioField("Google Maps Link", mapsUrl) { mapsUrl = it }
@@ -2596,9 +2601,9 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Import From Device Contacts", color = Ink, fontWeight = FontWeight.Black) }
                 StudioField("Organization", organization) { organization = it }; StudioField("Title / Role", title) { title = it }
-                Text("PHONE NUMBERS & EMAIL", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                Text("PHONE NUMBERS & EMAIL", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Black)
                 contactMethodDrafts.forEachIndexed { index, method ->
-                    Card(colors = CardDefaults.cardColors(containerColor = PanelRaised), border = BorderStroke(1.dp, Color(0xFF343B4D))) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), border = BorderStroke(1.dp, Color(0xFF343B4D))) {
                         Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             ChoiceStrip(listOf("phone", "email"), method.type) { selected ->
                                 contactMethodDrafts = contactMethodDrafts.toMutableList().also { it[index] = method.copy(type = selected) }
@@ -2615,29 +2620,29 @@ private fun DirectoryEditor(entityType: String, target: EditorTarget, model: Stu
                                         if (candidate.type == method.type) candidate.copy(isPrimary = row == index) else candidate
                                     }
                                 }, kind = if (method.isPrimary) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
-                                    Text(if (method.isPrimary) "Preferred" else "Make Preferred", color = if (method.isPrimary) Ink else Color.White)
+                                    Text(if (method.isPrimary) "Preferred" else "Make Preferred", color = if (method.isPrimary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                                 }
-                                StudioButton(onClick = { contactMethodDrafts = contactMethodDrafts.filterIndexed { row, _ -> row != index } }, kind = StudioButtonKind.Secondary) { Text("Remove", color = Color.White) }
+                                StudioButton(onClick = { contactMethodDrafts = contactMethodDrafts.filterIndexed { row, _ -> row != index } }, kind = StudioButtonKind.Secondary) { Text("Remove", color = MaterialTheme.colorScheme.onSurface) }
                             }
                         }
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StudioButton(onClick = { contactMethodDrafts = contactMethodDrafts + ContactMethodDraft(type = "phone", label = "Mobile", value = "", isPrimary = contactMethodDrafts.none { it.type == "phone" }) }, kind = StudioButtonKind.Secondary) { Text("Add Phone", color = Color.White) }
-                    StudioButton(onClick = { contactMethodDrafts = contactMethodDrafts + ContactMethodDraft(type = "email", label = "Primary", value = "", isPrimary = contactMethodDrafts.none { it.type == "email" }) }, kind = StudioButtonKind.Secondary) { Text("Add Email", color = Color.White) }
+                    StudioButton(onClick = { contactMethodDrafts = contactMethodDrafts + ContactMethodDraft(type = "phone", label = "Mobile", value = "", isPrimary = contactMethodDrafts.none { it.type == "phone" }) }, kind = StudioButtonKind.Secondary) { Text("Add Phone", color = MaterialTheme.colorScheme.onSurface) }
+                    StudioButton(onClick = { contactMethodDrafts = contactMethodDrafts + ContactMethodDraft(type = "email", label = "Primary", value = "", isPrimary = contactMethodDrafts.none { it.type == "email" }) }, kind = StudioButtonKind.Secondary) { Text("Add Email", color = MaterialTheme.colorScheme.onSurface) }
                 }
                 if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current contact photo", Modifier.size(150.dp).clip(CircleShape), ContentScale.Crop, fallbackText = name.take(1).uppercase())
                 StudioButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                    Text(if (selectedImageName.isBlank()) "Choose Contact Photo" else "Photo: $selectedImageName", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (selectedImageName.isBlank()) "Choose Contact Photo" else "Photo: $selectedImageName", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 }
                 StudioField("Contact Photo URL", imageUrl) { imageUrl = it }
             }
             else -> {
-                Text("Type", color = TextSoft, fontWeight = FontWeight.Bold)
+                Text("Type", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                 ChoiceStrip(listOf("band", "worship_group", "studio", "production_company", "other"), type) { type = it }
                 if (imageUrl.isNotBlank()) CachedNetworkImage(imageUrl, "Current group photo", Modifier.size(150.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Crop, fallbackText = name.take(1).uppercase())
                 StudioButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                    Text(if (selectedImageName.isBlank()) "Choose Group Photo or Logo" else "Photo: $selectedImageName", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (selectedImageName.isBlank()) "Choose Group Photo or Logo" else "Photo: $selectedImageName", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 }
                 StudioField("Group Photo URL", imageUrl) { imageUrl = it }
                 StudioField("Website", website) { website = it }
@@ -2809,10 +2814,10 @@ private fun DirectoryRelationshipsDialog(
             .joinToString(" ").contains(query, ignoreCase = true)
     }.sortedBy { recordJson(it).optString("display_name").lowercase() }
     EditorDialog("${if (parentType == "ensemble") "Members" else "Contacts"} for ${recordJson(parent).optString("name")}", close) {
-        if (contacts.isEmpty()) Text("Add contacts in the Contact tab first.", color = TextSoft)
+        if (contacts.isEmpty()) Text("Add contacts in the Contact tab first.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         else {
             StudioField("Find a person", query) { query = it }
-            Text("${selected.size} selected / ${filteredContacts.size} shown", color = TextSoft, fontSize = 12.sp)
+            Text("${selected.size} selected / ${filteredContacts.size} shown", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
         filteredContacts.forEach { contact ->
             val checked = contact.entityId in selected
@@ -2823,9 +2828,9 @@ private fun DirectoryRelationshipsDialog(
                         if (enabled && membershipDrafts[contact.entityId] == null) membershipDrafts[contact.entityId] = EnsembleMembershipDraft()
                     }, colors = studioSwitchColors())
                     Column {
-                        Text(recordJson(contact).optString("display_name"), color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(recordJson(contact).optString("display_name"), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                         val detail = listOf(recordJson(contact).optString("job_title"), recordJson(contact).optString("organization_name")).filter(String::isNotBlank).joinToString(" / ")
-                        if (detail.isNotBlank()) Text(detail, color = TextSoft, fontSize = 12.sp)
+                        if (detail.isNotBlank()) Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     }
                 }
                 if (checked && parentType == "ensemble") {
@@ -2833,15 +2838,15 @@ private fun DirectoryRelationshipsDialog(
                     StudioField("Performance roles (comma separated)", draft.performanceRoles) {
                         membershipDrafts[contact.entityId] = draft.copy(performanceRoles = it)
                     }
-                    Text("Authority", color = TextSoft, fontSize = 11.sp)
+                    Text("Authority", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                     ChoiceStrip(listOf("Performer", "Music Librarian", "Band Leader"), when (draft.authorityRole) {
                         "librarian" -> "Music Librarian"; "leader" -> "Band Leader"; else -> "Performer"
                     }) { value -> membershipDrafts[contact.entityId] = draft.copy(authorityRole = when (value) { "Music Librarian" -> "librarian"; "Band Leader" -> "leader"; else -> "performer" }) }
-                    Text("Material access", color = TextSoft, fontSize = 11.sp)
+                    Text("Material access", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                     ChoiceStrip(listOf("Role Based", "Full Band", "Production", "Custom"), when (draft.materialProfile) {
                         "full_band" -> "Full Band"; "production" -> "Production"; "custom" -> "Custom"; else -> "Role Based"
                     }) { value -> membershipDrafts[contact.entityId] = draft.copy(materialProfile = value.lowercase().replace(' ', '_')) }
-                    Text("Membership", color = TextSoft, fontSize = 11.sp)
+                    Text("Membership", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                     ChoiceStrip(listOf("Active", "Suspended", "Former"), draft.membershipStatus.replaceFirstChar(Char::uppercase)) { value ->
                         membershipDrafts[contact.entityId] = draft.copy(membershipStatus = value.lowercase())
                     }
@@ -2849,10 +2854,10 @@ private fun DirectoryRelationshipsDialog(
                         onClick = { expandedMaterialContact = if (expandedMaterialContact == contact.entityId) null else contact.entityId },
                         kind = StudioButtonKind.Secondary,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (expandedMaterialContact == contact.entityId) "Hide Material Access" else "Configure Material Access", color = Color.White, fontWeight = FontWeight.Bold) }
+                    ) { Text(if (expandedMaterialContact == contact.entityId) "Hide Material Access" else "Configure Material Access", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     if (expandedMaterialContact == contact.entityId) {
-                        Text("Inherit follows the selected profile. Allow and Withhold are explicit exceptions.", color = TextSoft, fontSize = 12.sp)
-                        if (eligibleMaterials.isEmpty()) Text("Assign this band to an event with a set list to configure materials.", color = TextSoft)
+                        Text("Inherit follows the selected profile. Allow and Withhold are explicit exceptions.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        if (eligibleMaterials.isEmpty()) Text("Assign this band to an event with a set list to configure materials.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         eligibleMaterials.forEach { material ->
                             val data = recordJson(material)
                             val song = songs.firstOrNull { it.entityId == data.optString("song_id") }?.let(::recordJson)
@@ -2865,11 +2870,11 @@ private fun DirectoryRelationshipsDialog(
                                 border = BorderStroke(1.dp, Color(0xFF343B4D)),
                             ) {
                                 Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                                    Text(song?.optString("title", "Untitled").orEmpty(), color = Amber, fontWeight = FontWeight.Bold)
+                                    Text(song?.optString("title", "Untitled").orEmpty(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                                     Text(
                                         data.optString("display_name").ifBlank { data.optString("attachment_type", "Material").humanize() } +
                                             data.optString("instrument_role").takeIf(String::isNotBlank)?.let { " / $it" }.orEmpty(),
-                                        color = Color.White,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     ChoiceStrip(listOf("Inherit", "Allow", "Withhold"), when (selectedDecision) { "allow" -> "Allow"; "deny" -> "Withhold"; else -> "Inherit" }) { value ->
                                         val updated = decisions.toMutableMap()
@@ -2883,7 +2888,7 @@ private fun DirectoryRelationshipsDialog(
                 }
             }
         }
-        if (contacts.isNotEmpty() && filteredContacts.isEmpty()) Text("No contacts match this search.", color = TextSoft)
+        if (contacts.isNotEmpty() && filteredContacts.isEmpty()) Text("No contacts match this search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         EditorActions(true, save = {
             if (parentType == "ensemble") {
                 val payload = selected.associateWith { contactId ->
@@ -2904,19 +2909,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.syncContent(model: St
         val pending by model.pendingCount.collectAsState()
         val conflicts by model.conflicts.collectAsState()
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Offline Changes", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Offline Changes", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MetricCard("Queued", pending.toString(), Modifier.weight(1f)); MetricCard("Conflicts", conflicts.size.toString(), Modifier.weight(1f))
             }
             StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text("Sync Now", color = Ink, fontWeight = FontWeight.Black) }
-            if (conflicts.isEmpty()) Text("No synchronization conflicts.", color = TextSoft)
+            if (conflicts.isEmpty()) Text("No synchronization conflicts.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             conflicts.forEach { conflict ->
                 InfoCard {
-                    Text(conflict.entityType.humanize(), color = Amber, fontWeight = FontWeight.Bold)
-                    Text(conflict.entityId, color = TextSoft, fontSize = 11.sp)
-                    Text("This record changed both here and on the server.", color = Color.White)
+                    Text(conflict.entityType.humanize(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text(conflict.entityId, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text("This record changed both here and on the server.", color = MaterialTheme.colorScheme.onSurface)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StudioButton(onClick = { model.resolveConflict(conflict, false) }, kind = StudioButtonKind.Secondary) { Text("Use Server", color = Color.White) }
+                        StudioButton(onClick = { model.resolveConflict(conflict, false) }, kind = StudioButtonKind.Secondary) { Text("Use Server", color = MaterialTheme.colorScheme.onSurface) }
                         StudioButton(onClick = { model.resolveConflict(conflict, true) }) { Text("Keep Device", color = Ink, fontWeight = FontWeight.Black) }
                     }
                 }
@@ -2957,7 +2962,7 @@ private fun ReportsPanel(model: StudioRackViewModel) {
     }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Reports", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text("Reports", color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Surface(
             color = if (online) Cyan.copy(alpha = 0.10f) else Amber.copy(alpha = 0.12f),
             border = BorderStroke(1.dp, if (online) Cyan.copy(alpha = 0.35f) else Amber.copy(alpha = 0.45f)),
@@ -3009,18 +3014,18 @@ private fun ImportDataTab(online: Boolean, state: ReportUiState, model: StudioRa
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Import Data", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Bring songs, complete set lists, items, and kits in from spreadsheet or structured data files. Exports live beside each filtered list.", color = TextSoft)
+        Text("Import Data", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Bring songs, complete set lists, items, and kits in from spreadsheet or structured data files. Exports live beside each filtered list.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         ChoiceStrip(kindValue.keys.toList(), kind) { kind = it }
         StudioButton(
             onClick = { chooseImport.launch(arrayOf("text/csv", "application/json", "application/xml", "text/xml", "application/vnd.ms-excel", "*/*")) },
             enabled = online && !state.busy,
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
-        ) { Text("Import $kind", color = Color.White, fontWeight = FontWeight.Bold) }
-        if (!online) Text("Connect to $productName to import. Your synchronized working data remains available offline.", color = Amber, fontSize = 12.sp)
+        ) { Text("Import $kind", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+        if (!online) Text("Connect to $productName to import. Your synchronized working data remains available offline.", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
         if (state.message.isNotBlank()) Text(state.message, color = if (state.message.startsWith("Import complete")) Cyan else TextSoft, fontSize = 12.sp)
-        Text("CSV, XLS, JSON, and XML files can be merged into your synchronized $productName account.", color = TextSoft, fontSize = 11.sp)
+        Text("CSV, XLS, JSON, and XML files can be merged into your synchronized $productName account.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     }
 }
 
@@ -3057,9 +3062,9 @@ private fun ContextExportDialog(
             shape = RoundedCornerShape(8.dp),
         ) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("EXPORT", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                Text(target.label, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text("${target.ids.size} selected ${if (target.ids.size == 1) "record" else "records"}", color = TextSoft)
+                Text("EXPORT", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                Text(target.label, color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("${target.ids.size} selected ${if (target.ids.size == 1) "record" else "records"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ChoiceStrip(listOf("CSV", "XLS", "JSON", "XML"), format) { format = it }
                 StudioButton(
                     onClick = {
@@ -3079,8 +3084,8 @@ private fun ContextExportDialog(
                     color = if (online) TextSoft else Cyan,
                     fontSize = 12.sp,
                 )
-                if (target.kind == "setlists") Text("Set and song details are included. Chart and other attachment files are not included.", color = TextSoft, fontSize = 11.sp)
-                TextButton(onClick = close, modifier = Modifier.align(Alignment.End)) { Text("Cancel", color = Cyan) }
+                if (target.kind == "setlists") Text("Set and song details are included. Chart and other attachment files are not included.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                TextButton(onClick = close, modifier = Modifier.align(Alignment.End)) { Text("Cancel", color = MaterialTheme.colorScheme.secondary) }
             }
         }
     }
@@ -3123,7 +3128,7 @@ private fun ReportOverviewTab(
     val locationCounts = items.groupingBy { locationNames[it.optString("default_location_id")].orEmpty().ifBlank { "No location" } }.eachCount()
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Full Overview", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Full Overview", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             MetricCard("Items", itemCount.toString(), Modifier.weight(1f))
             MetricCard("Units", unitCount.toString(), Modifier.weight(1f))
@@ -3141,7 +3146,7 @@ private fun ReportOverviewTab(
             Text(if (reportState.busy) "Refreshing Server Report" else "Refresh From Server", color = Ink, fontWeight = FontWeight.Black)
         }
         reportState.onlineOverview?.optString("generated_utc")?.takeIf(String::isNotBlank)?.let {
-            Text("Server verified $it", color = TextSoft, fontSize = 11.sp)
+            Text("Server verified $it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
         }
     }
 }
@@ -3149,12 +3154,12 @@ private fun ReportOverviewTab(
 @Composable
 private fun DistributionCard(title: String, values: Map<String, Int>) {
     InfoCard {
-        Text(title, color = Amber, fontWeight = FontWeight.Bold)
+        Text(title, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         val maximum = values.values.maxOrNull()?.coerceAtLeast(1) ?: 1
         values.entries.sortedByDescending(Map.Entry<String, Int>::value).forEach { (label, count) ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(label, color = Color.White, fontSize = 12.sp)
-                Text(count.toString(), color = TextSoft, fontWeight = FontWeight.Bold)
+                Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                Text(count.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             }
             Box(Modifier.fillMaxWidth().height(5.dp).background(Color(0xFF303747), RoundedCornerShape(50))) {
                 Box(Modifier.fillMaxWidth(count.toFloat() / maximum).height(5.dp).background(Brush.horizontalGradient(listOf(Amber, Cyan)), RoundedCornerShape(50)))
@@ -3175,10 +3180,10 @@ private fun EquipmentReportTab(
     val statusNames = statuses.associate { it.entityId to supportingJson(it).optString("name") }
     val locationNames = locations.associate { it.entityId to supportingJson(it).optString("name") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Equipment Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Equipment Report", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         DictationTextField(query, { query = it }, "Filter equipment report")
         val filtered = items.filter { query.isBlank() || it.toString().contains(query, true) }
-        Text("${filtered.size} matching items", color = TextSoft, fontSize = 12.sp)
+        Text("${filtered.size} matching items", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         filtered.sortedBy { it.optString("display_name").lowercase() }.forEach { item ->
             val values = specMap[item.optString("id")].orEmpty()
             ExpandableRecordCard(
@@ -3202,10 +3207,10 @@ private fun MaintenanceReport(rows: List<MaintenanceRow>, model: StudioRackViewM
     var status by remember { mutableStateOf("All") }
     val filtered = rows.filter { status == "All" || it.statusLabel == status }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Maintenance Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Maintenance Report", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         ChoiceStrip(listOf("All", "Needs attention", "Past due", "Due today", "Upcoming", "Scheduled"), status) { status = it }
-        Text("${filtered.size} matching maintenance records", color = TextSoft, fontSize = 12.sp)
-        if (filtered.isEmpty()) Text("No equipment matches this care status.", color = TextSoft)
+        Text("${filtered.size} matching maintenance records", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        if (filtered.isEmpty()) Text("No equipment matches this care status.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         filtered.forEach { row ->
             ExpandableRecordCard(
                 listOf(row.brand, row.name).filter(String::isNotBlank).joinToString(" "),
@@ -3231,11 +3236,11 @@ private fun ScheduleReportTab(events: List<JSONObject>) {
             (query.isBlank() || event.toString().contains(query, true))
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Schedule Report", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Schedule Report", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         DictationTextField(query, { query = it }, "Filter schedule report")
         ChoiceStrip(listOf("All", "Performance", "Rehearsal", "Studio Session", "Other"), type) { type = it }
-        Text("${filtered.size} matching schedule records", color = TextSoft, fontSize = 12.sp)
-        if (filtered.isEmpty()) Text("No scheduled records match these filters.", color = TextSoft)
+        Text("${filtered.size} matching schedule records", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        if (filtered.isEmpty()) Text("No scheduled records match these filters.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         filtered.sortedBy { it.optString("event_date") + it.optString("start_time") }.forEach { event ->
             ExpandableRecordCard(event.optString("title", "Untitled event"), listOf(event.optString("event_date"), event.optString("start_time")).filter(String::isNotBlank).joinToString(" / "), listOf(event.optString("event_type").humanize(), event.optString("event_status").humanize())) {
                 DetailLine("Location", event.optString("location"))
@@ -3257,16 +3262,16 @@ private fun AiReportTab(
 ) {
     val agentName = stringResource(R.string.agent_name)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Ask $agentName", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Describe the equipment report you need in ordinary language.", color = TextSoft)
+        Text("Ask $agentName", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Describe the equipment report you need in ordinary language.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         DictationTextField(question, changeQuestion, "Report question", enabled = online && !state.busy)
         StudioButton(onClick = { model.runAiReport(question) }, enabled = online && question.isNotBlank() && !state.busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (state.busy) "Running Report" else "Run AI Report", color = Ink, fontWeight = FontWeight.Black)
         }
         if (state.message.isNotBlank()) Text(state.message, color = if (state.aiResult != null) Cyan else TextSoft)
         state.aiResult?.let { result ->
-            Text(result.optString("title", "Report Results"), color = Amber, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("${result.optInt("row_count")} matching items", color = TextSoft)
+            Text(result.optString("title", "Report Results"), color = MaterialTheme.colorScheme.primary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("${result.optInt("row_count")} matching items", color = MaterialTheme.colorScheme.onSurfaceVariant)
             result.optJSONArray("rows").jsonObjects().forEach { row ->
                 ExpandableRecordCard(row.optString("name", "Item"), listOf(row.optString("brand"), row.optString("category"), row.optString("type")).filter(String::isNotBlank).joinToString(" / "), listOf(row.optString("status"), row.optString("maintenance_label"))) {
                     DetailLine("Asset number", row.optString("asset_number"))
@@ -3277,8 +3282,8 @@ private fun AiReportTab(
                 }
             }
         }
-        Text("Previous AI Reports", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-        if (runs.isEmpty()) Text("No saved AI reports are synchronized.", color = TextSoft)
+        Text("Previous AI Reports", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        if (runs.isEmpty()) Text("No saved AI reports are synchronized.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         runs.take(12).forEach { run ->
             val row = supportingJson(run)
             ReportCard(row.optString("title", "Report"), row.optString("question"), "${row.optInt("row_count")} rows - ${row.optString("created_utc")}")
@@ -3302,14 +3307,14 @@ private fun WorkspaceAskPanel(
     val domainValue = if (domain == "Equipment") "equipment" else "songs"
 
     Surface(
-        color = Cyan.copy(alpha = .045f),
+        color = MaterialTheme.colorScheme.secondary.copy(alpha = .045f),
         border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)),
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text("Ask Crew", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("$agentName searches records you are allowed to see using approved, read-only filters.", color = TextSoft, fontSize = 12.sp)
+            Text("Ask Crew", color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("$agentName searches records you are allowed to see using approved, read-only filters.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             if (showDomainChooser) ChoiceStrip(listOf("Songs", "Equipment"), domain) { domain = it }
             DictationTextField(
                 question,
@@ -3324,11 +3329,11 @@ private fun WorkspaceAskPanel(
             ) {
                 Text(if (state.busy) "$agentName is searching..." else "Ask $agentName", color = Ink, fontWeight = FontWeight.Black)
             }
-            if (!online) Text("Connect to ask a workspace question.", color = Amber, fontSize = 11.sp)
-            if (state.message.isNotBlank()) Text(state.message, color = TextSoft, fontSize = 12.sp)
+            if (!online) Text("Connect to ask a workspace question.", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp)
+            if (state.message.isNotBlank()) Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             state.workspaceResult?.let { result ->
-                Text(result.optString("title", "Workspace Results"), color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("${result.optInt("row_count")} result(s)", color = TextSoft)
+                Text(result.optString("title", "Workspace Results"), color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("${result.optInt("row_count")} result(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 result.optJSONArray("rows").jsonObjects().forEach { row ->
                     if (result.optString("domain") == "songs") {
                         ExpandableRecordCard(
@@ -3357,7 +3362,7 @@ private fun WorkspaceAskPanel(
                 }
             }
             if (showDomainChooser && recentQueries.isNotEmpty()) {
-                Text("Recent Questions", color = Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+                Text("Recent Questions", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
                 recentQueries.take(8).forEach { record ->
                     val row = supportingJson(record)
                     ReportCard(
@@ -3375,11 +3380,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.buddyContent(model: S
     item { SubBrandSectionHeading(SubBrand.Crew) }
     item { WorkspaceAskPanel(model) }
     item { CrewBehaviorPanel(model) }
-    item { Text("Available Skills", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+    item { Text("Available Skills", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
     item {
         val skills by model.buddySkills.collectAsState()
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (skills.isEmpty()) Text("No skills are stored offline.", color = TextSoft)
+            if (skills.isEmpty()) Text("No skills are stored offline.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             skills.forEach { skill ->
                 val row = supportingJson(skill)
                 ExpandableRecordCard(row.optString("name", "Skill"), row.optString("description"), listOf(row.optString("trigger_type").humanize(), if (row.optInt("account_enabled") == 1) "Enabled" else "Disabled")) {
@@ -3388,7 +3393,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.buddyContent(model: S
             }
         }
     }
-    item { Text("Action History", color = Amber, fontWeight = FontWeight.Bold) }
+    item { Text("Action History", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
     item {
         val actions by model.buddyActions.collectAsState()
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { actions.take(30).forEach { BuddyActionCard(supportingJson(it), model) } }
@@ -3411,13 +3416,13 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Crew Behavior", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                Text("Reminder persistence, voice, and conversational preferences", color = TextSoft, fontSize = 12.sp)
+                Text("Crew Behavior", color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                Text("Reminder persistence, voice, and conversational preferences", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
-            Text(if (expanded) "Close" else "Edit", color = Amber, fontWeight = FontWeight.Bold)
+            Text(if (expanded) "Close" else "Edit", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         }
         if (expanded) {
-            Text("Reminder persistence", color = Amber, fontWeight = FontWeight.Bold)
+            Text("Reminder persistence", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Slider(
                 value = settings.persistenceLevel.toFloat(),
                 onValueChange = { settings = settings.copy(persistenceLevel = it.toInt().coerceIn(1, 5)) },
@@ -3432,22 +3437,22 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
                     "Proactive: earlier reminders and regular follow-up",
                     "Persistent: continue until completed, dismissed, or rescheduled",
                 )[settings.persistenceLevel - 1],
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 13.sp,
             )
             SettingToggle("Learn my completion timing and suggest improvements", settings.adaptiveTiming) {
                 settings = settings.copy(adaptiveTiming = it)
             }
-            Text("Crew requires repeated evidence and never changes timing automatically.", color = TextSoft, fontSize = 12.sp)
+            Text("Crew requires repeated evidence and never changes timing automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
 
-            Text("Warmth", color = Amber, fontWeight = FontWeight.Bold)
+            Text("Warmth", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Slider(
                 value = settings.warmthLevel.toFloat(),
                 onValueChange = { settings = settings.copy(warmthLevel = it.toInt().coerceIn(1, 5)) },
                 valueRange = 1f..5f,
                 steps = 3,
             )
-            Text(listOf("Plain", "Reserved", "Warm and professional", "Friendly", "Highly personable")[settings.warmthLevel - 1], color = Color.White, fontSize = 13.sp)
+            Text(listOf("Plain", "Reserved", "Warm and professional", "Friendly", "Highly personable")[settings.warmthLevel - 1], color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
             LabeledChoice("Response length", listOf("Brief", "Balanced", "Detailed"), settings.responseDetail.replaceFirstChar(Char::uppercase)) {
                 settings = settings.copy(responseDetail = it.lowercase())
             }
@@ -3469,19 +3474,19 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
             SettingToggle("Allow occasional, situational humor", settings.humorEnabled) { settings = settings.copy(humorEnabled = it) }
             SettingToggle("Offer relevant next steps", settings.proactiveSuggestions) { settings = settings.copy(proactiveSuggestions = it) }
 
-            Text("Post-performance check-in", color = Amber, fontWeight = FontWeight.Bold)
+            Text("Post-performance check-in", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             SettingToggle("Check in after completed performances", settings.postEventCheckinEnabled) {
                 settings = settings.copy(postEventCheckinEnabled = it)
             }
             if (settings.postEventCheckinEnabled) {
-                Text("Wait ${settings.postEventCheckinDelayHours} hour${if (settings.postEventCheckinDelayHours == 1) "" else "s"} after the performance", color = Color.White, fontSize = 13.sp)
+                Text("Wait ${settings.postEventCheckinDelayHours} hour${if (settings.postEventCheckinDelayHours == 1) "" else "s"} after the performance", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                 Slider(
                     value = settings.postEventCheckinDelayHours.toFloat(),
                     onValueChange = { settings = settings.copy(postEventCheckinDelayHours = it.toInt().coerceIn(0, 72)) },
                     valueRange = 0f..72f,
                     steps = 71,
                 )
-                Text("Close after ${settings.postEventCheckinCloseDays} unanswered day${if (settings.postEventCheckinCloseDays == 1) "" else "s"}", color = Color.White, fontSize = 13.sp)
+                Text("Close after ${settings.postEventCheckinCloseDays} unanswered day${if (settings.postEventCheckinCloseDays == 1) "" else "s"}", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                 Slider(
                     value = settings.postEventCheckinCloseDays.toFloat(),
                     onValueChange = {
@@ -3498,7 +3503,7 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
                     settings = settings.copy(postEventCheckinFollowupDays = if (enabled) 1.coerceAtMost(settings.postEventCheckinCloseDays - 1) else 0)
                 }
                 if (settings.postEventCheckinFollowupDays > 0) {
-                    Text("Follow up after ${settings.postEventCheckinFollowupDays} day${if (settings.postEventCheckinFollowupDays == 1) "" else "s"}", color = Color.White, fontSize = 13.sp)
+                    Text("Follow up after ${settings.postEventCheckinFollowupDays} day${if (settings.postEventCheckinFollowupDays == 1) "" else "s"}", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                     Slider(
                         value = settings.postEventCheckinFollowupDays.toFloat(),
                         onValueChange = { settings = settings.copy(postEventCheckinFollowupDays = it.toInt().coerceIn(1, (settings.postEventCheckinCloseDays - 1).coerceAtLeast(1))) },
@@ -3506,10 +3511,10 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
                         steps = (settings.postEventCheckinCloseDays - 3).coerceAtLeast(0),
                     )
                 }
-                Text("Turning Crew off in the web settings remains the master stop for all Crew activity.", color = TextSoft, fontSize = 12.sp)
+                Text("Turning Crew off in the web settings remains the master stop for all Crew activity.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
 
-            Text("Preferred delivery", color = Amber, fontWeight = FontWeight.Bold)
+            Text("Preferred delivery", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             listOf("in_app" to "In-app", "mobile" to "Mobile notification", "email" to "Email").forEach { (key, label) ->
                 SettingToggle(label, key in settings.preferredChannels) { enabled ->
                     val channels = settings.preferredChannels.toMutableList().apply {
@@ -3524,7 +3529,7 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
             }
             Text(
                 "Restricts scheduled background synchronization to Wi-Fi or another unmetered network. Manual synchronization still works on mobile data.",
-                color = TextSoft,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
             )
             OutlinedTextField(
@@ -3548,7 +3553,7 @@ private fun CrewBehaviorPanel(model: StudioRackViewModel) {
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text("Crew will not guilt, scold, shame, or pressure you. Style examples cannot change permissions or execute actions.", color = TextSoft, fontSize = 12.sp)
+            Text("Crew will not guilt, scold, shame, or pressure you. Style examples cannot change permissions or execute actions.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             StudioButton(onClick = { model.saveCrewBehaviorSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Save Crew Behavior", color = Ink, fontWeight = FontWeight.Black)
             }
@@ -3566,13 +3571,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.referenceContent(mode
         val workspaceCategories = categories.filter { supportingJson(it).optString("reference_state") == "workspace" }
         val workspaceTypes = types.filter { supportingJson(it).optString("reference_state") == "workspace" }
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Module Data", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("Workspace choices are kept separate from the specialized catalogs supplied by each enabled module.", color = TextSoft, fontSize = 13.sp, lineHeight = 18.sp)
+            Text("Module Data", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Workspace choices are kept separate from the specialized catalogs supplied by each enabled module.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 18.sp)
             InfoCard {
                 DetailLine("Workspace focus", currentProfile?.optString("name") ?: "Custom workspace")
                 DetailLine("Active modules", activeModules.size.toString())
                 if (activeModules.isNotEmpty()) {
-                    Text(activeModules.joinToString("  |  ") { it.optString("name") }, color = Cyan, fontSize = 12.sp, lineHeight = 17.sp)
+                    Text(activeModules.joinToString("  |  ") { it.optString("name") }, color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp, lineHeight = 17.sp)
                 }
             }
             ExpandableRecordCard("Workspace Data", "Locations, statuses, kit designations, and private extensions", emptyList()) {
@@ -3606,23 +3611,24 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
         val activity = context as? Activity
         val state by model.syncState.collectAsState(); val account = runCatching { JSONObject(state?.accountJson ?: "{}") }.getOrDefault(JSONObject())
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Account and Device", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Account and Device", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            AppearanceSettingsPanel(model, state)
             InfoCard { DetailLine("Studio", account.optString("studio_name")); DetailLine("Account", account.optString("email")); DetailLine("Address", studioAddress(account)); DetailLine("Phone", account.optString("phone")); DetailLine("Contact", account.optString("contact_email")); DetailLine("Last sync", state?.lastSyncAt?.let { DateFormat.getDateTimeInstance().format(Date(it)) }.orEmpty()) }
             InfoCard {
-                Text("Sign-in & Security", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                Text("Your approved Studio Leviathan login comes first. Google, Microsoft, and passkeys are optional additional sign-in methods; they do not create a new account or change your permissions.", color = TextSoft, fontSize = 13.sp, lineHeight = 19.sp)
+                Text("Sign-in & Security", color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("Your approved Studio Leviathan login comes first. Google, Microsoft, and passkeys are optional additional sign-in methods; they do not create a new account or change your permissions.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 19.sp)
                 StudioButton(
                     onClick = { openMediaLink(context, context.getString(R.string.public_base_url) + "/settings/sign-in") },
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
-                ) { Text("Manage Connected Accounts", color = Color.White, fontWeight = FontWeight.Black) }
+                ) { Text("Manage Connected Accounts", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black) }
                 StudioButton(
                     onClick = { activity?.let(model::createPasskey) },
                     enabled = !uiState.busy && activity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Add Passkey", color = Ink, fontWeight = FontWeight.Black) }
-                Text("Connect Google or Microsoft in the secure web settings. Passkeys can be added and used directly on this Android device.", color = TextSoft, fontSize = 12.sp, lineHeight = 17.sp)
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) Text("Passkeys require Android 9 or newer.", color = TextSoft, fontSize = 12.sp)
+                Text("Connect Google or Microsoft in the secure web settings. Passkeys can be added and used directly on this Android device.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) Text("Passkeys require Android 9 or newer.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
             StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text(if (uiState.busy) "Synchronizing" else "Synchronize", color = Ink, fontWeight = FontWeight.Black) }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -3630,18 +3636,62 @@ private fun androidx.compose.foundation.lazy.LazyListScope.settingsContent(model
                     onClick = { openMediaLink(context, context.getString(R.string.privacy_policy_url)) },
                     modifier = Modifier.weight(1f),
                     kind = StudioButtonKind.Secondary,
-                ) { Text("Privacy", color = Color.White, fontWeight = FontWeight.Bold) }
+                ) { Text("Privacy", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 StudioButton(
                     onClick = { openMediaLink(context, context.getString(R.string.terms_url)) },
                     modifier = Modifier.weight(1f),
                     kind = StudioButtonKind.Secondary,
-                ) { Text("Terms", color = Color.White, fontWeight = FontWeight.Bold) }
+                ) { Text("Terms", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
             }
             StudioButton(onClick = model::signOut, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                Text("Sign out", color = Color.White, fontWeight = FontWeight.Black)
+                Text("Sign out", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
             }
             WearCompanionPanel(compact = true)
-            Text("Leviathan Live settings are managed from Sessions > Leviathan Live.", color = TextSoft, fontSize = 12.sp)
+            Text("Leviathan Live settings are managed from Sessions > Leviathan Live.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun AppearanceSettingsPanel(model: StudioRackViewModel, state: com.manoogianmedia.studiorack.data.SyncState?) {
+    val loaded = remember(state?.appearanceSettingsJson) {
+        AppearanceSettings.fromJson(state?.appearanceSettingsJson ?: "{}")
+    }
+    var settings by remember(state?.appearanceSettingsJson) { mutableStateOf(loaded) }
+    val themes = listOf(
+        "Leviathan Dark" to "leviathan_dark",
+        "Stage Black" to "stage_black",
+        "Studio Light" to "studio_light",
+        "Graphite" to "graphite",
+        "Follow Device" to "follow_device",
+    )
+    InfoCard {
+        Text("Appearance", color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Black)
+        Text(
+            "Your theme is personal, works offline, and follows your account across supported devices.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+        )
+        Text("Application theme", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+        ChoiceStrip(themes.map { it.first }, themes.firstOrNull { it.second == settings.appTheme }?.first ?: "Leviathan Dark") { label ->
+            settings = settings.copy(appTheme = themes.first { it.first == label }.second)
+        }
+        Text("Leviathan Live", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+        ChoiceStrip(
+            listOf("Use application theme", "Always use Stage Black"),
+            if (settings.performanceTheme == "stage_black") "Always use Stage Black" else "Use application theme",
+        ) { label ->
+            settings = settings.copy(performanceTheme = if (label == "Always use Stage Black") "stage_black" else "app_theme")
+        }
+        Text(
+            "The temporary sun/moon performance control remains separate from this saved preference.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+        )
+        StudioButton(onClick = { model.saveAppearanceSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Save Appearance", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -3660,11 +3710,11 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
         when (section) {
             "Live Settings" -> {
                 SubBrandLockup(SubBrand.Live)
-                Text("Settings", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("Settings", color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 SettingToggle("Show clock", settings.showClock) { settings = settings.copy(showClock = it) }
                 SettingToggle("Show elapsed set time", settings.showElapsed) { settings = settings.copy(showElapsed = it) }
                 SettingToggle("Show estimated time remaining", settings.showSetRemaining) { settings = settings.copy(showSetRemaining = it) }
-                Text("Metronome", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("Metronome", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 SettingToggle("Auto-start when the song changes", settings.metronomeAutostart) { settings = settings.copy(metronomeAutostart = it) }
                 SettingToggle("Start muted", settings.metronomeMuted) { settings = settings.copy(metronomeMuted = it) }
                 LabeledChoice("Beat mode", listOf("Tempo", "Downbeat"), settings.metronomeMode.replaceFirstChar(Char::uppercase)) {
@@ -3675,8 +3725,8 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
                 }
             }
             "Performance Material" -> {
-                Text("Performance Material", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                Text("When a song has no explicit live default, Leviathan Live checks these attachment types in order.", color = TextSoft, fontSize = 13.sp)
+                Text("Performance Material", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("When a song has no explicit live default, Leviathan Live checks these attachment types in order.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 settings.attachmentPreferences.take(5).forEachIndexed { index, preference ->
                     AttachmentPreferenceChoice(index + 1, preference) { selected ->
                         settings = settings.copy(
@@ -3686,10 +3736,10 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
                 }
             }
             "Page Turner" -> {
-                Text("Bluetooth Page Turner", color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                Text("This device uses the canonical page-turner configuration synchronized from the web application.", color = TextSoft, fontSize = 13.sp, lineHeight = 18.sp)
+                Text("Bluetooth Page Turner", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("This device uses the canonical page-turner configuration synchronized from the web application.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 18.sp)
                 Text(if (settings.pedalEnabled) "Enabled" else "Disabled", color = if (settings.pedalEnabled) Color(0xFF58E99B) else TextSoft, fontWeight = FontWeight.Black)
-                Text("${settings.pedalButtonCount} buttons  |  ${settings.pedalMode.replaceFirstChar(Char::uppercase)} mode  |  ${settings.pedalScrollAmount.replaceFirstChar(Char::uppercase)} scroll", color = Color.White, fontSize = 14.sp)
+                Text("${settings.pedalButtonCount} buttons  |  ${settings.pedalMode.replaceFirstChar(Char::uppercase)} mode  |  ${settings.pedalScrollAmount.replaceFirstChar(Char::uppercase)} scroll", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                 val bindings = settings.resolvedPedalBindings()
                 bindings.forEachIndexed { index, binding ->
                     Text("Button ${index + 1}: ${pedalKeyLabel(binding.key)} - ${binding.action.label}", color = if (binding.action == PedalAction.IGNORE) TextSoft else Cyan, fontSize = 13.sp)
@@ -3699,7 +3749,7 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
                 ) {
-                    Text("Manage Page Turner on Web", color = Color.White, fontWeight = FontWeight.Black)
+                    Text("Manage Page Turner on Web", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
                 }
             }
             else -> WearCompanionPanel()
@@ -3708,7 +3758,7 @@ private fun LeviathanLiveSettingsPanel(model: StudioRackViewModel) {
             StudioButton(onClick = { model.savePerformanceSettings(settings) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Save Leviathan Live Settings", color = Ink, fontWeight = FontWeight.Black)
             }
-            Text("Settings take effect on this device immediately and synchronize when connected.", color = TextSoft, fontSize = 12.sp)
+            Text("Settings take effect on this device immediately and synchronize when connected.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
     }
 }
@@ -3737,7 +3787,7 @@ private fun WearCompanionPanel(compact: Boolean = false) {
                 Modifier.size(if (compact) 42.dp else 54.dp).graphicsLayer(alpha = if (isTablet) 0.42f else 1f),
             )
             Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                Text("Wear OS Companion", color = if (isTablet) TextSoft else Color.White, fontSize = if (compact) 18.sp else 21.sp, fontWeight = FontWeight.Black)
+                Text("Wear OS Companion", color = if (isTablet) TextSoft else MaterialTheme.colorScheme.onSurface, fontSize = if (compact) 18.sp else 21.sp, fontWeight = FontWeight.Black)
                 Text(
                     when {
                         isTablet -> "Unavailable on tablets"
@@ -3768,7 +3818,7 @@ private fun WearCompanionPanel(compact: Boolean = false) {
         if (!compact) {
             Text(
                 "The watch shows the current and next song, set and medley position, transport controls, and a synchronized haptic metronome. The paired Android phone remains the watch connection authority.",
-                color = TextSoft,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 lineHeight = 19.sp,
             )
@@ -3783,7 +3833,7 @@ private fun WearCompanionPanel(compact: Boolean = false) {
                 Text(
                     device.name.ifBlank { "Wear OS watch" },
                     modifier = Modifier.weight(1f),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     lineHeight = 20.sp,
                 )
@@ -3804,7 +3854,7 @@ private fun WearCompanionPanel(compact: Boolean = false) {
             }
         }
         if (status.error.isNotBlank()) Text(status.error, color = Color(0xFFFF8A8A), fontSize = 12.sp)
-        if (resultMessage.isNotBlank()) Text(resultMessage, color = TextSoft, fontSize = 12.sp)
+        if (resultMessage.isNotBlank()) Text(resultMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         FlowRow(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -3813,7 +3863,7 @@ private fun WearCompanionPanel(compact: Boolean = false) {
             StudioButton(
                 onClick = { WearCompanionManager.refresh(context) },
                 kind = StudioButtonKind.Secondary,
-            ) { Text("Refresh", color = Color.White, fontWeight = FontWeight.Bold) }
+            ) { Text("Refresh", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
             if (status.missingDevices.isNotEmpty()) {
                 StudioButton(
                     onClick = {
@@ -3825,7 +3875,7 @@ private fun WearCompanionPanel(compact: Boolean = false) {
         if (!status.isReady) {
             Text(
                 "Install on Watch uses Google Play and will become active with the Studio Leviathan Wear OS test track. Alpha APK installation remains available for development devices.",
-                color = TextSoft,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,
             )
@@ -3842,10 +3892,10 @@ private fun AttachmentPreferenceChoice(priority: Int, selected: String, choose: 
     )
     var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text("Priority $priority", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Priority $priority", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Box(Modifier.fillMaxWidth()) {
             StudioButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                Text(options[selected] ?: selected.humanize(), color = Color.White, fontWeight = FontWeight.Bold)
+                Text(options[selected] ?: selected.humanize(), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { (value, label) ->
@@ -3863,7 +3913,7 @@ private fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boo
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Switch(checked = checked, onCheckedChange = onCheckedChange, colors = studioSwitchColors())
-        Text(label, color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(start = 10.dp))
+        Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, modifier = Modifier.padding(start = 10.dp))
     }
 }
 
@@ -3880,7 +3930,7 @@ private fun studioSwitchColors() = SwitchDefaults.colors(
 @Composable
 private fun LabeledChoice(label: String, options: List<String>, selected: String, choose: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         ChoiceStrip(options, selected, choose)
     }
 }
@@ -3916,7 +3966,7 @@ private fun RecordListScreen(
 private fun SectionHeading(eyebrow: String, title: String, eyebrowColor: Color = Amber) {
     Column(Modifier.padding(top = 4.dp, bottom = 2.dp)) {
         Text(eyebrow, color = eyebrowColor, fontSize = 11.sp, fontWeight = FontWeight.Black)
-        Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 26.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -3926,7 +3976,7 @@ private enum class SubBrand { Live, Crew }
 private fun SubBrandSectionHeading(kind: SubBrand, title: String = "") {
     Column(Modifier.padding(top = 4.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         SubBrandLockup(kind)
-        if (title.isNotBlank()) Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        if (title.isNotBlank()) Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 26.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -3937,11 +3987,11 @@ private fun SubBrandLockup(kind: SubBrand, modifier: Modifier = Modifier) {
         Image(painterResource(R.drawable.brand_logo), null, Modifier.size(54.dp))
         Box(Modifier.width(3.dp).height(46.dp).background(Amber, RoundedCornerShape(2.dp)))
         Column {
-            Text("LEVIATHAN", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Text("LEVIATHAN", color = MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(kind.name.uppercase(), color = accent, fontSize = 27.sp, fontWeight = FontWeight.Black)
                 if (kind == SubBrand.Crew) {
-                    Surface(color = Cyan, contentColor = Ink, shape = RoundedCornerShape(6.dp)) {
+                    Surface(color = MaterialTheme.colorScheme.secondary, contentColor = Ink, shape = RoundedCornerShape(6.dp)) {
                         Icon(Icons.Rounded.Groups, null, Modifier.size(30.dp).padding(4.dp), tint = Ink)
                     }
                 } else {
@@ -3974,8 +4024,8 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
             .border(BorderStroke(1.dp, Color(0x263CD9FF)), RoundedCornerShape(8.dp)),
     ) {
         Column(Modifier.padding(14.dp)) {
-            Text(label.uppercase(), color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Black)
-            Text(value, color = Amber, fontSize = 25.sp, fontWeight = FontWeight.Black)
+            Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black)
+            Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 25.sp, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -3992,7 +4042,7 @@ private fun ChoiceStrip(options: List<String>, selected: String, choose: (String
             StudioButton(
                 onClick = { choose(option) },
                 kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary,
-            ) { Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold) }
+            ) { Text(option, color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
         }
     }
 }
@@ -4008,7 +4058,7 @@ private fun SessionChoiceStrip(selected: String, choose: (String) -> Unit) {
         StudioButton(
             onClick = { choose("Schedule") },
             kind = if (selected == "Schedule") StudioButtonKind.Primary else StudioButtonKind.Secondary,
-        ) { Text("Schedule", color = if (selected == "Schedule") Ink else Color.White, fontWeight = FontWeight.Bold) }
+        ) { Text("Schedule", color = if (selected == "Schedule") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
         SubBrandIconButton(SubBrand.Live, "Leviathan Live", { choose("Leviathan Live") }, selected == "Leviathan Live")
     }
 }
@@ -4023,13 +4073,13 @@ private fun MoreChoiceStrip(selected: String, agentName: String, choose: (String
     ) {
         listOf("Reports", "Sharing", "People", "Members").forEach { option ->
             StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
-                Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold)
+                Text(option, color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             }
         }
         SubBrandIconButton(SubBrand.Crew, "Leviathan Crew", { choose(agentName) }, selected == agentName)
         listOf("Module Data", "Modules", "Help", "Sync", "Settings").forEach { option ->
             StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
-                Text(option, color = if (option == selected) Ink else Color.White, fontWeight = FontWeight.Bold)
+                Text(option, color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -4070,22 +4120,22 @@ private fun ExpandableRecordCard(
                         )
                     } else {
                         Box(imageModifier, contentAlignment = Alignment.Center) {
-                            Text(imageFallback, color = Amber, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                            Text(imageFallback, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Black)
                         }
                     }
                     Spacer(Modifier.width(11.dp))
                 }
                 Column(Modifier.weight(1f)) {
-                    Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    if (subtitle.isNotBlank()) Text(subtitle, color = TextSoft, fontSize = 13.sp)
+                    Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    if (subtitle.isNotBlank()) Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
-                if (actionLabel != null && action != null) TextButton(onClick = action) { Text(actionLabel, color = Amber, fontWeight = FontWeight.Bold) }
-                Text(if (expanded) "-" else "+", color = Amber, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                if (actionLabel != null && action != null) TextButton(onClick = action) { Text(actionLabel, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
+                Text(if (expanded) "-" else "+", color = MaterialTheme.colorScheme.primary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 chips.filter(String::isNotBlank).forEach { chip ->
                     Surface(color = Color(0xFF332A1D), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Color(0xFF674B16))) {
-                        Text(chip, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+                        Text(chip, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
                     }
                 }
             }
@@ -4098,14 +4148,14 @@ private fun ExpandableRecordCard(
 private fun DetailLine(label: String, value: String) {
     if (value.isBlank()) return
     Column(Modifier.fillMaxWidth()) {
-        Text(label, color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
-        Text(value, color = Color.White, fontSize = 14.sp)
+        Text(label, color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, fontWeight = FontWeight.Black)
+        Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
     }
 }
 
 @Composable
 private fun InfoCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = PanelRaised), shape = RoundedCornerShape(8.dp)) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(8.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
     }
 }
@@ -4113,9 +4163,9 @@ private fun InfoCard(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun ReportCard(title: String, primary: String, secondary: String) {
     InfoCard {
-        Text(title, color = Amber, fontWeight = FontWeight.Bold)
-        if (primary.isNotBlank()) Text(primary, color = Color.White, fontSize = 18.sp)
-        if (secondary.isNotBlank()) Text(secondary, color = TextSoft, fontSize = 12.sp)
+        Text(title, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        if (primary.isNotBlank()) Text(primary, color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp)
+        if (secondary.isNotBlank()) Text(secondary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
 }
 
@@ -4153,13 +4203,13 @@ private fun CareSummary(rows: List<MaintenanceRow>, model: StudioRackViewModel) 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             counts.forEach { (label, count) ->
                 Column(Modifier.weight(1f)) {
-                    Text(label.uppercase(), color = TextSoft, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                    Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 8.sp, fontWeight = FontWeight.Black)
                     Text(count.toString(), color = if (label == "Past due") Color(0xFFE55757) else Amber, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 }
             }
         }
         if (attention.isEmpty()) {
-            Text("Nothing is past due, due today, or coming up inside the current care window.", color = TextSoft)
+            Text("Nothing is past due, due today, or coming up inside the current care window.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             attention.take(8).forEach { row ->
                 ExpandableRecordCard(
@@ -4283,7 +4333,7 @@ private fun CachedNetworkImage(
                 ),
             )
         } else {
-            Text(fallbackText, color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
+            Text(fallbackText, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -4301,9 +4351,9 @@ private fun ReferenceGroup(title: String, rows: List<SupportingRecord>) {
 
 @Composable
 private fun ReferenceRows(title: String, rows: List<SupportingRecord>) {
-    Text(title, color = Amber, fontSize = 13.sp, fontWeight = FontWeight.Black)
+    Text(title, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Black)
     if (rows.isEmpty()) {
-        Text("No workspace entries", color = TextSoft, fontSize = 12.sp)
+        Text("No workspace entries", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     } else {
         rows.forEach { record ->
             val json = supportingJson(record)
@@ -4334,7 +4384,7 @@ private fun ModuleReferenceGroup(title: String, rows: List<SupportingRecord>) {
     }.toSortedMap()
     ExpandableRecordCard(title, "${rows.size} available", emptyList()) {
         grouped.forEach { (groupName, entries) ->
-            Text(groupName, color = Amber, fontSize = 13.sp, fontWeight = FontWeight.Black)
+            Text(groupName, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Black)
             entries.forEach { (record, json) ->
                 val state = json.optString("reference_state_label")
                 val usage = json.optInt("usage_count")
@@ -4505,10 +4555,10 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     EditorDialog(if (target.id == null) "Add Song" else "Edit Song", close) {
         StudioField("Song title", title) { title = it }
         StudioField("Artist", artist) { artist = it }
-        Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Find Recording Metadata", color = Color.White, fontWeight = FontWeight.Bold)
-                Text("Search by title and artist, choose the correct recording, then review the imported values before saving.", color = TextSoft, fontSize = 11.sp)
+                Text("Find Recording Metadata", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                Text("Search by title and artist, choose the correct recording, then review the imported values before saving.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 StudioButton(
                     onClick = {
                         if (title.isBlank()) {
@@ -4531,19 +4581,19 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                     enabled = !metadataBusy,
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
-                ) { Text(if (metadataBusy) "Searching..." else "Search GetSongBPM", color = Color.White, fontWeight = FontWeight.Bold) }
+                ) { Text(if (metadataBusy) "Searching..." else "Search GetSongBPM", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 TextButton(onClick = { uriHandler.openUri("https://getsongbpm.com") }) {
-                    Text("Song data by GetSongBPM", color = TextSoft, fontSize = 11.sp)
+                    Text("Song data by GetSongBPM", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 }
                 TextButton(onClick = { uriHandler.openUri("https://lrclib.net") }) {
-                    Text("Duration data by LRCLIB", color = TextSoft, fontSize = 11.sp)
+                    Text("Duration data by LRCLIB", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 }
                 if (metadataMessage.isNotBlank()) Text(metadataMessage, color = if (metadataResults.isEmpty() && !metadataBusy) Amber else TextSoft, fontSize = 12.sp)
                 metadataResults.forEach { item ->
                     Surface(color = PanelRaised, border = BorderStroke(1.dp, Amber.copy(alpha = .25f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(listOf(item.optString("title"), item.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = Color.White, fontWeight = FontWeight.Bold)
-                            Text(listOf(item.optString("album"), item.optString("release_year"), item.optString("genre"), item.optString("tempo").takeIf(String::isNotBlank)?.let { "$it BPM" }.orEmpty(), item.optString("song_key"), item.optString("time_signature"), item.optString("duration_label").takeIf(String::isNotBlank)?.let { "Length $it (LRCLIB)" }.orEmpty()).filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 11.sp)
+                            Text(listOf(item.optString("title"), item.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            Text(listOf(item.optString("album"), item.optString("release_year"), item.optString("genre"), item.optString("tempo").takeIf(String::isNotBlank)?.let { "$it BPM" }.orEmpty(), item.optString("song_key"), item.optString("time_signature"), item.optString("duration_label").takeIf(String::isNotBlank)?.let { "Length $it (LRCLIB)" }.orEmpty()).filter(String::isNotBlank).joinToString(" | "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                             StudioButton(onClick = {
                                 title = item.optString("title").ifBlank { title }; artist = item.optString("artist").ifBlank { artist }
                                 album = item.optString("album"); releaseYear = item.optString("release_year"); genre = item.optString("genre")
@@ -4593,7 +4643,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                 }
             }
         }
-        Text("Key notation: use # for sharp, b for flat; no accidental means natural. Musical symbols are also accepted.", color = TextSoft, fontSize = 10.sp)
+        Text("Key notation: use # for sharp, b for flat; no accidental means natural. Musical symbols are also accepted.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
         StudioField("Who starts", starts) { starts = it }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("Patch name", patchName) { patchName = it } }
@@ -4602,12 +4652,12 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
         StudioField("Listen / media URL", media, dictation = false) { media = it }
         StudioField("Notes", notes, singleLine = false) { notes = it }
         SettingToggle("Favorite", favorite) { favorite = it }
-        Text("Attachments", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-        Text("Add charts, lyrics, tablature, sheet music, MIDI, or DMX-MIDI control files now. Files are copied to this device immediately and uploaded on the next sync.", color = TextSoft, fontSize = 11.sp)
-        Surface(color = Cyan.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Text("Attachments", color = MaterialTheme.colorScheme.onSurface, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        Text("Add charts, lyrics, tablature, sheet music, MIDI, or DMX-MIDI control files now. Files are copied to this device immediately and uploaded on the next sync.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+        Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Find Lyrics", color = Color.White, fontWeight = FontWeight.Bold)
-                Text("Search LRCLIB, preview the matches, then import plain, synchronized, or ChordPro lyrics.", color = TextSoft, fontSize = 11.sp)
+                Text("Find Lyrics", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                Text("Search LRCLIB, preview the matches, then import plain, synchronized, or ChordPro lyrics.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 StudioButton(
                     onClick = {
                         if (title.isBlank()) lyricsMessage = "Enter a song title first."
@@ -4629,18 +4679,18 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                     enabled = !lyricsBusy,
                     modifier = Modifier.fillMaxWidth(),
                     kind = StudioButtonKind.Secondary,
-                ) { Text(if (lyricsBusy) "Searching..." else "Search LRCLIB", color = Color.White, fontWeight = FontWeight.Bold) }
-                TextButton(onClick = { uriHandler.openUri("https://lrclib.net") }) { Text("Lyrics provided by LRCLIB", color = TextSoft, fontSize = 11.sp) }
-                if (lyricsMessage.isNotBlank()) Text(lyricsMessage, color = TextSoft, fontSize = 12.sp)
+                ) { Text(if (lyricsBusy) "Searching..." else "Search LRCLIB", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+                TextButton(onClick = { uriHandler.openUri("https://lrclib.net") }) { Text("Lyrics provided by LRCLIB", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) }
+                if (lyricsMessage.isNotBlank()) Text(lyricsMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 lyricsResults.forEach { item ->
                     var expanded by remember(item.optString("source_id")) { mutableStateOf(false) }
                     Surface(color = PanelRaised, border = BorderStroke(1.dp, Amber.copy(alpha = .25f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text(listOf(item.optString("title"), item.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = Color.White, fontWeight = FontWeight.Bold)
-                            Text(listOf(item.optString("album"), item.optString("duration_label"), if (item.optBoolean("instrumental")) "Instrumental" else "").filter(String::isNotBlank).joinToString(" | "), color = TextSoft, fontSize = 11.sp)
+                            Text(listOf(item.optString("title"), item.optString("artist")).filter(String::isNotBlank).joinToString(" - "), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            Text(listOf(item.optString("album"), item.optString("duration_label"), if (item.optBoolean("instrumental")) "Instrumental" else "").filter(String::isNotBlank).joinToString(" | "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                             if (item.optString("plain_lyrics").isNotBlank()) {
-                                Text(item.optString("plain_lyrics"), color = Color.White, fontSize = 12.sp, maxLines = if (expanded) Int.MAX_VALUE else 5)
-                                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Collapse Preview" else "Preview Lyrics", color = Cyan) }
+                                Text(item.optString("plain_lyrics"), color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, maxLines = if (expanded) Int.MAX_VALUE else 5)
+                                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Collapse Preview" else "Preview Lyrics", color = MaterialTheme.colorScheme.secondary) }
                             }
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (item.optInt("duration_seconds") > 0 && duration.isBlank()) {
@@ -4653,11 +4703,11 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                                             durationCheckedUtc = item.optString("retrieved_utc")
                                             lyricsMessage = "Duration ${item.optString("duration_label")} added. Review and save the song."
                                         }
-                                    }, kind = StudioButtonKind.Secondary) { Text("Use Duration: ${item.optString("duration_label")}", color = Color.White, fontWeight = FontWeight.Bold) }
+                                    }, kind = StudioButtonKind.Secondary) { Text("Use Duration: ${item.optString("duration_label")}", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                                 }
                                 if (item.optString("plain_lyrics").isNotBlank()) {
-                                    StudioButton(onClick = { queueLyrics(item, "plain", item.optString("plain_lyrics")) }, kind = StudioButtonKind.Secondary) { Text("Plain", color = Color.White, fontWeight = FontWeight.Bold) }
-                                    StudioButton(onClick = { queueLyrics(item, "chordpro", item.optString("chordpro")) }, kind = StudioButtonKind.Secondary) { Text("ChordPro", color = Color.White, fontWeight = FontWeight.Bold) }
+                                    StudioButton(onClick = { queueLyrics(item, "plain", item.optString("plain_lyrics")) }, kind = StudioButtonKind.Secondary) { Text("Plain", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+                                    StudioButton(onClick = { queueLyrics(item, "chordpro", item.optString("chordpro")) }, kind = StudioButtonKind.Secondary) { Text("ChordPro", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                                     StudioButton(onClick = {
                                         lyricsBusy = true
                                         lyricsMessage = "Crew is identifying song sections..."
@@ -4669,7 +4719,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                                         }
                                     }, enabled = !lyricsBusy) { Text("Crew Structure", color = Ink, fontWeight = FontWeight.Black) }
                                 }
-                                if (item.optString("synced_lyrics").isNotBlank()) StudioButton(onClick = { queueLyrics(item, "lrc", item.optString("synced_lyrics")) }, kind = StudioButtonKind.Secondary) { Text("Synced", color = Color.White, fontWeight = FontWeight.Bold) }
+                                if (item.optString("synced_lyrics").isNotBlank()) StudioButton(onClick = { queueLyrics(item, "lrc", item.optString("synced_lyrics")) }, kind = StudioButtonKind.Secondary) { Text("Synced", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                             }
                         }
                     }
@@ -4681,12 +4731,12 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             onClick = { attachmentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "audio/midi", "audio/x-midi", "application/x-midi")) },
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
-        ) { Text("Add $attachmentType File", color = Color.White, fontWeight = FontWeight.Bold) }
+        ) { Text("Add $attachmentType File", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
         StudioButton(
             onClick = { writingLyrics = !writingLyrics },
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
-        ) { Text(if (writingLyrics) "Close Lyrics Editor" else "Write Lyrics / ChordPro", color = Color.White, fontWeight = FontWeight.Bold) }
+        ) { Text(if (writingLyrics) "Close Lyrics Editor" else "Write Lyrics / ChordPro", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
         if (writingLyrics) {
             StudioField("Material name", lyricsName, dictation = false) { lyricsName = it }
             ChordProEditor(lyricsDraft) { lyricsDraft = it }
@@ -4754,7 +4804,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
 @OptIn(ExperimentalLayoutApi::class)
 private fun ChordProEditor(value: TextFieldValue, onValueChange: (TextFieldValue) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Lyrics / ChordPro", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Lyrics / ChordPro", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf(
                 "Verse" to ("{start_of_verse}\n" to "\n{end_of_verse}"),
@@ -4764,7 +4814,7 @@ private fun ChordProEditor(value: TextFieldValue, onValueChange: (TextFieldValue
                 "Chord" to ("[" to "]"), "Bold" to ("**" to "**"), "Italic" to ("*" to "*"),
             ).forEach { (label, markers) ->
                 TextButton(onClick = { onValueChange(wrapTextSelection(value, markers.first, markers.second)) }) {
-                    Text(label, color = Cyan, fontWeight = FontWeight.Bold)
+                    Text(label, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -4773,7 +4823,7 @@ private fun ChordProEditor(value: TextFieldValue, onValueChange: (TextFieldValue
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp),
             placeholder = { Text("{start_of_verse}\nLyrics with optional [C]chords...\n{end_of_verse}") },
-            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace, color = Color.White),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface),
         )
     }
 }
@@ -4797,11 +4847,11 @@ private fun TextMaterialEditor(record: CachedRecord, model: StudioRackViewModel)
         Column(Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(name.ifBlank { "Lyrics" }, color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("${format.uppercase()} material - available offline", color = TextSoft, fontSize = 11.sp)
-                    original.optString("source_attribution").takeIf(String::isNotBlank)?.let { Text(it, color = TextSoft, fontSize = 10.sp) }
+                    Text(name.ifBlank { "Lyrics" }, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text("${format.uppercase()} material - available offline", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    original.optString("source_attribution").takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp) }
                 }
-                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Close" else "Edit", color = Cyan, fontWeight = FontWeight.Bold) }
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Close" else "Edit", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold) }
             }
             if (expanded) {
                 StudioField("Material name", name, dictation = false) { name = it }
@@ -4830,11 +4880,11 @@ private fun AttachmentEditorRow(label: String, detail: String, view: (() -> Unit
     Surface(color = Panel, border = BorderStroke(1.dp, Color(0x33FFFFFF)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(label, color = Color.White, fontWeight = FontWeight.Bold)
-                Text(detail, color = TextSoft, fontSize = 11.sp)
+                Text(label, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
-            view?.let { TextButton(onClick = it) { Text("View", color = Cyan, fontWeight = FontWeight.Bold) } }
-            remove?.let { TextButton(onClick = it) { Text("Remove", color = Amber, fontWeight = FontWeight.Bold) } }
+            view?.let { TextButton(onClick = it) { Text("View", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold) } }
+            remove?.let { TextButton(onClick = it) { Text("Remove", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) } }
         }
     }
 }
@@ -4854,8 +4904,8 @@ private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> U
         Surface(Modifier.fillMaxSize(), color = Ink) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(attachment.displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = close) { Text("Close", color = Cyan) }
+                    Text(attachment.displayName, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = close) { Text("Close", color = MaterialTheme.colorScheme.secondary) }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     DocumentNightModeToggle(nightMode.value) {
@@ -4865,11 +4915,11 @@ private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> U
                 }
                 if (pageCount > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = page > 0) { Text("Previous", color = if (page > 0) Amber else TextSoft) }
-                    Text("${page + 1} / $pageCount", color = TextSoft, modifier = Modifier.padding(12.dp))
+                    Text("${page + 1} / $pageCount", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(12.dp))
                     TextButton(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }, enabled = page < pageCount - 1) { Text("Next", color = if (page < pageCount - 1) Amber else TextSoft) }
                 }
                 val rendered = bitmap
-                if (rendered == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Cyan) }
+                if (rendered == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = MaterialTheme.colorScheme.secondary) }
                 else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     Image(
                         rendered.asImageBitmap(),
@@ -4890,8 +4940,8 @@ private fun TextAttachmentPreviewDialog(name: String, content: String, close: ()
         Surface(Modifier.fillMaxSize(), color = Ink) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = close) { Text("Close", color = Cyan) }
+                    Text(name, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = close) { Text("Close", color = MaterialTheme.colorScheme.secondary) }
                 }
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
                     ChordProDocument(content)
@@ -4974,8 +5024,8 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
     var contactQuery by remember(target.id) { mutableStateOf("") }
     EditorDialog(if (original.optString("_copy_source_id").isNotBlank()) "Copy Scheduled Event" else if (target.id == null) "Add Scheduled Event" else "Edit Scheduled Event", close) {
         StudioField("Name", title) { title = it }
-        Text("Type", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("performance", "rehearsal", "studio_session", "other"), type) { type = it }
-        Text("Status", color = TextSoft, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("scheduled", "ended"), status) { status = it }
+        Text("Type", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("performance", "rehearsal", "studio_session", "other"), type) { type = it }
+        Text("Status", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold); ChoiceStrip(listOf("scheduled", "ended"), status) { status = it }
         SettingToggle("All-day event", allDay) { allDay = it }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("Date (YYYY-MM-DD)", date, dictation = false) { date = it.take(10) } }
@@ -4985,7 +5035,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
             Box(Modifier.weight(1f)) { StudioField("End Date", endDate, dictation = false) { endDate = it.take(10) } }
             if (!allDay) Box(Modifier.weight(1f)) { StudioField("End Time", endTime, dictation = false) { endTime = it.take(8) } }
         }
-        Text("Calendar color", color = TextSoft, fontWeight = FontWeight.Bold)
+        Text("Calendar color", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             CALENDAR_COLORS.forEach { value ->
                 val selected = value.equals(calendarColor, ignoreCase = true)
@@ -4997,24 +5047,24 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
                 ) {}
             }
         }
-        Text("Importance", color = TextSoft, fontWeight = FontWeight.Bold)
+        Text("Importance", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
         ChoiceStrip(listOf("normal", "important", "critical"), importance) { importance = it }
         SettingToggle("Private event", isPrivate) { isPrivate = it }
-        Text("Venue", color = TextSoft, fontWeight = FontWeight.Bold)
+        Text("Venue", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
         StudioField("Find a venue", venueQuery) { venueQuery = it }
         val visibleVenues = venues.filter { recordJson(it).optString("name").contains(venueQuery, ignoreCase = true) }
         ChoiceStrip(listOf("None") + visibleVenues.map { recordJson(it).optString("name") }, venues.firstOrNull { it.entityId == venueId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
             venueId = venues.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
         }
         StudioField("Room / Stage / Location Details", location) { location = it }
-        Text("Set list", color = TextSoft, fontWeight = FontWeight.Bold)
+        Text("Set list", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
         StudioField("Find a set list", setListQuery) { setListQuery = it }
         val visibleSetLists = setLists.filter { recordJson(it).optString("name").contains(setListQuery, ignoreCase = true) }
         ChoiceStrip(listOf("None") + visibleSetLists.map { recordJson(it).optString("name") }, setLists.firstOrNull { it.entityId == setListId }?.let { recordJson(it).optString("name") } ?: "None") { picked ->
             setListId = setLists.firstOrNull { recordJson(it).optString("name") == picked }?.entityId.orEmpty()
         }
         if (kits.isNotEmpty()) {
-            Text("Kits / Gear To Take", color = TextSoft, fontWeight = FontWeight.Bold)
+            Text("Kits / Gear To Take", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             StudioField("Find a kit", kitQuery) { kitQuery = it }
             kits.filter { supportingJson(it).optString("name").contains(kitQuery, ignoreCase = true) }.forEach { kit ->
                 val checked = kit.entityId in selectedKits
@@ -5023,7 +5073,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
         }
         StudioField("Notes", notes, singleLine = false) { notes = it }
         if (ensembles.isNotEmpty()) {
-            Text("Bands / Groups", color = TextSoft, fontWeight = FontWeight.Bold)
+            Text("Bands / Groups", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             StudioField("Find a band or group", ensembleQuery) { ensembleQuery = it }
             ensembles.filter { recordJson(it).optString("name").contains(ensembleQuery, ignoreCase = true) }.forEach { ensemble ->
                 val checked = ensemble.entityId in selectedEnsembles
@@ -5031,7 +5081,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
             }
         }
         if (contacts.isNotEmpty()) {
-            Text("People / Contacts", color = TextSoft, fontWeight = FontWeight.Bold)
+            Text("People / Contacts", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             StudioField("Find a person", contactQuery) { contactQuery = it }
             contacts.filter { contact ->
                 val data = recordJson(contact)
@@ -5045,7 +5095,7 @@ private fun EventEditor(target: EditorTarget, model: StudioRackViewModel, close:
         SettingToggle("$agentName reminder", reminder) { reminder = it }
         if (reminder) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.weight(1f)) { StudioField("How close", lead, dictation = false) { lead = it.filter(Char::isDigit).take(3) } }
-            Box(Modifier.weight(1f)) { Text("Unit", color = TextSoft); ChoiceStrip(listOf("hours", "days", "weeks"), unit) { unit = it } }
+            Box(Modifier.weight(1f)) { Text("Unit", color = MaterialTheme.colorScheme.onSurfaceVariant); ChoiceStrip(listOf("hours", "days", "weeks"), unit) { unit = it } }
         }
         val eventWindowError = validateEventWindow(date, time, endDate, endTime, allDay)
         if (date.isNotBlank() && eventWindowError != null) Text(eventWindowError, color = Color(0xFFFF7777), fontWeight = FontWeight.Bold)
@@ -5075,8 +5125,8 @@ private fun EditorDialog(title: String, close: () -> Unit, content: @Composable 
             LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) { Text("CREATE / EDIT", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black); Text(title, color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold) }
-                        TextButton(onClick = close) { Text("Close", color = Cyan) }
+                        Column(Modifier.weight(1f)) { Text("CREATE / EDIT", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black); Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 27.sp, fontWeight = FontWeight.Bold) }
+                        TextButton(onClick = close) { Text("Close", color = MaterialTheme.colorScheme.secondary) }
                     }
                 }
                 item { InfoCard(content) }
@@ -5105,9 +5155,9 @@ private fun StudioField(
 private fun EditorActions(canSave: Boolean, save: () -> Unit, delete: (() -> Unit)?) {
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         StudioButton(onClick = save, enabled = canSave, modifier = Modifier.weight(1f)) { Text("Save", color = Ink, fontWeight = FontWeight.Black) }
-        if (delete != null) StudioButton(onClick = delete, kind = StudioButtonKind.Danger) { Text("Delete", color = Color.White, fontWeight = FontWeight.Bold) }
+        if (delete != null) StudioButton(onClick = delete, kind = StudioButtonKind.Danger) { Text("Delete", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
     }
-    Text("This change is stored on this device immediately and synchronized when a connection is available.", color = TextSoft, fontSize = 11.sp)
+    Text("This change is stored on this device immediately and synchronized when a connection is available.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
 }
 
 @Composable
@@ -5133,17 +5183,17 @@ private fun SessionDetailDialog(
                 item {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = close) {
-                            Icon(Icons.Rounded.ArrowBack, "Back to schedule", tint = Cyan)
+                            Icon(Icons.Rounded.ArrowBack, "Back to schedule", tint = MaterialTheme.colorScheme.secondary)
                             Spacer(Modifier.width(6.dp))
-                            Text("Schedule", color = Cyan)
+                            Text("Schedule", color = MaterialTheme.colorScheme.secondary)
                         }
                         Spacer(Modifier.weight(1f))
-                        Text(event.optString("event_status", "scheduled").humanize(), color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                        Text(event.optString("event_status", "scheduled").humanize(), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
                     }
                 }
                 item {
-                    Text("SESSION DETAILS", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                    Text(event.optString("title", "Scheduled Session"), color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text("SESSION DETAILS", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text(event.optString("title", "Scheduled Session"), color = MaterialTheme.colorScheme.onSurface, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                 }
                 item {
                     InfoCard {
@@ -5166,14 +5216,14 @@ private fun SessionDetailDialog(
                 }
                 item {
                     StudioButton(onClick = { shareEventCalendar(context, event, displayLocation) }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                        Icon(Icons.Rounded.Share, "Share calendar file", tint = Color.White)
+                        Icon(Icons.Rounded.Share, "Share calendar file", tint = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.width(8.dp))
-                        Text("Share Calendar File (.ICS)", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Share Calendar File (.ICS)", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                     }
                 }
                 if (hasSetList) item {
                     StudioButton(onClick = openSetList, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                        Text("Open Set List", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Open Set List", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                     }
                 }
                 item { Spacer(Modifier.height(18.dp)) }
@@ -5199,20 +5249,20 @@ private fun EventCard(
     val liveModeName = stringResource(R.string.live_mode_name)
     Card(
         Modifier.fillMaxWidth().clickable(onClick = open),
-        colors = CardDefaults.cardColors(containerColor = PanelRaised),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         border = BorderStroke(1.dp, Color(0xFF343B4D)),
         shape = RoundedCornerShape(8.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(12.dp)) {
             Box(Modifier.width(4.dp).height(82.dp).background(parseCalendarColor(event.optString("calendar_color")), RoundedCornerShape(50)))
             Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp)) {
-                Text(eventDateSummary(event), color = TextSoft, fontSize = 13.sp)
-                Text(event.optString("title", "Untitled session"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text(listOf(event.optString("event_type").humanize(), event.optString("_display_location", event.optString("location"))).filter(String::isNotBlank).joinToString(" - "), color = TextSoft)
+                Text(eventDateSummary(event), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                Text(event.optString("title", "Untitled session"), color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(listOf(event.optString("event_type").humanize(), event.optString("_display_location", event.optString("location"))).filter(String::isNotBlank).joinToString(" - "), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(Modifier.padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(10.dp).background(parseCalendarColor(event.optString("calendar_color")), CircleShape))
-                    Text(event.optString("importance", "normal").humanize(), color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    if (event.optInt("is_private") == 1) Text("PRIVATE", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    Text(event.optString("importance", "normal").humanize(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (event.optInt("is_private") == 1) Text("PRIVATE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black)
                 }
                 if (readiness.total > 0) {
                     Text(
@@ -5226,7 +5276,7 @@ private fun EventCard(
                 if (event.optString("set_list_id").isNotBlank() || edit != null || copy != null || host != null || people != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     if (openSetList != null) SubBrandIconButton(SubBrand.Live, "Open in $liveModeName", openSetList)
                     if (people != null) EventToolIconButton(Icons.Rounded.Groups, "People", people, peopleCount)
-                    if (host != null) TextButton(onClick = host) { Text("Host", color = Cyan, fontWeight = FontWeight.Bold) }
+                    if (host != null) TextButton(onClick = host) { Text("Host", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold) }
                     if (shareCalendar != null) EventToolIconButton(Icons.Rounded.CalendarMonth, "Share calendar file", shareCalendar)
                     if (edit != null) EventToolIconButton(Icons.Rounded.Edit, "Edit event", edit)
                     if (copy != null) EventToolIconButton(Icons.Rounded.ContentCopy, "Copy event", copy)
@@ -5252,7 +5302,7 @@ private fun EventToolIconButton(icon: ImageVector, description: String, onClick:
         }
         if (badgeCount > 0) Surface(
             modifier = Modifier.widthIn(min = 36.dp).height(22.dp).align(Alignment.TopEnd),
-            color = Amber,
+            color = MaterialTheme.colorScheme.primary,
             contentColor = Ink,
             shape = RoundedCornerShape(50),
             border = BorderStroke(2.dp, Ink),
@@ -5432,17 +5482,17 @@ private fun EventPeopleDialog(
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("EVENT ROSTER", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                        Text(event.optString("title", "Scheduled Event"), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Text("${people.size} ${if (people.size == 1) "person" else "people"} associated with this event", color = TextSoft, fontSize = 12.sp)
-                        if (groupNames.isNotEmpty()) Text("Bands / Groups: ${groupNames.joinToString(", ")}", color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("EVENT ROSTER", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Text(event.optString("title", "Scheduled Event"), color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("${people.size} ${if (people.size == 1) "person" else "people"} associated with this event", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        if (groupNames.isNotEmpty()) Text("Bands / Groups: ${groupNames.joinToString(", ")}", color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
-                    StudioButton(onClick = close, kind = StudioButtonKind.Secondary) { Text("Close", color = Color.White) }
+                    StudioButton(onClick = close, kind = StudioButtonKind.Secondary) { Text("Close", color = MaterialTheme.colorScheme.onSurface) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StudioButton(onClick = { shareEventCalendar(context, event, event.optString("_display_location", event.optString("location"))) }, kind = StudioButtonKind.Secondary) { Text("Share .ICS", color = Color.White, fontWeight = FontWeight.Bold) }
+                    StudioButton(onClick = { shareEventCalendar(context, event, event.optString("_display_location", event.optString("location"))) }, kind = StudioButtonKind.Secondary) { Text("Share .ICS", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     if (participantPhones.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "smsto", participantPhones) }) { Text("Text Participants", color = Ink, fontWeight = FontWeight.Bold) }
-                    if (participantEmails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", participantEmails) }, kind = StudioButtonKind.Secondary) { Text("Email Participants", color = Color.White, fontWeight = FontWeight.Bold) }
+                    if (participantEmails.isNotEmpty()) StudioButton(onClick = { openGroupContactLink(context, "mailto", participantEmails) }, kind = StudioButtonKind.Secondary) { Text("Email Participants", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
                 EventRecipientScopeChoice(scopeOptions, recipientScope) { choice ->
                     recipientScope = choice
@@ -5457,7 +5507,7 @@ private fun EventPeopleDialog(
                         onClick = { shareEventCalendar(context, event, event.optString("_display_location", event.optString("location")), selectedEmails) },
                         enabled = selectedEmails.isNotEmpty(),
                         kind = StudioButtonKind.Secondary,
-                    ) { Text("Email .ICS (${selectedEmails.size})", color = Color.White, fontWeight = FontWeight.Bold) }
+                    ) { Text("Email .ICS (${selectedEmails.size})", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (people.isEmpty()) item { EmptyCard("A band or group is selected, but it has no connected members yet.") }
@@ -5488,10 +5538,10 @@ private fun EventPeopleDialog(
 private fun EventRecipientScopeChoice(options: List<String>, selected: String, choose: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text("Choose recipients", color = TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Choose recipients", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Box(Modifier.fillMaxWidth()) {
             StudioButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                Text(selected, color = Color.White, fontWeight = FontWeight.Bold)
+                Text(selected, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
@@ -5517,46 +5567,46 @@ private fun LocalLiveDialog(model: StudioRackViewModel, suggestedEvent: JSONObje
         ) {
             Column(Modifier.padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.WifiTethering, contentDescription = null, tint = Cyan, modifier = Modifier.size(34.dp))
+                    Icon(Icons.Rounded.WifiTethering, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(34.dp))
                     Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                        Text("LOCAL LIVE NETWORK", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                        Text("Play together without internet", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                        Text("LOCAL LIVE NETWORK", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Text("Play together without internet", color = MaterialTheme.colorScheme.onSurface, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                     }
-                    TextButton(onClick = close) { Text("Close", color = TextSoft) }
+                    TextButton(onClick = close) { Text("Close", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 when (state.role) {
                     LocalLiveRole.HOST -> {
                         Text("HOSTING", color = Color(0xFF58E99B), fontWeight = FontWeight.Black)
-                        Text(state.sessionName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text("Session code", color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(state.code, color = Amber, fontSize = 36.sp, fontWeight = FontWeight.Black)
+                        Text(state.sessionName, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Session code", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(state.code, color = MaterialTheme.colorScheme.primary, fontSize = 36.sp, fontWeight = FontWeight.Black)
                         DetailLine("Local address", state.address)
                         DetailLine("Connected devices", state.peerCount.toString())
-                        Text("Keep this screen awake and connected to the same Wi-Fi or hotspot. Internet access is not required.", color = TextSoft, fontSize = 12.sp)
+                        Text("Keep this screen awake and connected to the same Wi-Fi or hotspot. Internet access is not required.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         StudioButton(onClick = model::leaveLocalLive, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Danger) {
-                            Text("Stop Hosting", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Stop Hosting", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                         }
                     }
                     LocalLiveRole.GUEST -> {
                         Text(if (state.connected) "LOCAL LIVE CONNECTED" else "CONNECTING TO HOST", color = if (state.connected) Color(0xFF58E99B) else Amber, fontWeight = FontWeight.Black)
-                        Text(state.sessionName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(state.sessionName, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         DetailLine("Host", state.address)
                         state.error?.let { Text(it, color = Color(0xFFFF7A82), fontSize = 12.sp) }
-                        Text("Set-list changes from the host are being written into this device's offline database.", color = TextSoft, fontSize = 12.sp)
+                        Text("Set-list changes from the host are being written into this device's offline database.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         StudioButton(onClick = model::leaveLocalLive, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Danger) {
-                            Text("Leave Local Session", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Leave Local Session", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                         }
                     }
                     LocalLiveRole.NONE -> {
                         suggestedEvent?.takeIf { it.optString("set_list_id").isNotBlank() }?.let { event ->
-                            Text("Host this session", color = Color.White, fontWeight = FontWeight.Bold)
-                            Text(event.optString("title", "Scheduled session"), color = TextSoft)
+                            Text("Host this session", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            Text(event.optString("title", "Scheduled session"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             StudioButton(
                                 onClick = { model.hostLocalLive(event.optString("id"), event.optString("title", "Local Live Session")) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("I'm the Host", color = Ink, fontWeight = FontWeight.Black) }
                         }
-                        Text("Join a nearby host", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Join a nearby host", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                         OutlinedTextField(
                             value = code,
                             onValueChange = { code = it.filter(Char::isDigit).take(6) },
@@ -5566,11 +5616,11 @@ private fun LocalLiveDialog(model: StudioRackViewModel, suggestedEvent: JSONObje
                         )
                         peers.forEach { peer ->
                             StudioButton(onClick = { model.joinLocalLive(peer, code) }, enabled = code.length == 6, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
-                                Text("Join ${peer.name.removePrefix("Leviathan - ")}", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Join ${peer.name.removePrefix("Leviathan - ")}", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                             }
                         }
-                        if (peers.isEmpty()) Text("Looking for Leviathan Live hosts on this Wi-Fi...", color = TextSoft, fontSize = 12.sp)
-                        Text("Manual connection", color = TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        if (peers.isEmpty()) Text("Looking for Leviathan Live hosts on this Wi-Fi...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        Text("Manual connection", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         OutlinedTextField(
                             value = manualAddress,
                             onValueChange = { manualAddress = it.trim() },
@@ -5590,7 +5640,7 @@ private fun LocalLiveDialog(model: StudioRackViewModel, suggestedEvent: JSONObje
                             enabled = code.length == 6 && manualAddress.contains(':'),
                             modifier = Modifier.fillMaxWidth(),
                             kind = StudioButtonKind.Secondary,
-                        ) { Text("Connect by Address", color = Color.White, fontWeight = FontWeight.Bold) }
+                        ) { Text("Connect by Address", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     }
                 }
             }
@@ -5988,14 +6038,14 @@ private fun GigModeScreen(
                 modifier = Modifier.fillMaxWidth().fillMaxHeight(.9f).widthIn(max = 820.dp),
             ) {
                 Column(Modifier.padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("LEVIATHAN LIVE", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                    Text("Live Hardware", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("LEVIATHAN LIVE", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text("Live Hardware", color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StudioButton(onClick = { liveHardwareView = "device" }, kind = if (liveHardwareView == "device") StudioButtonKind.Primary else StudioButtonKind.Secondary) { Text("Devices", color = if (liveHardwareView == "device") Ink else Color.White, fontWeight = FontWeight.Bold) }
-                        StudioButton(onClick = { liveHardwareView = "routing" }, kind = if (liveHardwareView == "routing") StudioButtonKind.Primary else StudioButtonKind.Secondary) { Text("Routing", color = if (liveHardwareView == "routing") Ink else Color.White, fontWeight = FontWeight.Bold) }
+                        StudioButton(onClick = { liveHardwareView = "device" }, kind = if (liveHardwareView == "device") StudioButtonKind.Primary else StudioButtonKind.Secondary) { Text("Devices", color = if (liveHardwareView == "device") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+                        StudioButton(onClick = { liveHardwareView = "routing" }, kind = if (liveHardwareView == "routing") StudioButtonKind.Primary else StudioButtonKind.Secondary) { Text("Routing", color = if (liveHardwareView == "routing") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     }
                     if (liveHardwareView == "device") {
-                    Text("Audio Out", color = Cyan, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    Text("Audio Out", color = MaterialTheme.colorScheme.secondary, fontSize = 16.sp, fontWeight = FontWeight.Black)
                     StudioButton(
                         onClick = {
                             selectedAudioDeviceId = -1
@@ -6004,7 +6054,7 @@ private fun GigModeScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         kind = if (selectedAudioDeviceId < 0) StudioButtonKind.Primary else StudioButtonKind.Secondary,
-                    ) { Text("Automatic output", color = if (selectedAudioDeviceId < 0) Ink else Color.White, fontWeight = FontWeight.Bold) }
+                    ) { Text("Automatic output", color = if (selectedAudioDeviceId < 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     liveAudioDevices.forEach { device ->
                         StudioButton(
                             onClick = {
@@ -6015,12 +6065,12 @@ private fun GigModeScreen(
                             modifier = Modifier.fillMaxWidth(),
                             kind = if (device.id == selectedAudioDeviceId) StudioButtonKind.Primary else StudioButtonKind.Secondary,
                         ) {
-                            Text("${device.name}  |  ${device.maximumOutputChannels} outputs", color = if (device.id == selectedAudioDeviceId) Ink else Color.White, fontWeight = FontWeight.Bold)
+                            Text("${device.name}  |  ${device.maximumOutputChannels} outputs", color = if (device.id == selectedAudioDeviceId) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                         }
                     }
-                    Text("MIDI / DMX-MIDI Out", color = Cyan, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                    if (!midiRouter.supported) Text("MIDI output is not available on this device.", color = TextSoft)
-                    else if (midiDestinations.isEmpty()) Text("Connect or pair a MIDI device, then refresh this list.", color = TextSoft)
+                    Text("MIDI / DMX-MIDI Out", color = MaterialTheme.colorScheme.secondary, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    if (!midiRouter.supported) Text("MIDI output is not available on this device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else if (midiDestinations.isEmpty()) Text("Connect or pair a MIDI device, then refresh this list.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (midiRouter.supported) StudioButton(
                         onClick = {
                             midiRouter.select(null)
@@ -6029,7 +6079,7 @@ private fun GigModeScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         kind = if (selectedMidiKey.isBlank()) StudioButtonKind.Primary else StudioButtonKind.Secondary,
-                    ) { Text("No MIDI output", color = if (selectedMidiKey.isBlank()) Ink else Color.White, fontWeight = FontWeight.Bold) }
+                    ) { Text("No MIDI output", color = if (selectedMidiKey.isBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     midiDestinations.forEach { destination ->
                         StudioButton(
                             onClick = {
@@ -6039,7 +6089,7 @@ private fun GigModeScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             kind = if (destination.key == selectedMidiKey) StudioButtonKind.Primary else StudioButtonKind.Secondary,
-                        ) { Text(destination.label, color = if (destination.key == selectedMidiKey) Ink else Color.White, fontWeight = FontWeight.Bold) }
+                        ) { Text(destination.label, color = if (destination.key == selectedMidiKey) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     }
                     if (selectedMidiKey.isNotBlank()) SettingToggle("Send timed MIDI / DMX-MIDI cues", showControlArmed) { showControlArmed = it }
                     } else {
@@ -6056,9 +6106,9 @@ private fun GigModeScreen(
                         TextButton(onClick = {
                             midiDestinations = midiRouter.destinations()
                             audioHardwareRevision += 1
-                        }) { Text("Refresh", color = TextSoft) }
+                        }) { Text("Refresh", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
-                        TextButton(onClick = { showLiveHardware = false }) { Text("Done", color = Amber) }
+                        TextButton(onClick = { showLiveHardware = false }) { Text("Done", color = MaterialTheme.colorScheme.primary) }
                     }
                 }
             }
@@ -6154,8 +6204,8 @@ private fun GigModeScreen(
             item {
                 val sectionSeconds = performanceSongs.filter { it.sectionName == section.optString("name", "Set") }.sumOf { it.song?.optInt("duration_seconds") ?: 0 }
                 Column(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(section.optString("name", "Set"), color = Amber, fontFamily = FontFamily.Serif, fontSize = 34.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    if (sectionSeconds > 0) Text("${formatDuration(sectionSeconds)} estimated music time", color = TextSoft, fontSize = 11.sp)
+                    Text(section.optString("name", "Set"), color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Serif, fontSize = 34.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    if (sectionSeconds > 0) Text("${formatDuration(sectionSeconds)} estimated music time", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 }
             }
             itemsIndexed(entryRows[section.optString("id")].orEmpty().sortedBy { it.optInt("position") }) { entryIndex, entry ->
@@ -6168,8 +6218,8 @@ private fun GigModeScreen(
                         BoxWithConstraints(Modifier.fillMaxWidth()) {
                             val tablet = maxWidth >= 600.dp
                             Row(Modifier.fillMaxWidth().padding(start = 18.dp, top = 14.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("${gigSong.performanceGroup.type.replaceFirstChar(Char::uppercase)}:", color = Amber, fontSize = if (tablet) 18.sp else 14.sp, fontWeight = FontWeight.Black)
-                                Text(gigSong.performanceGroup.name, color = Color.White, fontSize = if (tablet) 24.sp else 19.sp, fontWeight = FontWeight.Bold)
+                                Text("${gigSong.performanceGroup.type.replaceFirstChar(Char::uppercase)}:", color = MaterialTheme.colorScheme.primary, fontSize = if (tablet) 18.sp else 14.sp, fontWeight = FontWeight.Black)
+                                Text(gigSong.performanceGroup.name, color = MaterialTheme.colorScheme.onSurface, fontSize = if (tablet) 24.sp else 19.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -6240,10 +6290,10 @@ private fun LeviathanLivePerformanceHeader(
             LiveConnectionStatus(connected = connected, updating = updating, label = liveLabel)
             Text(
                 buildAnnotatedString {
-                    pushStyle(SpanStyle(color = Color.White, fontWeight = FontWeight.Bold))
+                    pushStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold))
                     append(setListName)
                     pop()
-                    pushStyle(SpanStyle(color = TextSoft))
+                    pushStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant))
                     append("  |  $locationLabel  |  $dateTimeLabel")
                     pop()
                 },
@@ -6313,16 +6363,16 @@ private fun SongRow(entry: JSONObject, song: JSONObject?, attachment: JSONObject
                 val titleSize = if (compact) 27.sp else 32.sp
                 Column {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(displayPosition.toString(), color = Color.White, fontSize = rowNumberSize, modifier = Modifier.padding(end = 12.dp))
-                        Text(song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.optString("manual_title", "Untitled"), color = Amber, fontFamily = FontFamily.Serif, fontSize = titleSize, modifier = Modifier.weight(1f))
+                        Text(displayPosition.toString(), color = MaterialTheme.colorScheme.onSurface, fontSize = rowNumberSize, modifier = Modifier.padding(end = 12.dp))
+                        Text(song?.optString("title")?.takeIf(String::isNotBlank) ?: entry.optString("manual_title", "Untitled"), color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Serif, fontSize = titleSize, modifier = Modifier.weight(1f))
                         if (!compact) GigSongCues(song, compact = false)
                     }
                     if (compact) GigSongCues(song, compact = true)
                 }
             }
-            Text(song?.optString("artist").orEmpty(), color = TextSoft, fontSize = if (tabletLayout) 17.sp else 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
+            Text(song?.optString("artist").orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (tabletLayout) 17.sp else 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 30.dp))
             val patch = listOf(song?.optString("patch_name"), song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
-            if (patch.isNotBlank()) Text("Patch: $patch", color = TextSoft, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
+            if (patch.isNotBlank()) Text("Patch: $patch", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
             if (attachment != null || mediaLink != null || hasPlayback || controlAssets.isNotEmpty()) {
                 FlowRow(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     if (attachment != null) {
@@ -6375,7 +6425,7 @@ private fun GigSongCues(song: JSONObject?, compact: Boolean) {
         Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.End) {
             if (cues.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    cues.forEach { Text(it, color = Color.White, fontSize = cueSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
+                    cues.forEach { Text(it, color = MaterialTheme.colorScheme.onSurface, fontSize = cueSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
                 }
             }
             FlowRow(
@@ -6388,7 +6438,7 @@ private fun GigSongCues(song: JSONObject?, compact: Boolean) {
         }
     } else {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            cues.forEach { Text(it, color = Color.White, fontSize = cueSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
+            cues.forEach { Text(it, color = MaterialTheme.colorScheme.onSurface, fontSize = cueSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) }
             facts.forEach { GigValueChip(it) }
         }
     }
@@ -6427,8 +6477,8 @@ private fun GigTimeStrip(settings: PerformanceSettings, startedAt: Long, remaini
 private fun GigTimerCell(label: String, value: String) {
     val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 5.dp)) {
-        Text(label.uppercase(), color = TextSoft, fontSize = if (tabletLayout) 14.sp else 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
-        Text(value, color = Color.White, fontSize = if (tabletLayout) 28.sp else 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (tabletLayout) 14.sp else 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
+        Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = if (tabletLayout) 28.sp else 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -6448,13 +6498,13 @@ private fun LiveAudioRoutingEditor(
     var checkingPerformance by remember { mutableStateOf(false) }
     val reportedOutputs = detectedDevice?.maximumOutputChannels?.coerceIn(2, 64) ?: 2
     val stereoBuses = (reportedOutputs / 2).coerceAtLeast(1)
-    Text("Audio Routing", color = Cyan, fontSize = 18.sp, fontWeight = FontWeight.Black)
-    Text("1  OUTPUT & CAPACITY", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
-    Text("Distinct hardware routes are limited by the connected output channels; virtual buses may share them.", color = TextSoft, fontSize = 11.sp)
+    Text("Audio Routing", color = MaterialTheme.colorScheme.secondary, fontSize = 18.sp, fontWeight = FontWeight.Black)
+    Text("1  OUTPUT & CAPACITY", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
+    Text("Distinct hardware routes are limited by the connected output channels; virtual buses may share them.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     Surface(color = Ink.copy(alpha = .42f), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, Cyan.copy(alpha = .28f))) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(detectedDevice?.name ?: "System audio output", color = Color.White, fontWeight = FontWeight.Bold)
-            Text("$reportedOutputs output channels | up to $reportedOutputs distinct mono or $stereoBuses distinct stereo routes", color = TextSoft, fontSize = 11.sp)
+            Text(detectedDevice?.name ?: "System audio output", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Text("$reportedOutputs output channels | up to $reportedOutputs distinct mono or $stereoBuses distinct stereo routes", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             Text(if (buses.size > reportedOutputs) "Some configured buses will need to share physical outputs." else "The ${buses.size} configured buses fit within the mono-route capacity.", color = if (buses.size > reportedOutputs) Amber else Cyan, fontSize = 11.sp)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StudioButton(
@@ -6485,17 +6535,17 @@ private fun LiveAudioRoutingEditor(
                     },
                     enabled = !checkingPerformance,
                     kind = StudioButtonKind.Secondary,
-                ) { Text(if (checkingPerformance) "Checking..." else "Check Processing Speed", color = Color.White, fontWeight = FontWeight.Bold) }
+                ) { Text(if (checkingPerformance) "Checking..." else "Check Processing Speed", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 Text(performanceResult, color = if (checkingPerformance) Amber else TextSoft, fontSize = 10.sp, modifier = Modifier.weight(1f))
             }
         }
     }
-    Text("2  VIRTUAL BUSES", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
-    Text("Group stems by purpose. There is no fixed virtual-bus limit.", color = TextSoft, fontSize = 11.sp)
+    Text("2  VIRTUAL BUSES", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
+    Text("Group stems by purpose. There is no fixed virtual-bus limit.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     buses.forEach { record -> LiveAudioBusStrip(record = record, model = model) }
     LiveAudioBusStrip(record = null, model = model)
-    Text("3  ROUTING PROFILES", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Black)
-    Text("Map each bus to numbered outputs on a particular audio interface.", color = TextSoft, fontSize = 11.sp)
+    Text("3  ROUTING PROFILES", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
+    Text("Map each bus to numbered outputs on a particular audio interface.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     profiles.forEach { profile ->
         LiveAudioProfileEditor(
             record = profile,
@@ -6533,7 +6583,7 @@ private fun LiveAudioBusStrip(record: CachedRecord?, model: StudioRackViewModel)
                     },
                     enabled = name.isNotBlank(),
                     kind = if (record == null) StudioButtonKind.Primary else StudioButtonKind.Secondary,
-                ) { Text(if (record == null) "Add" else "Save", color = if (record == null) Ink else Color.White, fontWeight = FontWeight.Bold) }
+                ) { Text(if (record == null) "Add" else "Save", color = if (record == null) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 LiveBusPalette.forEach { option ->
@@ -6567,7 +6617,7 @@ private fun LiveAudioProfileEditor(
     var widths by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("output_channel_count", 2) ?: 2) }) }
     var routeMutes by remember(record?.entityId, record?.revision, routeObjects.keys) { mutableStateOf(buses.associate { bus -> bus.entityId to (routeByBus[bus.entityId]?.value?.optInt("muted", 0) == 1) }) }
     val outputMenus = remember(record?.entityId) { mutableStateMapOf<String, Boolean>() }
-    Surface(color = Ink.copy(alpha = .28f), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, if (expanded) Cyan.copy(alpha = .35f) else Color.White.copy(alpha = .1f))) {
+    Surface(color = Ink.copy(alpha = .28f), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, if (expanded) Cyan.copy(alpha = .35f) else MaterialTheme.colorScheme.onSurface.copy(alpha = .1f))) {
         Column {
             Row(
                 Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(11.dp),
@@ -6575,20 +6625,20 @@ private fun LiveAudioProfileEditor(
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(if (record == null) "Add Interface Profile" else source.optString("name", "Interface Profile"), color = Color.White, fontWeight = FontWeight.Bold)
-                    Text(if (record == null) "Use the connected device or enter a capacity" else "${source.optInt("output_channel_count", 2)} outputs | ${routes.size} bus routes", color = TextSoft, fontSize = 11.sp)
+                    Text(if (record == null) "Add Interface Profile" else source.optString("name", "Interface Profile"), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text(if (record == null) "Use the connected device or enter a capacity" else "${source.optInt("output_channel_count", 2)} outputs | ${routes.size} bus routes", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 }
                 if (source.optInt("is_default") == 1) Text("PREFERRED", color = Ink, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.background(Cyan, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 4.dp))
-                Text(if (expanded) "▴" else "▾", color = TextSoft, fontSize = 18.sp)
+                Text(if (expanded) "▴" else "▾", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 18.sp)
             }
             if (expanded) Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(value = name, onValueChange = { name = it.take(100) }, label = { Text("Profile name") }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = outputs, onValueChange = { outputs = it.filter(Char::isDigit).take(2) }, label = { Text("Outputs") }, singleLine = true, modifier = Modifier.width(105.dp))
-                    if (record == null && detectedDevice != null) TextButton(onClick = { name = detectedDevice.name; outputs = detectedDevice.maximumOutputChannels.coerceIn(2, 64).toString() }) { Text("Use device", color = Cyan) }
+                    if (record == null && detectedDevice != null) TextButton(onClick = { name = detectedDevice.name; outputs = detectedDevice.maximumOutputChannels.coerceIn(2, 64).toString() }) { Text("Use device", color = MaterialTheme.colorScheme.secondary) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Preferred when compatible", color = Color.White, modifier = Modifier.weight(1f))
+                    Text("Preferred when compatible", color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                     Switch(checked = preferred, onCheckedChange = { preferred = it }, colors = studioSwitchColors())
                 }
                 buses.forEach { busRecord ->
@@ -6599,10 +6649,10 @@ private fun LiveAudioProfileEditor(
                     val routeStart = (starts[busRecord.entityId] ?: 1).coerceIn(1, maximumStart)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.width(5.dp).height(38.dp).background(sectionComposeColor(bus.optString("color", "#42D9FF")), RoundedCornerShape(3.dp)))
-                        Text(bus.optString("name", "Bus"), color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text(bus.optString("name", "Bus"), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         Box {
                             StudioButton(onClick = { outputMenus[busRecord.entityId] = true }, kind = StudioButtonKind.Secondary) {
-                                Text(if (routeWidth == 2) "Outputs $routeStart-${routeStart + 1}" else "Output $routeStart", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text(if (routeWidth == 2) "Outputs $routeStart-${routeStart + 1}" else "Output $routeStart", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                             }
                             DropdownMenu(expanded = outputMenus[busRecord.entityId] == true, onDismissRequest = { outputMenus[busRecord.entityId] = false }) {
                                 (1..maximumStart).forEach { output ->
@@ -6617,14 +6667,14 @@ private fun LiveAudioProfileEditor(
                             Modifier.width(92.dp).height(40.dp)
                                 .semantics { stateDescription = if (routeWidth == 2) "Stereo" else "Mono" }
                                 .background(if (routeWidth == 2) Cyan else PanelRaised, RoundedCornerShape(50))
-                                .border(1.dp, if (routeWidth == 2) Cyan else Color.White.copy(alpha = .2f), RoundedCornerShape(50))
+                                .border(1.dp, if (routeWidth == 2) Cyan else MaterialTheme.colorScheme.onSurface.copy(alpha = .2f), RoundedCornerShape(50))
                                 .clickable {
                                 val width = if (routeWidth == 2) 1 else 2
                                 widths = widths + (busRecord.entityId to width)
                                 starts = starts + (busRecord.entityId to routeStart.coerceAtMost((channelCount - width + 1).coerceAtLeast(1)))
                             },
                             contentAlignment = Alignment.Center,
-                        ) { Text(if (routeWidth == 2) "STEREO" else "MONO", color = if (routeWidth == 2) Ink else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black) }
+                        ) { Text(if (routeWidth == 2) "STEREO" else "MONO", color = if (routeWidth == 2) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Black) }
                         Box(
                             Modifier.height(40.dp).background(if (routeMutes[busRecord.entityId] == true) Amber else PanelRaised, RoundedCornerShape(5.dp)).clickable { routeMutes = routeMutes + (busRecord.entityId to (routeMutes[busRecord.entityId] != true)) }.padding(horizontal = 12.dp),
                             contentAlignment = Alignment.Center,
@@ -6632,7 +6682,7 @@ private fun LiveAudioProfileEditor(
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                    if (record != null) StudioButton(onClick = { confirmDelete = true }, kind = StudioButtonKind.Danger) { Text("Remove Profile", color = Color.White, fontWeight = FontWeight.Bold) }
+                    if (record != null) StudioButton(onClick = { confirmDelete = true }, kind = StudioButtonKind.Danger) { Text("Remove Profile", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                     StudioButton(
                         onClick = {
                             val channelCount = outputs.toIntOrNull()?.coerceIn(2, 64) ?: 2
@@ -6646,7 +6696,7 @@ private fun LiveAudioProfileEditor(
                         },
                         enabled = name.isNotBlank(),
                         kind = if (record == null) StudioButtonKind.Primary else StudioButtonKind.Secondary,
-                    ) { Text(if (record == null) "Create Profile" else "Save Profile", color = if (record == null) Ink else Color.White, fontWeight = FontWeight.Bold) }
+                    ) { Text(if (record == null) "Create Profile" else "Save Profile", color = if (record == null) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -6825,7 +6875,7 @@ private fun PerformanceSongScreen(
                 Column(Modifier.weight(1f)) {
                     Text(
                         item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
-                        color = Amber,
+                        color = MaterialTheme.colorScheme.primary,
                         fontFamily = FontFamily.Serif,
                         fontSize = 38.sp,
                         lineHeight = 42.sp,
@@ -6834,7 +6884,7 @@ private fun PerformanceSongScreen(
                     )
                     Text(
                         item.song?.optString("artist").orEmpty(),
-                        color = TextSoft,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Serif,
                         fontSize = 22.sp,
                         lineHeight = 25.sp,
@@ -6842,14 +6892,14 @@ private fun PerformanceSongScreen(
                     )
                     Text(
                         "${item.sectionName}  •  SONG ${position + 1} OF $total",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
                     )
                     Text(
                         nextItem?.let { "NEXT: ${gigSongTitle(it)}" } ?: "END OF SET LIST",
-                        color = TextSoft,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -6933,9 +6983,9 @@ private fun PerformanceSongScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 GigIconButton(Icons.Rounded.Close, "Return to set list", close)
                 Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                    Text(item.sectionName, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    item.performanceGroup?.let { group -> Text("${group.type.replaceFirstChar(Char::uppercase)}: ${group.name}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = Amber, fontSize = 16.sp, fontWeight = FontWeight.Black) }
-                    Text("SONG ${position + 1} OF $total", color = TextSoft, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                    Text(item.sectionName, color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    item.performanceGroup?.let { group -> Text("${group.type.replaceFirstChar(Char::uppercase)}: ${group.name}  •  ${item.performanceGroupPosition} of ${item.performanceGroupCount}", color = MaterialTheme.colorScheme.primary, fontSize = 16.sp, fontWeight = FontWeight.Black) }
+                    Text("SONG ${position + 1} OF $total", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.Black)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     GigIconButton(
@@ -7002,13 +7052,13 @@ private fun PerformanceSongScreen(
                 GigIconButton(Icons.Rounded.NavigateBefore, "Previous song", previous, position > 0)
                 Column(Modifier.weight(1f)) {
                     if (nextItem != null) {
-                        Text("> ${gigSongTitle(nextItem)}", color = Color.White, fontSize = 28.sp, lineHeight = 32.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                        Text("> ${gigSongTitle(nextItem)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 28.sp, lineHeight = 32.sp, fontWeight = FontWeight.Black, maxLines = 2)
                         val nextCue = gigSongCue(nextItem)
-                        if (nextCue.isNotBlank()) Text(nextCue, color = TextSoft, fontSize = 27.sp, lineHeight = 31.sp, maxLines = 2)
+                        if (nextCue.isNotBlank()) Text(nextCue, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 27.sp, lineHeight = 31.sp, maxLines = 2)
                     } else {
-                        Text("> END OF SET LIST", color = TextSoft, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                        Text("> END OF SET LIST", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 26.sp, fontWeight = FontWeight.Black)
                     }
-                    previousItem?.let { Text("< ${gigSongTitle(it)}", color = TextSoft, fontSize = 16.sp, maxLines = 2) }
+                    previousItem?.let { Text("< ${gigSongTitle(it)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp, maxLines = 2) }
                 }
                 GigIconButton(Icons.Rounded.NavigateNext, "Next song", next, position < total - 1)
             }
@@ -7065,13 +7115,13 @@ private fun PerformanceSongScreen(
                 Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
-                        color = Amber,
+                        color = MaterialTheme.colorScheme.primary,
                         fontFamily = FontFamily.Serif,
                         fontSize = if (tablet) 56.sp else 38.sp,
                         lineHeight = if (tablet) 62.sp else 44.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
-                    Text(item.song?.optString("artist").orEmpty(), color = TextSoft, fontFamily = FontFamily.Serif, fontSize = if (tablet) 28.sp else 23.sp)
+                    Text(item.song?.optString("artist").orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Serif, fontSize = if (tablet) 28.sp else 23.sp)
                 }
             }
         }
@@ -7105,8 +7155,8 @@ private fun PerformanceSongScreen(
         if (layoutVisible("notes") && (entryNote.isNotBlank() || songNote.isNotBlank())) {
             Surface(color = Color(0x0FFFFFFF), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Amber.copy(alpha = 0.16f)), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Column(Modifier.padding(12.dp)) {
-                    if (entryNote.isNotBlank()) Text("Set Note: $entryNote", color = TextSoft)
-                    if (songNote.isNotBlank()) Text("Song Note: $songNote", color = TextSoft)
+                    if (entryNote.isNotBlank()) Text("Set Note: $entryNote", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (songNote.isNotBlank()) Text("Song Note: $songNote", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -7132,7 +7182,7 @@ private fun PerformanceSongScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     attachmentLabel(item.attachment) + if (pageCount > 1) "  |  Page ${page + 1} of $pageCount" else "",
-                    color = TextSoft,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     modifier = Modifier.weight(1f),
                 )
@@ -7199,7 +7249,7 @@ private fun TimedSongGuideControls(
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (countInRemainingMs > 0L) "-${formatPlaybackTime(countInRemainingMs)}" else formatPlaybackTime(positionMs),
-                    color = Cyan,
+                    color = MaterialTheme.colorScheme.secondary,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -7209,7 +7259,7 @@ private fun TimedSongGuideControls(
                     valueRange = 0f..safeDuration.toFloat(),
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 )
-                Text(formatPlaybackTime(safeDuration), color = TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(formatPlaybackTime(safeDuration), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
             GigIconButton(
                 if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -7244,18 +7294,18 @@ private fun SongTimelineStatus(
         Column(Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("SONG TIMELINE", color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    Text("SONG TIMELINE", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Black)
                     Text(
                         if (countInRemainingMs > 0L) "Count-in" else currentSection?.name ?: nextSection?.let { "Next: ${it.name}" } ?: "Song Timeline",
-                        color = Amber,
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Black,
                     )
                 }
-                Text(if (countInRemainingMs > 0L) "-${formatPlaybackTime(countInRemainingMs)}" else formatPlaybackTime(positionMs), color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(if (countInRemainingMs > 0L) "-${formatPlaybackTime(countInRemainingMs)}" else formatPlaybackTime(positionMs), color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
-            currentLyric?.let { Text(it.text, color = Color.White, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
-            nextLyric?.let { Text(it.text, color = TextSoft, fontSize = 13.sp, lineHeight = 17.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+            currentLyric?.let { Text(it.text, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+            nextLyric?.let { Text(it.text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 17.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
             if (sections.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 sections.forEach { section ->
                     val active = section == currentSection
@@ -7302,14 +7352,14 @@ private fun SongSectionStrip(
                 Modifier.offset(x = maxWidth * startFraction).width(maxWidth * widthFraction).fillMaxHeight()
                     .clip(RoundedCornerShape(3.dp))
                     .background(sectionColor.copy(alpha = .18f))
-                    .border(if (section == active) 2.dp else 1.dp, if (section == active) Color.White else Color.White.copy(alpha = .16f), RoundedCornerShape(3.dp))
+                    .border(if (section == active) 2.dp else 1.dp, if (section == active) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = .16f), RoundedCornerShape(3.dp))
                     .clickable { onSelect(section) },
             ) {
                 if (progress > 0f) Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(sectionColor.copy(alpha = .30f)))
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(sectionColor))
                 Column(Modifier.padding(horizontal = 7.dp, vertical = 6.dp)) {
-                    Text(section.name, color = Color.White, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                    Text(formatPlaybackTime(section.atMs), color = Color.White.copy(alpha = .86f), fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1)
+                    Text(section.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                    Text(formatPlaybackTime(section.atMs), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .86f), fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1)
                 }
             }
         }
@@ -7593,7 +7643,7 @@ private fun PerformanceAudioControls(
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(item.playbackArrangement?.optString("name")?.ifBlank { null } ?: audio.optString("display_name", "Performance audio"), color = Color.White, fontWeight = FontWeight.Black)
+                    Text(item.playbackArrangement?.optString("name")?.ifBlank { null } ?: audio.optString("display_name", "Performance audio"), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
                     Text(
                         if (ready) "${formatPlaybackTime(positionMs)} / ${formatPlaybackTime(durationMs)}  |  ${sources.size} track${if (sources.size == 1) "" else "s"}" else "One or more audio files are not available offline on this device.",
                         color = if (ready) Cyan else TextSoft,
@@ -7632,7 +7682,7 @@ private fun PerformanceAudioControls(
                 LiveMixerGainStrip(
                     name = "Song master",
                     detail = "All performance tracks",
-                    color = Amber,
+                    color = MaterialTheme.colorScheme.primary,
                     gainDb = liveMasterGain,
                     onGainChanged = { liveMasterGain = it },
                     signalLevel = liveMasterPeak,
@@ -7641,7 +7691,7 @@ private fun PerformanceAudioControls(
             preferredDevice?.let { device ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("${device.name}  |  ${device.maximumOutputChannels} outputs", color = TextSoft, fontSize = 11.sp)
+                        Text("${device.name}  |  ${device.maximumOutputChannels} outputs", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         val routingStatus = when {
                             selectedProfile == null -> "Stereo fallback"
                             compatibleProfile == null -> "${selectedProfile.name}  |  requires ${selectedProfile.outputChannelCount} outputs"
@@ -7695,7 +7745,7 @@ private fun PerformanceAudioControls(
             if (sources.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text("Live mixer", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                        Text("Live mixer", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
                         GigPill("Tracks", active = mixerView == "tracks", onClick = { mixerView = "tracks" })
                         GigPill("Buses", active = mixerView == "buses", onClick = { mixerView = "buses" })
                         GigPill("Routing", active = false, onClick = onOpenLiveHardware)
@@ -7891,7 +7941,7 @@ private fun LiveMixerVerticalStrip(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Box(Modifier.width(34.dp).height(4.dp).background(color, RoundedCornerShape(2.dp)))
-            Text(name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(name, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             LiveMixerBusPicker(detail, busOptions, selectedBusId, onBusSelected, compact = true)
             Row(
                 Modifier.height(120.dp),
@@ -8028,7 +8078,7 @@ private fun LiveMixerChannelIdentity(
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.width(6.dp).height(38.dp).background(color, RoundedCornerShape(3.dp)))
         Column(Modifier.weight(1f)) {
-            Text(name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(name, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             if (onBusSelected == null) Text(detail, color = if (detailActive) Cyan else TextSoft, fontSize = 10.sp, maxLines = 1)
             else LiveMixerBusPicker(detail, busOptions, selectedBusId, onBusSelected, compact = true)
         }
@@ -8045,7 +8095,7 @@ private fun LiveMixerBusPicker(
 ) {
     var expanded by remember(selectedId, options) { mutableStateOf(false) }
     if (onSelected == null || options.isEmpty()) {
-        Text(label, color = TextSoft, fontSize = if (compact) 9.sp else 10.sp, maxLines = 1)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (compact) 9.sp else 10.sp, maxLines = 1)
         return
     }
     Box {
@@ -8061,8 +8111,8 @@ private fun LiveMixerBusPicker(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text("Bus: $label", color = Cyan, fontSize = if (compact) 9.sp else 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text("v", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                Text("Bus: $label", color = MaterialTheme.colorScheme.secondary, fontSize = if (compact) 9.sp else 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text("v", color = MaterialTheme.colorScheme.secondary, fontSize = 9.sp, fontWeight = FontWeight.Black)
             }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -8094,7 +8144,7 @@ private fun LiveMixerDbControl(gainDb: Float, onGainChanged: (Float) -> Unit, mo
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Gain" },
         )
         if (showScale) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf("-60", "-24", "-12", "0", "+12").forEach { tick -> Text(tick, color = TextSoft.copy(alpha = .72f), fontSize = 8.sp) }
+            listOf("-60", "-24", "-12", "0", "+12").forEach { tick -> Text(tick, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f), fontSize = 8.sp) }
         }
     }
 }
@@ -8103,7 +8153,7 @@ private fun LiveMixerDbControl(gainDb: Float, onGainChanged: (Float) -> Unit, mo
 private fun LiveMixerDbReadout(gainDb: Float) {
     Text(
         String.format(java.util.Locale.US, "%+.1f dB", gainDb),
-        color = Color.White,
+        color = MaterialTheme.colorScheme.onSurface,
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
         maxLines = 1,
@@ -8124,14 +8174,14 @@ private fun LiveMixerActionButton(label: String, description: String, active: Bo
     Box(
         Modifier.width(50.dp).height(44.dp)
             .background(if (active) activeColor else PanelRaised, RoundedCornerShape(6.dp))
-            .border(1.dp, if (active) activeColor else Color.White.copy(alpha = .28f), RoundedCornerShape(6.dp))
+            .border(1.dp, if (active) activeColor else MaterialTheme.colorScheme.onSurface.copy(alpha = .28f), RoundedCornerShape(6.dp))
             .semantics {
                 contentDescription = description
                 stateDescription = if (active) "On" else "Off"
             }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(label, color = if (active) Ink else Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black) }
+    ) { Text(label, color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Black) }
 }
 
 @Composable
@@ -8139,7 +8189,7 @@ private fun LiveMixerMenuButton(label: String, value: String, enabled: Boolean, 
     Surface(
         color = PanelRaised,
         contentColor = if (enabled) Cyan else TextSoft,
-        border = BorderStroke(1.dp, if (enabled) Cyan.copy(alpha = .52f) else Color.White.copy(alpha = .12f)),
+        border = BorderStroke(1.dp, if (enabled) Cyan.copy(alpha = .52f) else MaterialTheme.colorScheme.onSurface.copy(alpha = .12f)),
         shape = RoundedCornerShape(7.dp),
         modifier = Modifier.widthIn(min = 132.dp, max = 170.dp).heightIn(min = 48.dp)
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
@@ -8150,7 +8200,7 @@ private fun LiveMixerMenuButton(label: String, value: String, enabled: Boolean, 
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Column(Modifier.weight(1f)) {
-                Text(label.uppercase(), color = TextSoft, fontSize = 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 8.sp, fontWeight = FontWeight.Black, maxLines = 1)
                 Text(value, color = if (enabled) Color.White else TextSoft, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
             Text("v", fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -8335,7 +8385,7 @@ private fun ChordProDocument(
                     }
                     if (block.content.isNotBlank()) Text(
                         buildChordProDocument(block.content, tablet),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontFamily = FontFamily.Serif,
                         fontSize = if (tablet) 27.sp else 20.sp,
                         lineHeight = if (tablet) 36.sp else 28.sp,
@@ -8462,7 +8512,7 @@ private fun PerformancePulseLine(metronome: NativeMetronome) {
 @Composable
 private fun GigCircleButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
     Surface(
-        color = Amber.copy(alpha = if (enabled) 1f else 0.28f), contentColor = Ink, shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.28f), contentColor = Ink, shape = RoundedCornerShape(50),
         modifier = Modifier.size(46.dp).focusProperties { canFocus = false }.clickable(enabled = enabled, onClick = onClick),
     ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = if (label == "♪") 24.sp else 20.sp, fontWeight = FontWeight.Black) } }
 }
@@ -8495,8 +8545,8 @@ private fun GigIconButton(
 @Composable
 private fun GigValueChip(value: String) {
     val tabletLayout = LocalConfiguration.current.screenWidthDp >= 600
-    Surface(color = Amber.copy(alpha = 0.13f), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0x2FFFFFFF))) {
-        Text(value, color = Color.White, fontSize = if (tabletLayout) 16.sp else 14.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+    Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Color(0x2FFFFFFF))) {
+        Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = if (tabletLayout) 16.sp else 14.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
     }
 }
 
@@ -8512,8 +8562,8 @@ private fun GigPill(label: String, active: Boolean = false, onClick: (() -> Unit
 @Composable
 private fun GigDetail(label: String, value: String, modifier: Modifier = Modifier, valueSize: androidx.compose.ui.unit.TextUnit = 20.sp) {
     Column(modifier.padding(horizontal = 3.dp, vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label.uppercase(), color = TextSoft, fontSize = 9.sp, fontWeight = FontWeight.Black)
-        Text(value.ifBlank { "Not set" }, color = Color.White, fontFamily = FontFamily.Serif, fontSize = valueSize, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Black)
+        Text(value.ifBlank { "Not set" }, color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Serif, fontSize = valueSize, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -8705,7 +8755,7 @@ private fun SongDetailFallback(item: GigSong) {
         ) {
             Text(
                 item.song?.optString("title")?.takeIf(String::isNotBlank) ?: item.entry.optString("manual_title", "Untitled"),
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = FontFamily.Serif,
                 fontSize = if (tablet) 56.sp else 38.sp,
                 lineHeight = if (tablet) 62.sp else 44.sp,
@@ -8713,7 +8763,7 @@ private fun SongDetailFallback(item: GigSong) {
             )
             Text(
                 if (item.attachment != null && item.cache?.status != "ready") "${attachmentLabel(item.attachment)} is not available offline." else "No performance attachment is available for this song.",
-                color = TextSoft,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = if (tablet) 18.sp else 14.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.padding(top = 12.dp),
@@ -8724,7 +8774,7 @@ private fun SongDetailFallback(item: GigSong) {
 
 @Composable
 private fun EmptyCard(text: String) {
-    Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) { Text(text, color = TextSoft) }
+    Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 
 private fun recordJson(record: CachedRecord): JSONObject = runCatching { JSONObject(record.json) }.getOrDefault(JSONObject()).put("id", record.entityId)

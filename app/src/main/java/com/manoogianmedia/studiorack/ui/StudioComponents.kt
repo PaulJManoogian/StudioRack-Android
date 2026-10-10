@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,14 +30,14 @@ internal fun StudioButton(
 ) {
     val shape = RoundedCornerShape(50)
     val borderColor = when (kind) {
-        StudioButtonKind.Primary -> Color(0xB8FF9D1E)
-        StudioButtonKind.Secondary -> Color(0x29FFFFFF)
-        StudioButtonKind.Danger -> Color(0xB8E55757)
+        StudioButtonKind.Primary -> MaterialTheme.colorScheme.primary
+        StudioButtonKind.Secondary -> MaterialTheme.colorScheme.outline
+        StudioButtonKind.Danger -> MaterialTheme.colorScheme.error
     }.copy(alpha = if (enabled) 1f else 0.35f)
     val background = when (kind) {
-        StudioButtonKind.Primary -> Brush.linearGradient(listOf(Color(0xFFFF9D1E), Color(0xFFFFD16A)))
-        StudioButtonKind.Secondary -> Brush.linearGradient(listOf(Color(0x1FFFFFFF), Color(0x0D42D9FF)))
-        StudioButtonKind.Danger -> Brush.linearGradient(listOf(Color(0xFFE55757), Color(0xFFA82F3A)))
+        StudioButtonKind.Primary -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)))
+        StudioButtonKind.Secondary -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.surface))
+        StudioButtonKind.Danger -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.error, MaterialTheme.colorScheme.error.copy(alpha = 0.72f)))
     }
     Box(
         modifier

@@ -67,6 +67,9 @@ class SyncClient(
     suspend fun updatePerformanceSettings(settings: JSONObject): JSONObject =
         request("/settings/performance", "PUT", settings)
 
+    suspend fun updateAppearanceSettings(settings: JSONObject): JSONObject =
+        request("/settings/appearance", "PUT", settings)
+
     suspend fun updateCrewBehaviorSettings(settings: JSONObject): JSONObject =
         request("/settings/crew-behavior", "PUT", settings)
 
