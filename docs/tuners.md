@@ -11,7 +11,7 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 | String / target | Chooses the particular string to tune. Chromatic mode follows the closest detected pitch. |
 | Concert pitch | Sets A4 from 430 through 450 Hz. Use 440 Hz unless the ensemble or source requires another reference. |
 | Drum standard | Selects a practical starting point for snares, rack toms, floor toms, bass drum, or timpani. |
-| Measurement | Chooses whole drum, batter head, resonant head, or lug. Lug mode supplies positions 1 through 16. |
+| Measurement | Chooses whole drum, batter head, resonant head, or lug. Timpani offer whole drum, playing head, and lug only because they have no resonant head. Lug mode supplies positions 1 through 16. |
 | Start Tuner | Requests microphone permission when needed, then begins local analysis. |
 | Stop Tuner | Releases the microphone. Stop when finished so another app can use it. |
 | Play Reference | Plays the selected target as a short local tone. Do not play the reference while measuring through the same microphone. |

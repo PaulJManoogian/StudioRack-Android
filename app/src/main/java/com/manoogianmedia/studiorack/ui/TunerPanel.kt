@@ -182,7 +182,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
         instrumentPreset.notes.getOrNull(stringIndex)?.let { NoteTarget(it, noteFrequency(it, concertPitch.toDouble())) }
             ?: nearest
     } else {
-        val hz = when (drumZone) { "Batter head", "Lug" -> drumStandard.batterHz; "Resonant head" -> drumStandard.resonantHz; else -> drumStandard.wholeHz }
+        val hz = when (drumZone) { "Batter head", "Playing head", "Lug" -> drumStandard.batterHz; "Resonant head" -> drumStandard.resonantHz; else -> drumStandard.wholeHz }
         NoteTarget(if (drumZone.startsWith("Lug")) "Lug $lug" else drumStandard.note, hz)
     }
     val fixedTarget = if (mode == "Percussion" && lockedTargetHz != null) NoteTarget(if (drumZone == "Lug") "Lug $lug" else drumStandard.note, lockedTargetHz!!) else baseTarget
@@ -205,8 +205,17 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                     Text("Concert pitch: A = ${concertPitch.roundToInt()} Hz", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                     Slider(value = concertPitch, onValueChange = { concertPitch = it }, valueRange = 430f..450f, steps = 19)
                 } else {
-                    TunerDropdown("Drum standard", drumStandard.name, drumStandards, text = { it.name }, choose = { drumStandard = it; lug = 1; lugReadings = emptyMap(); lockedTargetHz = null })
-                    TunerDropdown("Measurement", drumZone, listOf("Whole drum", "Batter head", "Resonant head", "Lug"), text = { it }, choose = { drumZone = it; lockedTargetHz = null })
+                    TunerDropdown("Drum standard", drumStandard.name, drumStandards, text = { it.name }, choose = {
+                        drumStandard = it
+                        if (it.id.startsWith("timpani") && drumZone == "Resonant head") drumZone = "Whole drum"
+                        if (it.id.startsWith("timpani") && drumZone == "Batter head") drumZone = "Playing head"
+                        if (!it.id.startsWith("timpani") && drumZone == "Playing head") drumZone = "Batter head"
+                        lug = 1
+                        lugReadings = emptyMap()
+                        lockedTargetHz = null
+                    })
+                    val measurementOptions = if (drumStandard.id.startsWith("timpani")) listOf("Whole drum", "Playing head", "Lug") else listOf("Whole drum", "Batter head", "Resonant head", "Lug")
+                    TunerDropdown("Measurement", drumZone, measurementOptions, text = { it }, choose = { drumZone = it; lockedTargetHz = null })
                     Text("Environment sensitivity", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     TunerChoices(tunerEnvironments.map { it.name }, environment.name) { name ->
                         environment = tunerEnvironments.first { it.name == name }; recentReadings.clear()
@@ -264,7 +273,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                         model.saveTuning(item.entityId, JSONObject()
                             .put("enabled", 1)
                             .put("target_note", fixedTarget.label)
-                            .put("batter", if (mode == "Percussion" && drumZone == "Batter head") readingText else existing?.optString("batter"))
+                            .put("batter", if (mode == "Percussion" && drumZone in listOf("Batter head", "Playing head")) readingText else existing?.optString("batter"))
                             .put("reso", if (mode == "Percussion" && drumZone == "Resonant head") readingText else existing?.optString("reso"))
                             .put("notes", listOf(oldNotes, summary).filter(String::isNotBlank).joinToString("\n").takeLast(8000)))
                     },
@@ -375,15 +384,16 @@ private fun DrumTuningConsole(
 
 @Composable
 private fun TypicalRangePanel(standard: DrumStandard, zone: String, frequency: Double) {
-    val range = when (zone) { "Batter head", "Lug" -> standard.batterRange; "Resonant head" -> standard.resonantRange; else -> standard.fundamentalRange }
+    val timpani = standard.id.startsWith("timpani")
+    val range = when (zone) { "Batter head", "Playing head", "Lug" -> standard.batterRange; "Resonant head" -> standard.resonantRange; else -> standard.fundamentalRange }
     val state = when { range == null -> "No comparison range"; frequency < range.start -> "Below typical range"; frequency > range.endInclusive -> "Above typical range"; else -> "Within typical range" }
     val rangeText: (ClosedFloatingPointRange<Double>?) -> String = { it?.let { value -> "${pitchName(value.start)}–${pitchName(value.endInclusive)} · ${formatHz(value.start)}–${formatHz(value.endInclusive)} Hz" } ?: "Not applicable" }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("PRACTICAL COMPARISON", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Text(state, color = if (state.startsWith("Within")) Color(0xFF55E69B) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
         Text("Fundamental ${rangeText(standard.fundamentalRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Batter lug ${rangeText(standard.batterRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Resonant lug ${rangeText(standard.resonantRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${if (timpani) "Playing-head lug" else "Batter lug"} ${rangeText(standard.batterRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!timpani) Text("Resonant lug ${rangeText(standard.resonantRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         DrumFamilyRangeMap(standard)
         Text("Comparison bands are starting points; shell, heads, sustain, intervals, and the music determine the final sound.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
