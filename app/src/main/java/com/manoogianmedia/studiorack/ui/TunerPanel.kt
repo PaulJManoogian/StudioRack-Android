@@ -205,11 +205,13 @@ internal fun TunerPanel(model: StudioRackViewModel) {
     val recentReadings = remember { mutableListOf<Double>() }
     var concertPitch by remember { mutableStateOf(440f) }
     var listening by remember { mutableStateOf(false) }
+    var referenceToneStatus by remember { mutableStateOf<String?>(null) }
     var reading by remember { mutableStateOf(PitchReading()) }
     var selectedItem by remember { mutableStateOf<SupportingRecord?>(null) }
     var notes by remember { mutableStateOf("") }
 
     fun startListening() {
+        referenceToneStatus = null
         listening = true
         engine.start(scope, environment.gate, environment.confidence) { value -> scope.launch {
             reading = if (value.frequencyHz > 0) {
@@ -298,9 +300,15 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                         else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
                         else permission.launch(Manifest.permission.RECORD_AUDIO)
                     }) { Text(if (listening) "Stop Tuner" else "Start Tuner", fontWeight = FontWeight.Black) }
-                    StudioButton(onClick = { TunerReferenceTone.play(fixedTarget.frequency) }, kind = StudioButtonKind.Secondary) { Text("Play Reference", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+                    StudioButton(onClick = {
+                        referenceToneStatus = if (TunerReferenceTone.play(fixedTarget.frequency)) {
+                            "Reference tone playing through media audio."
+                        } else {
+                            "Reference tone could not start. Check the media volume and selected audio output."
+                        }
+                    }, kind = StudioButtonKind.Secondary) { Text("Reference Tone", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
-                Text(tunerStatus(listening, reading.state), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(referenceToneStatus ?: tunerStatus(listening, reading.state), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 

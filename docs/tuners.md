@@ -15,7 +15,7 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 | Measurement | Adapts to the selected instrument. Double-headed drums offer batter and resonant heads. Single-headed drums offer the playing head only. Djembe and tabla use tension-point terminology. |
 | Start Tuner | Requests microphone permission when needed, then begins local analysis. |
 | Stop Tuner | Releases the microphone. Stop when finished so another app can use it. |
-| Play Reference | Plays the selected target as a short local tone. Do not play the reference while measuring through the same microphone. |
+| Reference Tone | Plays the selected target through the device's media-audio path. Use the device media-volume control and do not play the tone while measuring through the same microphone. |
 | Pitch meter | Center is in tune, left is flat, and right is sharp. About three cents from center is displayed as in tune. |
 | Confidence | Shows whether one stable pitch dominates the signal. Do not save a low-confidence result as a precise measurement. |
 | Environment sensitivity | Studio, Quiet, Noisy, and Gig adjust the input gate, confidence requirement, smoothing, and practical in-tune tolerance. Use the quietest profile that remains stable. |

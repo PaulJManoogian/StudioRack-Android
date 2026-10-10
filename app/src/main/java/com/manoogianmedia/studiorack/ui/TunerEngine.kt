@@ -5,6 +5,8 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -129,34 +131,65 @@ internal class AndroidTunerEngine {
 
 internal object TunerReferenceTone {
     private var track: AudioTrack? = null
+    private val cleanupHandler = Handler(Looper.getMainLooper())
+    private var cleanup: Runnable? = null
 
-    fun play(frequencyHz: Double, durationMs: Int = 1300) {
+    fun play(frequencyHz: Double, durationMs: Int = 1800): Boolean {
         stop()
-        if (frequencyHz !in 20.0..5000.0) return
+        if (frequencyHz !in 20.0..5000.0) return false
         val sampleRate = 44_100
-        val count = sampleRate * durationMs / 1000
-        val samples = ShortArray(count) { index ->
-            val fade = minOf(1.0, index / 600.0, (count - index) / 900.0).coerceAtLeast(0.0)
-            (sin(2.0 * Math.PI * frequencyHz * index / sampleRate) * fade * Short.MAX_VALUE * .18).toInt().toShort()
-        }
-        val audioTrack = AudioTrack.Builder()
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-            .setBufferSizeInBytes(samples.size * 2)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-        audioTrack.write(samples, 0, samples.size)
-        audioTrack.setNotificationMarkerPosition(samples.size)
-        audioTrack.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-            override fun onMarkerReached(ignored: AudioTrack?) = stop()
-            override fun onPeriodicNotification(ignored: AudioTrack?) = Unit
-        })
-        track = audioTrack
-        audioTrack.play()
+        val samples = referenceToneSamples(frequencyHz, sampleRate, durationMs)
+        return runCatching {
+            val audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                )
+                .setBufferSizeInBytes(samples.size * Short.SIZE_BYTES)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            if (audioTrack.state != AudioTrack.STATE_INITIALIZED) {
+                audioTrack.release()
+                return@runCatching false
+            }
+            val written = audioTrack.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+            if (written != samples.size) {
+                audioTrack.release()
+                return@runCatching false
+            }
+            audioTrack.setVolume(.42f)
+            track = audioTrack
+            audioTrack.play()
+            val thisTrack = audioTrack
+            cleanup = Runnable {
+                if (track === thisTrack) stop()
+            }.also { cleanupHandler.postDelayed(it, durationMs + 250L) }
+            true
+        }.getOrDefault(false)
     }
 
     fun stop() {
+        cleanup?.let(cleanupHandler::removeCallbacks)
+        cleanup = null
         track?.let { runCatching { it.stop() }; it.release() }
         track = null
+    }
+}
+
+internal fun referenceToneSamples(frequencyHz: Double, sampleRate: Int, durationMs: Int): ShortArray {
+    if (frequencyHz <= 0.0 || sampleRate <= 0 || durationMs <= 0) return ShortArray(0)
+    val count = sampleRate * durationMs / 1000
+    return ShortArray(count) { index ->
+        val fade = minOf(1.0, index / 600.0, (count - index) / 900.0).coerceAtLeast(0.0)
+        (sin(2.0 * Math.PI * frequencyHz * index / sampleRate) * fade * Short.MAX_VALUE * .42).toInt().toShort()
     }
 }
