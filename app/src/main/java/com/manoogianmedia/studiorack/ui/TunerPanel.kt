@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,7 +54,8 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 
 private data class TuningPreset(val id: String, val name: String, val notes: List<String>)
-private data class DrumStandard(val id: String, val name: String, val note: String, val wholeHz: Double, val batterHz: Double = wholeHz, val resonantHz: Double = wholeHz)
+private data class DrumStandard(val id: String, val name: String, val note: String, val wholeHz: Double, val batterHz: Double = wholeHz, val resonantHz: Double = wholeHz, val lugs: Int = 8, val fundamentalRange: ClosedFloatingPointRange<Double>, val batterRange: ClosedFloatingPointRange<Double>? = null, val resonantRange: ClosedFloatingPointRange<Double>? = null)
+private data class TunerEnvironment(val id: String, val name: String, val description: String, val gate: Float, val confidence: Double, val smoothing: Int, val toleranceHz: Double)
 private data class NoteTarget(val label: String, val frequency: Double)
 
 private val instrumentTunings = listOf(
@@ -69,19 +72,29 @@ private val instrumentTunings = listOf(
 )
 
 private val drumStandards = listOf(
-    DrumStandard("snare_14", "14 in Snare - balanced", "A3", 220.0, 220.0, 329.63),
-    DrumStandard("tom_8", "8 in Tom", "G3", 196.0, 196.0, 246.94),
-    DrumStandard("tom_10", "10 in Tom", "D3", 146.83, 146.83, 185.0),
-    DrumStandard("tom_12", "12 in Tom", "A2", 110.0, 110.0, 138.59),
-    DrumStandard("tom_13", "13 in Tom", "G2", 98.0, 98.0, 123.47),
-    DrumStandard("floor_tom_14", "14 in Floor Tom", "E2", 82.41, 82.41, 103.83),
-    DrumStandard("floor_tom_16", "16 in Floor Tom", "C2", 65.41, 65.41, 82.41),
-    DrumStandard("floor_tom_18", "18 in Floor Tom", "A1", 55.0, 55.0, 69.30),
-    DrumStandard("kick_22", "22 in Bass Drum", "G1", 49.0, 49.0, 61.74),
-    DrumStandard("timpani_32", "32 in Timpani - D2 to A2", "D2", 73.42),
-    DrumStandard("timpani_29", "29 in Timpani - F2 to C3", "F2", 87.31),
-    DrumStandard("timpani_26", "26 in Timpani - Bb2 to F3", "Bb2", 116.54),
-    DrumStandard("timpani_23", "23 in Timpani - D3 to A3", "D3", 146.83),
+    DrumStandard("snare_14", "14 in Snare", "G3", 196.0, 266.0, 398.0, 10, 164.81..233.08, 229.0..356.0, 343.0..400.0),
+    DrumStandard("tom_8", "8 in Rack Tom", "E3", 164.81, 288.0, 305.0, 6, 146.83..207.65, 250.0..350.0, 265.0..380.0),
+    DrumStandard("tom_10", "10 in Rack Tom", "D3", 146.83, 221.0, 272.0, 6, 130.81..164.81, 195.0..275.0, 210.0..310.0),
+    DrumStandard("tom_12", "12 in Rack Tom", "B2", 123.47, 186.0, 229.0, 6, 98.0..130.81, 149.0..220.0, 175.0..285.0),
+    DrumStandard("tom_13", "13 in Rack Tom", "G2", 98.0, 150.0, 181.0, 6, 87.31..116.54, 135.0..205.0, 155.0..230.0),
+    DrumStandard("floor_tom_14", "14 in Floor Tom", "G2", 98.0, 147.0, 181.0, 8, 82.41..103.83, 118.0..175.0, 130.0..225.0),
+    DrumStandard("floor_tom_16", "16 in Floor Tom", "D2", 73.42, 110.0, 136.0, 8, 60.0..82.41, 88.0..130.0, 103.0..170.0),
+    DrumStandard("floor_tom_18", "18 in Floor Tom", "A1", 55.0, 82.0, 103.0, 8, 49.0..71.0, 75.0..105.0, 85.0..140.0),
+    DrumStandard("kick_18", "18 in Bass Drum", "G1", 49.0, 71.0, 107.0, 8, 43.65..73.42, 60.0..90.0, 80.0..120.0),
+    DrumStandard("kick_20", "20 in Bass Drum", "F1", 43.65, 64.0, 96.0, 8, 38.89..65.41, 55.0..82.0, 72.0..105.0),
+    DrumStandard("kick_22", "22 in Bass Drum", "D1", 36.71, 58.0, 87.0, 8, 36.0..61.74, 55.0..92.0, 65.0..110.0),
+    DrumStandard("kick_24", "24 in Bass Drum", "C1", 32.70, 49.0, 74.0, 10, 30.87..55.0, 45.0..75.0, 55.0..95.0),
+    DrumStandard("timpani_32", "32 in Timpani - D2 to A2", "D2", 73.42, lugs = 8, fundamentalRange = 73.42..110.0),
+    DrumStandard("timpani_29", "29 in Timpani - F2 to C3", "F2", 87.31, lugs = 8, fundamentalRange = 87.31..130.81),
+    DrumStandard("timpani_26", "26 in Timpani - Bb2 to F3", "Bb2", 116.54, lugs = 8, fundamentalRange = 116.54..174.61),
+    DrumStandard("timpani_23", "23 in Timpani - D3 to A3", "D3", 146.83, lugs = 8, fundamentalRange = 146.83..220.0),
+)
+
+private val tunerEnvironments = listOf(
+    TunerEnvironment("studio", "Studio", "Maximum sensitivity for a controlled room", .004f, .60, 7, .5),
+    TunerEnvironment("quiet", "Quiet", "Practice room or quiet stage", .008f, .64, 5, 1.0),
+    TunerEnvironment("noisy", "Noisy", "Nearby conversation or instruments", .018f, .71, 4, 2.0),
+    TunerEnvironment("gig", "Gig", "High ambient stage level", .035f, .78, 3, 4.0),
 )
 
 @Composable
@@ -101,6 +114,11 @@ internal fun TunerPanel(model: StudioRackViewModel) {
     var drumStandard by remember { mutableStateOf(drumStandards[0]) }
     var drumZone by remember { mutableStateOf("Whole drum") }
     var lug by remember { mutableStateOf(1) }
+    var environment by remember { mutableStateOf(tunerEnvironments[1]) }
+    var lugPattern by remember { mutableStateOf("Star") }
+    var lugReadings by remember { mutableStateOf<Map<Int, Double>>(emptyMap()) }
+    var lockedTargetHz by remember { mutableStateOf<Double?>(null) }
+    val recentReadings = remember { mutableListOf<Double>() }
     var concertPitch by remember { mutableStateOf(440f) }
     var listening by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf(PitchReading()) }
@@ -109,7 +127,13 @@ internal fun TunerPanel(model: StudioRackViewModel) {
 
     fun startListening() {
         listening = true
-        engine.start(scope) { value -> scope.launch { reading = value } }
+        engine.start(scope, environment.gate, environment.confidence) { value -> scope.launch {
+            reading = if (value.frequencyHz > 0) {
+                recentReadings += value.frequencyHz
+                while (recentReadings.size > environment.smoothing) recentReadings.removeAt(0)
+                value.copy(frequencyHz = recentReadings.sorted()[recentReadings.size / 2])
+            } else value
+        } }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startListening() else reading = PitchReading(state = PitchState.Uncertain)
@@ -130,13 +154,14 @@ internal fun TunerPanel(model: StudioRackViewModel) {
     }
 
     val nearest = nearestNote(reading.frequencyHz, concertPitch.toDouble())
-    val fixedTarget = if (mode == "Tuned Instruments") {
+    val baseTarget = if (mode == "Tuned Instruments") {
         instrumentPreset.notes.getOrNull(stringIndex)?.let { NoteTarget(it, noteFrequency(it, concertPitch.toDouble())) }
             ?: nearest
     } else {
         val hz = when (drumZone) { "Batter head" -> drumStandard.batterHz; "Resonant head" -> drumStandard.resonantHz; else -> drumStandard.wholeHz }
         NoteTarget(if (drumZone.startsWith("Lug")) "Lug $lug" else drumStandard.note, hz)
     }
+    val fixedTarget = if (mode == "Percussion" && lockedTargetHz != null) NoteTarget(if (drumZone == "Lug") "Lug $lug" else drumStandard.note, lockedTargetHz!!) else baseTarget
     val cents = if (reading.frequencyHz > 0 && fixedTarget.frequency > 0) 1200.0 * log2(reading.frequencyHz / fixedTarget.frequency) else 0.0
     val existing = selectedItem?.let { item -> tunings.firstOrNull { it.entityId == item.entityId } }?.let { JSONObject(it.json) }
 
@@ -145,7 +170,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
         Text("Tune on this device", color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Black)
         Text("Pitch analysis stays on the device. Choose a standard, tune, then save the result with an existing gear item.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         TunerChoices(listOf("Tuned Instruments", "Percussion"), mode) {
-            engine.stop(); listening = false; reading = PitchReading(); selectedItem = null; mode = it
+            engine.stop(); listening = false; reading = PitchReading(); selectedItem = null; recentReadings.clear(); mode = it
         }
 
         Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape = RoundedCornerShape(8.dp)) {
@@ -156,12 +181,16 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                     Text("Concert pitch: A = ${concertPitch.roundToInt()} Hz", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                     Slider(value = concertPitch, onValueChange = { concertPitch = it }, valueRange = 430f..450f, steps = 19)
                 } else {
-                    TunerDropdown("Drum standard", drumStandard.name, drumStandards, text = { it.name }, choose = { drumStandard = it })
-                    TunerDropdown("Measurement", drumZone, listOf("Whole drum", "Batter head", "Resonant head", "Lug"), text = { it }, choose = { drumZone = it })
-                    if (drumZone == "Lug") {
-                        Text("Lug $lug", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                        Slider(value = lug.toFloat(), onValueChange = { lug = it.roundToInt() }, valueRange = 1f..16f, steps = 14)
+                    TunerDropdown("Drum standard", drumStandard.name, drumStandards, text = { it.name }, choose = { drumStandard = it; lug = 1; lugReadings = emptyMap(); lockedTargetHz = null })
+                    TunerDropdown("Measurement", drumZone, listOf("Whole drum", "Batter head", "Resonant head", "Lug"), text = { it }, choose = { drumZone = it; lockedTargetHz = null })
+                    Text("Environment sensitivity", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    TunerChoices(tunerEnvironments.map { it.name }, environment.name) { name ->
+                        environment = tunerEnvironments.first { it.name == name }; recentReadings.clear()
+                        if (listening) { engine.stop(); listening = false }
                     }
+                    Text("${environment.description}. ±${"%.1f".format(environment.toleranceHz)} Hz comparison tolerance.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    if (drumZone == "Lug") TunerChoices(listOf("Star", "Clockwise"), lugPattern) { lugPattern = it }
+                    StudioButton(onClick = { if (reading.frequencyHz > 0) lockedTargetHz = reading.frequencyHz }, enabled = reading.frequencyHz > 0, kind = StudioButtonKind.Secondary) { Text("Lock Current Reading", fontWeight = FontWeight.Bold) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StudioButton(onClick = {
@@ -175,7 +204,22 @@ internal fun TunerPanel(model: StudioRackViewModel) {
             }
         }
 
-        TunerDisplay(fixedTarget, nearest, reading, cents)
+        TunerDisplay(fixedTarget, nearest, reading, cents, if (mode == "Percussion") environment.toleranceHz else null)
+
+        if (mode == "Percussion") {
+            DrumTuningConsole(drumStandard, drumZone, lug, lugReadings, fixedTarget.frequency, reading.frequencyHz, environment.toleranceHz, lugPattern,
+                selectLug = { lug = it },
+                previous = { lug = adjacentLug(drumStandard.lugs, lug, lugPattern, -1) },
+                next = { lug = adjacentLug(drumStandard.lugs, lug, lugPattern, 1) },
+                capture = {
+                    if (reading.frequencyHz > 0) {
+                        lugReadings = lugReadings + (lug to reading.frequencyHz)
+                        lug = adjacentLug(drumStandard.lugs, lug, lugPattern, 1)
+                    }
+                },
+                clear = { lugReadings = emptyMap() },
+            )
+        }
 
         Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape = RoundedCornerShape(8.dp)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -188,7 +232,9 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                     onClick = {
                         val item = selectedItem ?: return@StudioButton
                         val measured = reading.frequencyHz.takeIf { it > 0 }?.let { "%.2f Hz".format(it) } ?: "not measured"
-                        val summary = "${if (mode == "Percussion") drumStandard.name else instrumentPreset.name}; $drumZone; target ${fixedTarget.label} (${"%.2f".format(fixedTarget.frequency)} Hz); measured $measured; ${"%+.1f".format(cents)} cents${notes.trim().takeIf(String::isNotBlank)?.let { "; $it" } ?: ""}"
+                        val lugs = lugReadings.entries.sortedBy { it.key }.joinToString(", ") { "${it.key}=${"%.2f".format(it.value)} Hz" }
+                        val percussionDetails = if (mode == "Percussion") "; ${environment.name.lowercase()} environment; ${lugPattern.lowercase()} lug pattern${lugs.takeIf(String::isNotBlank)?.let { "; lugs $it" } ?: ""}" else ""
+                        val summary = "${if (mode == "Percussion") drumStandard.name else instrumentPreset.name}; $drumZone; target ${fixedTarget.label} (${"%.2f".format(fixedTarget.frequency)} Hz); measured $measured; ${"%+.1f".format(cents)} cents$percussionDetails${notes.trim().takeIf(String::isNotBlank)?.let { "; $it" } ?: ""}"
                         val oldNotes = existing?.optString("notes").orEmpty()
                         val readingText = "${fixedTarget.label}: $measured (${"%+.1f".format(cents)} cents)"
                         model.saveTuning(item.entityId, JSONObject()
@@ -207,7 +253,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
 }
 
 @Composable
-private fun TunerDisplay(target: NoteTarget, detected: NoteTarget, reading: PitchReading, cents: Double) {
+private fun TunerDisplay(target: NoteTarget, detected: NoteTarget, reading: PitchReading, cents: Double, drumToleranceHz: Double? = null) {
     val position = cents.coerceIn(-50.0, 50.0).toFloat()
     val outlineColor = MaterialTheme.colorScheme.outline
     val needleColor = MaterialTheme.colorScheme.primary
@@ -223,14 +269,105 @@ private fun TunerDisplay(target: NoteTarget, detected: NoteTarget, reading: Pitc
                 val x = size.width * ((position + 50f) / 100f)
                 drawLine(needleColor, Offset(x, y - 34), Offset(x, y + 13), 14f, StrokeCap.Round)
             }
-            val tuned = abs(cents) <= 3 && reading.state == PitchState.Clear
-            Text(if (reading.frequencyHz <= 0) "Waiting for a clear note" else if (tuned) "In tune" else "${abs(cents).let { "%.1f".format(it) }} cents ${if (cents < 0) "flat" else "sharp"}", color = if (tuned) Color(0xFF55E69B) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
+            val tuned = reading.state == PitchState.Clear && if (drumToleranceHz != null) abs(reading.frequencyHz - target.frequency) <= drumToleranceHz else abs(cents) <= 3
+            val variance = if (drumToleranceHz != null) "${"%.2f".format(abs(reading.frequencyHz - target.frequency))} Hz ${if (reading.frequencyHz < target.frequency) "low" else "high"}" else "${abs(cents).let { "%.1f".format(it) }} cents ${if (cents < 0) "flat" else "sharp"}"
+            Text(if (reading.frequencyHz <= 0) "Waiting for a clear note" else if (tuned) "In tune" else variance, color = if (tuned) Color(0xFF55E69B) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Confidence", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 LinearProgressIndicator(progress = { reading.confidence }, modifier = Modifier.weight(1f))
             }
+            if (drumToleranceHz != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Ambient input", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    LinearProgressIndicator(progress = { (reading.inputLevel / .08f).coerceIn(0f, 1f) }, modifier = Modifier.weight(1f))
+                }
+            }
         }
     }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun DrumTuningConsole(
+    standard: DrumStandard,
+    zone: String,
+    selectedLug: Int,
+    readings: Map<Int, Double>,
+    targetHz: Double,
+    detectedHz: Double,
+    toleranceHz: Double,
+    pattern: String,
+    selectLug: (Int) -> Unit,
+    previous: () -> Unit,
+    next: () -> Unit,
+    capture: () -> Unit,
+    clear: () -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val outline = MaterialTheme.colorScheme.outline
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .55f)), shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("${standard.name} · $zone", color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Black)
+            Box(contentAlignment = Alignment.Center) {
+                Canvas(Modifier.size(280.dp)) {
+                    val radius = size.minDimension * .39f
+                    drawCircle(Color(0xFF111A29), radius)
+                    drawCircle(Color(0xFF59616E), radius, style = Stroke(width = 12f))
+                    drawCircle(outline.copy(alpha = .35f), radius * .72f, style = Stroke(width = 2f))
+                    repeat(standard.lugs) { index ->
+                        val angle = -Math.PI / 2 + Math.PI * 2 * index / standard.lugs
+                        val center = Offset(size.width / 2 + kotlin.math.cos(angle).toFloat() * radius, size.height / 2 + kotlin.math.sin(angle).toFloat() * radius)
+                        val value = readings[index + 1]
+                        val color = when {
+                            index + 1 == selectedLug && zone == "Lug" -> accent
+                            value == null -> Color(0xFF737B88)
+                            abs(value - targetHz) <= toleranceHz -> Color(0xFF55E69B)
+                            value < targetHz -> Color(0xFF4ECFF5)
+                            else -> Color(0xFFFF936D)
+                        }
+                        drawCircle(color, 17f, center)
+                    }
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(if (zone == "Lug") "LUG $selectedLug" else zone.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(if (detectedHz > 0) "%.2f Hz".format(detectedHz) else "--", color = accent, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                    Text("Target %.2f Hz".format(targetHz), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+            if (zone == "Lug") {
+                TunerChoices((1..standard.lugs).map(Int::toString), selectedLug.toString()) { selectLug(it.toInt()) }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioButton(previous, kind = StudioButtonKind.Secondary) { Text("Previous") }
+                    StudioButton(capture, enabled = detectedHz > 0) { Text("Capture Lug", fontWeight = FontWeight.Black) }
+                    StudioButton(next, kind = StudioButtonKind.Secondary) { Text("Next") }
+                    StudioButton(clear, kind = StudioButtonKind.Secondary) { Text("Clear") }
+                }
+                Text("$pattern order · ${readings.size}/${standard.lugs} lugs captured", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+            TypicalRangePanel(standard, zone, if (detectedHz > 0) detectedHz else targetHz)
+        }
+    }
+}
+
+@Composable
+private fun TypicalRangePanel(standard: DrumStandard, zone: String, frequency: Double) {
+    val range = when (zone) { "Batter head", "Lug" -> standard.batterRange; "Resonant head" -> standard.resonantRange; else -> standard.fundamentalRange }
+    val state = when { range == null -> "No comparison range"; frequency < range.start -> "Below typical range"; frequency > range.endInclusive -> "Above typical range"; else -> "Within typical range" }
+    val rangeText: (ClosedFloatingPointRange<Double>?) -> String = { it?.let { value -> "%.0f–%.0f Hz".format(value.start, value.endInclusive) } ?: "Not applicable" }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("PRACTICAL COMPARISON", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        Text(state, color = if (state.startsWith("Within")) Color(0xFF55E69B) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
+        Text("Fundamental ${rangeText(standard.fundamentalRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Batter lug ${rangeText(standard.batterRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Resonant lug ${rangeText(standard.resonantRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Comparison bands are starting points; shell, heads, sustain, intervals, and the music determine the final sound.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+    }
+}
+
+private fun adjacentLug(count: Int, current: Int, pattern: String, direction: Int): Int {
+    val order = if (pattern == "Clockwise" || count % 2 != 0) (1..count).toList() else (1..count / 2).flatMap { listOf(it, it + count / 2) }
+    val index = order.indexOf(current).coerceAtLeast(0)
+    return order[(index + direction + order.size) % order.size]
 }
 
 @Composable

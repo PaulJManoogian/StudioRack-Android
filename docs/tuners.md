@@ -17,6 +17,13 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 | Play Reference | Plays the selected target as a short local tone. Do not play the reference while measuring through the same microphone. |
 | Pitch meter | Center is in tune, left is flat, and right is sharp. About three cents from center is displayed as in tune. |
 | Confidence | Shows whether one stable pitch dominates the signal. Do not save a low-confidence result as a precise measurement. |
+| Environment sensitivity | Studio, Quiet, Noisy, and Gig adjust the input gate, confidence requirement, smoothing, and practical in-tune tolerance. Use the quietest profile that remains stable. |
+| Ambient input | Shows microphone level even when it is below the selected environment's detection gate. |
+| Lock Current Reading | Makes the latest clear reading the working target for matching another head or drum. |
+| Star / Clockwise | Selects the guided lug order. Star alternates opposing lugs; Clockwise visits adjacent lugs. |
+| Drum head map | Orange is selected, green is in range, cyan is low, and coral is high. Select a numbered lug or use Previous and Next. |
+| Capture Lug | Stores the clear reading for the selected lug, colors it on the map, and advances using the selected order. |
+| Practical comparison | Shows typical fundamental, batter-lug, and resonant-lug ranges for the selected drum size. These are comparison bands, not required tunings. |
 | Save tuning to... | Selects an existing Gear item and saves the target, measurement, zone, and notes. |
 
 ## Tune a pitched instrument
@@ -35,10 +42,12 @@ The supplied values are useful starting points, not mandatory tunings for every 
 
 1. Select **Percussion** and the nearest drum standard.
 2. Choose **Whole drum**, **Batter head**, **Resonant head**, or **Lug**.
-3. For a head measurement, lightly damp the opposite head. For a whole-drum reading, let both heads respond.
-4. For lugs, strike consistently near each tension rod and work around the head. Match lugs to one another before judging the whole drum.
-5. Use a controlled strike. A very loud strike can clip a tablet microphone; a very soft strike can produce a weak result.
-6. Wait for a clear confidence reading, then select the matching Gear item and save.
+3. Choose **Studio** in a controlled room, **Quiet** for ordinary practice, **Noisy** around nearby sound, or **Gig** on a loud stage. This filters ambient triggers; it does not alter pitch accuracy.
+4. For a head measurement, lightly damp the opposite head. For a whole-drum reading, let both heads respond.
+5. For lugs, hold the device microphone about 2 inches / 5 cm from the head, select **Star** while balancing the head, and strike consistently near the selected tension rod.
+6. Wait for a clear confidence reading and choose **Capture Lug**. The map records high, low, or in-range state and advances to the next lug.
+7. Compare the result with the typical range panel. A musical choice outside the band is valid; shell, heads, interval, damping, and sustain determine the final sound.
+8. Select the matching Gear item and save. The environment, lug order, and captured readings are included in the saved tuning history.
 
 Batter and resonant measurements update their dedicated Gear tuning values. Whole-drum and lug measurements remain in the tuning history with their target, measured frequency, cents difference, and any notes. Timpani presets show starting ranges; tune to the score and verify pedal range mechanically.
 

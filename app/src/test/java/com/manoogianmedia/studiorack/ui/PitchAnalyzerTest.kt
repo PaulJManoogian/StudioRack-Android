@@ -24,6 +24,14 @@ class PitchAnalyzerTest {
     }
 
     @Test
+    fun gigGateRejectsSignalThatQuietModeCanAnalyze() {
+        val rate = 48_000
+        val samples = FloatArray(4096) { index -> (sin(2.0 * Math.PI * 110.0 * index / rate) * .02).toFloat() }
+        assertEquals(PitchState.Clear, PitchAnalyzer.analyze(samples, rate, noiseGate = .008f).state)
+        assertEquals(PitchState.Weak, PitchAnalyzer.analyze(samples, rate, noiseGate = .035f).state)
+    }
+
+    @Test
     fun identifiesClipping() {
         val samples = FloatArray(4096) { if (it % 2 == 0) 1f else -1f }
         assertEquals(PitchState.Clipping, PitchAnalyzer.analyze(samples, 48_000).state)

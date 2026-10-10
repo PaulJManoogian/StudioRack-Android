@@ -18,20 +18,21 @@ import kotlin.math.sqrt
 internal data class PitchReading(
     val frequencyHz: Double = 0.0,
     val confidence: Float = 0f,
+    val inputLevel: Float = 0f,
     val state: PitchState = PitchState.Waiting,
 )
 
 internal enum class PitchState { Waiting, Clear, Weak, Clipping, Uncertain }
 
 internal object PitchAnalyzer {
-    fun analyze(samples: FloatArray, sampleRate: Int, minHz: Double = 35.0, maxHz: Double = 1400.0): PitchReading {
+    fun analyze(samples: FloatArray, sampleRate: Int, minHz: Double = 35.0, maxHz: Double = 1400.0, noiseGate: Float = .008f, minimumConfidence: Double = .58): PitchReading {
         if (samples.size < 256 || sampleRate <= 0) return PitchReading(state = PitchState.Uncertain)
         val mean = samples.average().toFloat()
         val centered = FloatArray(samples.size) { samples[it] - mean }
         val peak = centered.maxOf { abs(it) }
         val rms = sqrt(centered.fold(0.0) { total, value -> total + value * value } / centered.size).toFloat()
-        if (peak >= .985f) return PitchReading(confidence = .25f, state = PitchState.Clipping)
-        if (rms < .008f) return PitchReading(confidence = 0f, state = PitchState.Weak)
+        if (peak >= .985f) return PitchReading(confidence = .25f, inputLevel = rms, state = PitchState.Clipping)
+        if (rms < noiseGate) return PitchReading(confidence = 0f, inputLevel = rms, state = PitchState.Weak)
 
         val minLag = max(2, (sampleRate / maxHz).toInt())
         val maxLag = minOf(centered.size / 2, (sampleRate / minHz).toInt())
@@ -58,7 +59,7 @@ internal object PitchAnalyzer {
             scores[lag] >= peakThreshold && scores[lag] >= scores[lag - 1] && scores[lag] >= scores[lag + 1]
         } ?: (minLag..maxLag).maxByOrNull { scores[it] } ?: 0
         val bestScore = if (bestLag > 0) scores[bestLag] else -1.0
-        if (bestLag == 0 || bestScore < .58) return PitchReading(confidence = bestScore.coerceIn(0.0, 1.0).toFloat(), state = PitchState.Uncertain)
+        if (bestLag == 0 || bestScore < minimumConfidence) return PitchReading(confidence = bestScore.coerceIn(0.0, 1.0).toFloat(), inputLevel = rms, state = PitchState.Uncertain)
 
         fun correlation(lag: Int): Double {
             if (lag !in minLag..maxLag) return bestScore
@@ -76,7 +77,7 @@ internal object PitchAnalyzer {
         val divisor = 2.0 * (2.0 * middle - left - right)
         val adjustment = if (abs(divisor) > 1e-9) (right - left) / divisor else 0.0
         val frequency = sampleRate / (bestLag + adjustment.coerceIn(-.5, .5))
-        return PitchReading(frequency, bestScore.coerceIn(0.0, 1.0).toFloat(), PitchState.Clear)
+        return PitchReading(frequency, bestScore.coerceIn(0.0, 1.0).toFloat(), rms, PitchState.Clear)
     }
 }
 
@@ -85,7 +86,7 @@ internal class AndroidTunerEngine {
     private var job: Job? = null
 
     @Suppress("MissingPermission")
-    fun start(scope: CoroutineScope, onReading: (PitchReading) -> Unit) {
+    fun start(scope: CoroutineScope, noiseGate: Float = .008f, minimumConfidence: Double = .58, onReading: (PitchReading) -> Unit) {
         stop()
         val sampleRate = 48_000
         val minimum = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -112,7 +113,7 @@ internal class AndroidTunerEngine {
                 val count = audioRecord.read(pcm, 0, pcm.size)
                 if (count > 0) {
                     val samples = FloatArray(count) { pcm[it] / 32768f }
-                    onReading(PitchAnalyzer.analyze(samples, sampleRate))
+                    onReading(PitchAnalyzer.analyze(samples, sampleRate, noiseGate = noiseGate, minimumConfidence = minimumConfidence))
                 }
             }
         }
