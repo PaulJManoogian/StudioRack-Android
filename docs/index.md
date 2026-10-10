@@ -14,6 +14,7 @@ This documentation describes the Android phone, Android tablet, and Wear OS appl
 8. [Wear OS Companion](wear-os.md) - installation, connection states, controls, and limitations.
 9. [Theme System](theme-system.md) - cross-platform appearance choices, Android controls, offline persistence, and Leviathan Live behavior.
 10. [Instrument and Drum Tuners](tuners.md) - standard tunings, pitch controls, drum-head and lug procedure, and saving results to Gear.
+11. [Live BPM](live-bpm.md) - practice tempo history, tap tempo, rushing/dragging comparison, confidence, and the Leviathan Live overlay.
 11. [Troubleshooting and Support](troubleshooting.md) - symptom-based checks and the information to include with a support request.
 12. [Glossary](glossary.md) - product terms used across the web, Android, and Wear applications.
 

@@ -75,13 +75,19 @@ See [Calendar and Events](calendar-and-events.md) and [Leviathan Live](leviathan
 
 ## Library
 
-The **Music & Live** library contains **Songs**, **Set Lists**, and **Tuners**.
+The **Music & Live** library contains **Songs**, **Set Lists**, **Tuners**, and **Live BPM**.
 
 ### Tuners
 
 Tuners provides separate **Tuned** and **Percussion** modes. Tuned mode includes chromatic tuning, standard string tunings, a selectable string target, adjustable concert pitch, and a reference tone. Percussion mode separates the instrument family from its size or traditional voice and supports snares, toms, bass drums, timpani, djembes, congas, timbales, bongos, and tabla. Its Musical Range Map compares related sizes or voices on one chromatic scale. Measurement choices follow the instrument: double-headed drums offer batter and resonant heads, single-headed instruments offer a playing head, and djembe and tabla use tension points.
 
 Select **Listen** to grant microphone access and begin local pitch analysis. The meter shows flat, centered, or sharp position; the confidence bar and status distinguish a clear reading from weak audio, clipping, or an uncertain pitch. **Save tuning to...** associates the result with an existing Gear item and queues the update when offline. See [Instrument and Drum Tuners](tuners.md) for the complete control guide and drum procedure.
+
+### Live BPM
+
+Live BPM follows repeated rhythmic attacks from the device microphone or deliberate taps. Set a target, select **Start Listening**, and use the recent-history graph with the **Dragging / Rushing** meter to see whether the pulse is stable. **Tap Tempo** works without microphone input, while **Start Click** provides an audible practice reference. Use **÷2** or **×2** when the detected pulse is musically correct but interpreted at half or double time.
+
+Leviathan Live Chart mode provides the same analyzer in a compact optional panel. The current song BPM becomes the target, while the existing metronome remains a separate audible and visual reference. See [Live BPM](live-bpm.md) for operating guidance and limitations.
 
 ### Browse songs
 

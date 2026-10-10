@@ -103,6 +103,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.List as ListIcon
 import androidx.compose.material.icons.rounded.MusicNote
@@ -129,6 +130,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -1354,16 +1356,16 @@ private fun LibraryScreen(model: StudioRackViewModel) {
         .let { if (sort == "Z-A") it.reversed() else it }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, and Tuners") }
-        item { ChoiceStrip(listOf("Songs", "Set Lists", "Tuners"), tab) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
-        if (tab != "Tuners") item {
+        item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, Tuners, and Live BPM") }
+        item { ChoiceStrip(listOf("Songs", "Set Lists", "Tuners", "Live BPM"), tab) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
+        if (tab !in setOf("Tuners", "Live BPM")) item {
             StudioButton(
                 onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (tab == "Songs") "Add Song" else "Create Set List", color = Ink, fontWeight = FontWeight.Black) }
         }
-        if (tab != "Tuners") item { DictationTextField(query, { query = it }, if (tab == "Songs") "Find a song" else "Find a set list") }
-        if (tab != "Tuners") item {
+        if (tab !in setOf("Tuners", "Live BPM")) item { DictationTextField(query, { query = it }, if (tab == "Songs") "Find a song" else "Find a set list") }
+        if (tab !in setOf("Tuners", "Live BPM")) item {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 ChoiceStrip(listOf("All", "Favorites"), favoriteScope) { favoriteScope = it }
                 ChoiceStrip(listOf("A-Z", "Z-A"), sort) { sort = it }
@@ -1520,8 +1522,10 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     }
                 }
             }
-        } else {
+        } else if (tab == "Tuners") {
             item { TunerPanel(model) }
+        } else {
+            item { TempoPanel() }
         }
     }
     editingSong?.let { target ->
@@ -6776,6 +6780,8 @@ private fun PerformanceSongScreen(
     var timelinePositionMs by remember(item.entry.optString("id")) { mutableLongStateOf(0L) }
     var countInRemainingMs by remember(item.entry.optString("id")) { mutableLongStateOf(0L) }
     val metronomeState by metronome.state.collectAsState()
+    val liveTargetBpm = item.song?.optString("tempo").orEmpty().filter(Char::isDigit).toIntOrNull()?.coerceIn(30, 300) ?: 120
+    var showLiveBpm by remember { mutableStateOf(false) }
     val countInMeasures = item.song?.optInt("count_in_measures", 0)?.coerceIn(0, 16) ?: 0
     val countInDurationMs = remember(countInMeasures, metronomeState.tempo, metronomeState.beatsPerMeasure) {
         countInMeasures * metronomeState.beatsPerMeasure * (60_000L / metronomeState.tempo.coerceAtLeast(1))
@@ -6938,6 +6944,12 @@ private fun PerformanceSongScreen(
                     },
                     active = nightMode.value,
                 )
+                GigIconButton(
+                    Icons.Rounded.GraphicEq,
+                    if (showLiveBpm) "Hide Live BPM tracker" else "Show Live BPM tracker",
+                    onClick = { showLiveBpm = !showLiveBpm },
+                    active = showLiveBpm,
+                )
                 if (showPlaybackTools) {
                     GigIconButton(
                         if (playbackActive) Icons.Rounded.PlayArrow else Icons.Rounded.PlayDisabled,
@@ -7006,6 +7018,12 @@ private fun PerformanceSongScreen(
                             saveDocumentNightMode(context, nightMode.value)
                         },
                         active = nightMode.value,
+                    )
+                    GigIconButton(
+                        Icons.Rounded.GraphicEq,
+                        if (showLiveBpm) "Hide Live BPM tracker" else "Show Live BPM tracker",
+                        onClick = { showLiveBpm = !showLiveBpm },
+                        active = showLiveBpm,
                     )
                     if (showPlaybackTools) {
                         GigIconButton(
@@ -7132,6 +7150,11 @@ private fun PerformanceSongScreen(
             contentAlignment = Alignment.Center,
         ) {
             PerformancePulseLine(metronome)
+        }
+        if (showLiveBpm) {
+            key(item.entry.optString("id")) {
+                TempoPanel(compact = true, initialTargetBpm = liveTargetBpm)
+            }
         }
         val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
         if (layoutVisible("song_details")) BoxWithConstraints(Modifier.fillMaxWidth()) {
