@@ -158,7 +158,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
         instrumentPreset.notes.getOrNull(stringIndex)?.let { NoteTarget(it, noteFrequency(it, concertPitch.toDouble())) }
             ?: nearest
     } else {
-        val hz = when (drumZone) { "Batter head" -> drumStandard.batterHz; "Resonant head" -> drumStandard.resonantHz; else -> drumStandard.wholeHz }
+        val hz = when (drumZone) { "Batter head", "Lug" -> drumStandard.batterHz; "Resonant head" -> drumStandard.resonantHz; else -> drumStandard.wholeHz }
         NoteTarget(if (drumZone.startsWith("Lug")) "Lug $lug" else drumStandard.note, hz)
     }
     val fixedTarget = if (mode == "Percussion" && lockedTargetHz != null) NoteTarget(if (drumZone == "Lug") "Lug $lug" else drumStandard.note, lockedTargetHz!!) else baseTarget
