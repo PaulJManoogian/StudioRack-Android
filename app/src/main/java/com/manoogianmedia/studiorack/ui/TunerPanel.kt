@@ -302,7 +302,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                     }) { Text(if (listening) "Stop Tuner" else "Start Tuner", fontWeight = FontWeight.Black) }
                     StudioButton(onClick = {
                         referenceToneStatus = if (TunerReferenceTone.play(fixedTarget.frequency)) {
-                            "Reference tone playing through media audio."
+                            "Reference tone: ${fixedTarget.label} at ${"%.2f".format(fixedTarget.frequency)} Hz."
                         } else {
                             "Reference tone could not start. Check the media volume and selected audio output."
                         }

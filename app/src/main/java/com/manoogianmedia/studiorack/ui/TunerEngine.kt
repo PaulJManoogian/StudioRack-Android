@@ -137,12 +137,13 @@ internal object TunerReferenceTone {
     fun play(frequencyHz: Double, durationMs: Int = 1800): Boolean {
         stop()
         if (frequencyHz !in 20.0..5000.0) return false
-        val sampleRate = 44_100
-        val samples = referenceToneSamples(frequencyHz, sampleRate, durationMs)
+        val sampleRate = 48_000
+        val monoSamples = referenceToneSamples(frequencyHz, sampleRate, durationMs)
+        val samples = ShortArray(monoSamples.size * 2) { monoSamples[it / 2] }
         return try {
             val minimumBuffer = AudioTrack.getMinBufferSize(
                 sampleRate,
-                AudioFormat.CHANNEL_OUT_MONO,
+                AudioFormat.CHANNEL_OUT_STEREO,
                 AudioFormat.ENCODING_PCM_16BIT,
             )
             if (minimumBuffer <= 0) return false
@@ -158,7 +159,7 @@ internal object TunerReferenceTone {
                     AudioFormat.Builder()
                         .setSampleRate(sampleRate)
                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                         .build(),
                 )
                 .setBufferSizeInBytes(bufferBytes)
@@ -168,9 +169,10 @@ internal object TunerReferenceTone {
                 audioTrack.release()
                 return false
             }
-            audioTrack.setVolume(.42f)
+            audioTrack.setVolume(1f)
             track = audioTrack
             audioTrack.play()
+            Log.i(TAG, "Playing ${"%.2f".format(frequencyHz)} Hz reference tone on ${audioTrack.routedDevice?.productName ?: "default output"}")
             val chunkSamples = maxOf(1, bufferBytes / Short.SIZE_BYTES)
             writer = Thread({ streamSamples(audioTrack, samples, chunkSamples) }, "LeviathanReferenceTone").also {
                 it.isDaemon = true
@@ -233,8 +235,14 @@ internal object TunerReferenceTone {
 internal fun referenceToneSamples(frequencyHz: Double, sampleRate: Int, durationMs: Int): ShortArray {
     if (frequencyHz <= 0.0 || sampleRate <= 0 || durationMs <= 0) return ShortArray(0)
     val count = sampleRate * durationMs / 1000
+    val harmonics = listOf(1 to .68, 2 to .22, 3 to .10)
+        .filter { (multiple, _) -> frequencyHz * multiple < sampleRate * .45 }
+    val harmonicWeight = harmonics.sumOf { it.second }
     return ShortArray(count) { index ->
-        val fade = minOf(1.0, index / 600.0, (count - index) / 900.0).coerceAtLeast(0.0)
-        (sin(2.0 * Math.PI * frequencyHz * index / sampleRate) * fade * Short.MAX_VALUE * .42).toInt().toShort()
+        val fade = minOf(1.0, index / (sampleRate * .02), (count - index) / (sampleRate * .04)).coerceAtLeast(0.0)
+        val wave = harmonics.sumOf { (multiple, weight) ->
+            sin(2.0 * Math.PI * frequencyHz * multiple * index / sampleRate) * weight
+        } / harmonicWeight
+        (wave * fade * Short.MAX_VALUE * .68).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
     }
 }
