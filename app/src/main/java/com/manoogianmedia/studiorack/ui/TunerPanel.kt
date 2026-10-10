@@ -249,6 +249,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
         NoteTarget(if (pointMode) "${drumStandard.tensionPointLabel()} $lug" else drumStandard.note, hz)
     }
     val fixedTarget = if (mode == "Percussion" && lockedTargetHz != null) NoteTarget(if (drumZone in listOf("Lug", "Tension point")) "${drumStandard.tensionPointLabel()} $lug" else drumStandard.note, lockedTargetHz!!) else baseTarget
+    val referenceToneTarget = if (fixedTarget.frequency > 0) fixedTarget else NoteTarget("A4", concertPitch.toDouble())
     val cents = if (reading.frequencyHz > 0 && fixedTarget.frequency > 0) 1200.0 * log2(reading.frequencyHz / fixedTarget.frequency) else 0.0
     val existing = selectedItem?.let { item -> tunings.firstOrNull { it.entityId == item.entityId } }?.let { JSONObject(it.json) }
 
@@ -261,29 +262,32 @@ internal fun TunerPanel(model: StudioRackViewModel) {
         }
 
         Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape = RoundedCornerShape(8.dp)) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (mode == "Tuned Instruments") {
                     TunerDropdown("Standard tuning", instrumentPreset.name, instrumentTunings, text = { it.name }, choose = { instrumentPreset = it; stringIndex = 0 })
-                    if (instrumentPreset.notes.isNotEmpty()) TunerDropdown("String / target", instrumentPreset.notes[stringIndex], instrumentPreset.notes, text = { it }, choose = { stringIndex = instrumentPreset.notes.indexOf(it) })
-                    Text("Concert pitch: A = ${concertPitch.roundToInt()} Hz", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                    Slider(value = concertPitch, onValueChange = { concertPitch = it }, valueRange = 430f..450f, steps = 19)
+                    if (instrumentPreset.notes.isNotEmpty()) {
+                        Text("String / target", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        TargetPitchChoices(instrumentPreset.notes, stringIndex) { stringIndex = it }
+                    }
                 } else {
-                    TunerDropdown("Percussion type", drumFamilies.first { it.first == drumFamily }.second, drumFamilies, text = { it.second }, choose = { family ->
-                        drumFamily = family.first
-                        drumStandard = drumStandards.first { it.familyId() == drumFamily }
-                        drumZone = "Whole drum"
-                        lug = 1
-                        lugReadings = emptyMap()
-                        lockedTargetHz = null
-                    })
                     val familyStandards = drumStandards.filter { it.familyId() == drumFamily }
-                    TunerDropdown("Size / voice", drumStandard.name, familyStandards, text = { it.name }, choose = {
-                        drumStandard = it
-                        if (drumZone !in it.measurementOptions()) drumZone = "Whole drum"
-                        lug = 1
-                        lugReadings = emptyMap()
-                        lockedTargetHz = null
-                    })
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TunerDropdown("Percussion type", drumFamilies.first { it.first == drumFamily }.second, drumFamilies, text = { it.second }, modifier = Modifier.weight(1f), choose = { family ->
+                            drumFamily = family.first
+                            drumStandard = drumStandards.first { it.familyId() == drumFamily }
+                            drumZone = "Whole drum"
+                            lug = 1
+                            lugReadings = emptyMap()
+                            lockedTargetHz = null
+                        })
+                        TunerDropdown("Size / voice", drumStandard.name, familyStandards, text = { it.name }, modifier = Modifier.weight(1f), choose = {
+                            drumStandard = it
+                            if (drumZone !in it.measurementOptions()) drumZone = "Whole drum"
+                            lug = 1
+                            lugReadings = emptyMap()
+                            lockedTargetHz = null
+                        })
+                    }
                     TunerDropdown("Measurement", drumZone, drumStandard.measurementOptions(), text = { it }, choose = { drumZone = it; lockedTargetHz = null })
                     Text("Environment sensitivity", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     TunerChoices(tunerEnvironments.map { it.name }, environment.name) { name ->
@@ -294,6 +298,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                     if (drumZone in listOf("Lug", "Tension point")) TunerChoices(listOf("Star", "Clockwise"), lugPattern) { lugPattern = it }
                     StudioButton(onClick = { if (reading.frequencyHz > 0) lockedTargetHz = reading.frequencyHz }, enabled = reading.frequencyHz > 0, kind = StudioButtonKind.Secondary) { Text("Lock Current Reading", fontWeight = FontWeight.Bold) }
                 }
+                TunerDisplay(fixedTarget, nearest, reading, cents, if (mode == "Percussion") environment.toleranceHz else null)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StudioButton(onClick = {
                         if (listening) { engine.stop(); listening = false }
@@ -301,18 +306,22 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                         else permission.launch(Manifest.permission.RECORD_AUDIO)
                     }) { Text(if (listening) "Stop Tuner" else "Start Tuner", fontWeight = FontWeight.Black) }
                     StudioButton(onClick = {
-                        referenceToneStatus = if (TunerReferenceTone.play(fixedTarget.frequency)) {
-                            "Reference tone: ${fixedTarget.label} at ${"%.2f".format(fixedTarget.frequency)} Hz."
+                        referenceToneStatus = if (TunerReferenceTone.play(referenceToneTarget.frequency)) {
+                            "Reference tone: ${referenceToneTarget.label} at ${"%.2f".format(referenceToneTarget.frequency)} Hz."
                         } else {
                             "Reference tone could not start. Check the media volume and selected audio output."
                         }
                     }, kind = StudioButtonKind.Secondary) { Text("Reference Tone", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
                 }
                 Text(referenceToneStatus ?: tunerStatus(listening, reading.state), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (mode == "Tuned Instruments") {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("A = ${concertPitch.roundToInt()} Hz", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Slider(value = concertPitch, onValueChange = { concertPitch = it }, valueRange = 430f..450f, steps = 19, modifier = Modifier.weight(1f))
+                    }
+                }
             }
         }
-
-        TunerDisplay(fixedTarget, nearest, reading, cents, if (mode == "Percussion") environment.toleranceHz else null)
 
         if (mode == "Percussion") {
             DrumTuningConsole(drumStandard, drumZone, lug, lugReadings, fixedTarget.frequency, reading.frequencyHz, environment.toleranceHz, lugPattern,
@@ -363,32 +372,63 @@ internal fun TunerPanel(model: StudioRackViewModel) {
 @Composable
 private fun TunerDisplay(target: NoteTarget, detected: NoteTarget, reading: PitchReading, cents: Double, drumToleranceHz: Double? = null) {
     val position = cents.coerceIn(-50.0, 50.0).toFloat()
-    val outlineColor = MaterialTheme.colorScheme.outline
-    val needleColor = MaterialTheme.colorScheme.primary
-    Surface(color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .55f)), shape = RoundedCornerShape(8.dp)) {
-        Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Target  ${target.label}  |  ${"%.2f".format(target.frequency)} Hz", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            Text(if (reading.frequencyHz > 0) detected.label else "--", color = MaterialTheme.colorScheme.onSurface, fontSize = 68.sp, fontWeight = FontWeight.Normal)
-            Text(if (reading.frequencyHz > 0) "%.2f Hz".format(reading.frequencyHz) else "-- Hz", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Canvas(Modifier.fillMaxWidth().height(80.dp)) {
-                val y = size.height * .68f
-                drawLine(outlineColor, Offset(0f, y), Offset(size.width, y), 6f, StrokeCap.Round)
-                drawLine(Color(0xFF55E69B), Offset(size.width / 2, y - 22), Offset(size.width / 2, y + 13), 5f, StrokeCap.Round)
-                val x = size.width * ((position + 50f) / 100f)
-                drawLine(needleColor, Offset(x, y - 34), Offset(x, y + 13), 14f, StrokeCap.Round)
-            }
-            val tuned = reading.state == PitchState.Clear && if (drumToleranceHz != null) abs(reading.frequencyHz - target.frequency) <= drumToleranceHz else abs(cents) <= 3
-            val variance = if (drumToleranceHz != null) "${"%.2f".format(abs(reading.frequencyHz - target.frequency))} Hz ${if (reading.frequencyHz < target.frequency) "low" else "high"}" else "${abs(cents).let { "%.1f".format(it) }} cents ${if (cents < 0) "flat" else "sharp"}"
-            Text(if (reading.frequencyHz <= 0) "Waiting for a clear note" else if (tuned) "In tune" else variance, color = if (tuned) Color(0xFF55E69B) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Confidence", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                LinearProgressIndicator(progress = { reading.confidence }, modifier = Modifier.weight(1f))
-            }
-            if (drumToleranceHz != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Ambient input", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    LinearProgressIndicator(progress = { (reading.inputLevel / .08f).coerceIn(0f, 1f) }, modifier = Modifier.weight(1f))
+    val exact = reading.state == PitchState.Clear && if (drumToleranceHz != null) abs(reading.frequencyHz - target.frequency) <= drumToleranceHz else abs(cents) <= 3
+    val close = reading.frequencyHz > 0 && if (drumToleranceHz != null) abs(reading.frequencyHz - target.frequency) <= drumToleranceHz * 2.5 else abs(cents) <= 12
+    val stateColor = when {
+        reading.frequencyHz <= 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+        exact -> Color(0xFF55E69B)
+        close -> Color(0xFFFFC247)
+        else -> Color(0xFFFF6262)
+    }
+    val variance = if (drumToleranceHz != null) "${"%.2f".format(abs(reading.frequencyHz - target.frequency))} Hz ${if (reading.frequencyHz < target.frequency) "low" else "high"}" else "${abs(cents).let { "%.1f".format(it) }} cents ${if (cents < 0) "flat" else "sharp"}"
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(if (target.frequency > 0) "TARGET  ${target.label}  ·  ${"%.2f".format(target.frequency)} Hz" else "CHROMATIC  ·  nearest note", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
+        Box(Modifier.fillMaxWidth().height(210.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxWidth().height(190.dp)) {
+                val center = Offset(size.width / 2f, size.height * .86f)
+                val radius = minOf(size.width * .43f, size.height * .72f)
+                repeat(21) { index ->
+                    val distance = abs(index - 10)
+                    val color = when { distance <= 1 -> Color(0xFF55E69B); distance <= 4 -> Color(0xFFFFC247); else -> Color(0xFFFF6262) }
+                    drawArc(color.copy(alpha = if (reading.frequencyHz > 0) 1f else .35f), -150f + index * 6f, 4.5f, false,
+                        topLeft = Offset(center.x - radius, center.y - radius),
+                        size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                        style = Stroke(width = 18f, cap = StrokeCap.Butt))
                 }
+                val angle = Math.toRadians((-90f + position * 1.2f).toDouble())
+                val needleEnd = Offset(center.x + kotlin.math.cos(angle).toFloat() * radius * .82f, center.y + kotlin.math.sin(angle).toFloat() * radius * .82f)
+                drawLine(stateColor, center, needleEnd, 8f, StrokeCap.Round)
+                drawCircle(stateColor, 13f, center)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 38.dp)) {
+                Text(if (reading.frequencyHz > 0) detected.label else "--", color = stateColor, fontSize = 72.sp, fontWeight = FontWeight.Black)
+                Text(if (reading.frequencyHz > 0) "%.2f Hz".format(reading.frequencyHz) else "Play a note", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+            }
+            Text("FLAT", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 5.dp))
+            Text("SHARP", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 5.dp))
+        }
+        Text(if (reading.frequencyHz <= 0) "Waiting for a clear note" else if (exact) "IN TUNE" else variance, color = stateColor, fontWeight = FontWeight.Black)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Confidence", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            LinearProgressIndicator(progress = { reading.confidence }, modifier = Modifier.weight(1f))
+        }
+        if (drumToleranceHz != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Ambient", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                LinearProgressIndicator(progress = { (reading.inputLevel / .08f).coerceIn(0f, 1f) }, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun TargetPitchChoices(notes: List<String>, selectedIndex: Int, choose: (Int) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        notes.forEachIndexed { index, note ->
+            val selected = index == selectedIndex
+            StudioButton(onClick = { choose(index) }, kind = if (selected) StudioButtonKind.Primary else StudioButtonKind.Secondary, modifier = Modifier.widthIn(min = 48.dp)) {
+                Text(note, color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
             }
         }
     }
@@ -533,9 +573,9 @@ private fun TunerChoices(options: List<String>, selected: String, choose: (Strin
 }
 
 @Composable
-private fun <T> TunerDropdown(label: String, selected: String, options: List<T>, text: (T) -> String, choose: (T) -> Unit) {
+private fun <T> TunerDropdown(label: String, selected: String, options: List<T>, text: (T) -> String, modifier: Modifier = Modifier.fillMaxWidth(), choose: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = modifier) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Box {
             StudioButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
