@@ -73,7 +73,7 @@ private val instrumentTunings = listOf(
 )
 
 private val drumStandards = listOf(
-    DrumStandard("snare_14", "14 in Snare", "G3", 196.0, 266.0, 398.0, 10, 164.81..233.08, 229.0..356.0, 343.0..400.0),
+    DrumStandard("snare_14", "14 in Snare", "G3", 196.0, 266.0, 398.0, 10, 147.0..247.0, 229.0..356.0, 343.0..400.0),
     DrumStandard("tom_8", "8 in Rack Tom", "E3", 164.81, 288.0, 305.0, 6, 146.83..207.65, 250.0..350.0, 265.0..380.0),
     DrumStandard("tom_10", "10 in Rack Tom", "D3", 146.83, 221.0, 272.0, 6, 130.81..164.81, 195.0..275.0, 210.0..310.0),
     DrumStandard("tom_12", "12 in Rack Tom", "B2", 123.47, 186.0, 229.0, 6, 98.0..130.81, 149.0..220.0, 175.0..285.0),
