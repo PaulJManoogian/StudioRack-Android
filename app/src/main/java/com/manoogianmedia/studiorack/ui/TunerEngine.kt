@@ -5,8 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
-import android.os.Handler
-import android.os.Looper
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -130,16 +129,24 @@ internal class AndroidTunerEngine {
 }
 
 internal object TunerReferenceTone {
+    private const val TAG = "TunerReferenceTone"
     private var track: AudioTrack? = null
-    private val cleanupHandler = Handler(Looper.getMainLooper())
-    private var cleanup: Runnable? = null
+    private var writer: Thread? = null
 
+    @Synchronized
     fun play(frequencyHz: Double, durationMs: Int = 1800): Boolean {
         stop()
         if (frequencyHz !in 20.0..5000.0) return false
         val sampleRate = 44_100
         val samples = referenceToneSamples(frequencyHz, sampleRate, durationMs)
-        return runCatching {
+        return try {
+            val minimumBuffer = AudioTrack.getMinBufferSize(
+                sampleRate,
+                AudioFormat.CHANNEL_OUT_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+            )
+            if (minimumBuffer <= 0) return false
+            val bufferBytes = maxOf(minimumBuffer, 4_096 * Short.SIZE_BYTES)
             val audioTrack = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
@@ -154,34 +161,72 @@ internal object TunerReferenceTone {
                         .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                         .build(),
                 )
-                .setBufferSizeInBytes(samples.size * Short.SIZE_BYTES)
-                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(bufferBytes)
+                .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
             if (audioTrack.state != AudioTrack.STATE_INITIALIZED) {
                 audioTrack.release()
-                return@runCatching false
-            }
-            val written = audioTrack.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-            if (written != samples.size) {
-                audioTrack.release()
-                return@runCatching false
+                return false
             }
             audioTrack.setVolume(.42f)
             track = audioTrack
             audioTrack.play()
-            val thisTrack = audioTrack
-            cleanup = Runnable {
-                if (track === thisTrack) stop()
-            }.also { cleanupHandler.postDelayed(it, durationMs + 250L) }
+            val chunkSamples = maxOf(1, bufferBytes / Short.SIZE_BYTES)
+            writer = Thread({ streamSamples(audioTrack, samples, chunkSamples) }, "LeviathanReferenceTone").also {
+                it.isDaemon = true
+                it.start()
+            }
             true
-        }.getOrDefault(false)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Unable to start reference tone", error)
+            stop()
+            false
+        }
     }
 
+    @Synchronized
     fun stop() {
-        cleanup?.let(cleanupHandler::removeCallbacks)
-        cleanup = null
-        track?.let { runCatching { it.stop() }; it.release() }
+        writer?.interrupt()
+        writer = null
+        track?.let {
+            runCatching { it.pause() }
+            runCatching { it.flush() }
+            runCatching { it.stop() }
+            it.release()
+        }
         track = null
+    }
+
+    private fun streamSamples(audioTrack: AudioTrack, samples: ShortArray, chunkSamples: Int) {
+        try {
+            var offset = 0
+            while (!Thread.currentThread().isInterrupted && offset < samples.size && owns(audioTrack)) {
+                val count = minOf(chunkSamples, samples.size - offset)
+                val written = audioTrack.write(samples, offset, count, AudioTrack.WRITE_BLOCKING)
+                if (written <= 0) {
+                    Log.e(TAG, "Reference tone write failed with code $written")
+                    break
+                }
+                offset += written
+            }
+            if (!Thread.currentThread().isInterrupted && offset == samples.size) Thread.sleep(150)
+        } catch (error: Throwable) {
+            if (error !is InterruptedException) Log.e(TAG, "Reference tone playback failed", error)
+        } finally {
+            finish(audioTrack)
+        }
+    }
+
+    @Synchronized
+    private fun owns(audioTrack: AudioTrack): Boolean = track === audioTrack
+
+    @Synchronized
+    private fun finish(audioTrack: AudioTrack) {
+        if (track !== audioTrack) return
+        runCatching { audioTrack.stop() }
+        audioTrack.release()
+        track = null
+        writer = null
     }
 }
 
