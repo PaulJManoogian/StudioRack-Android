@@ -10,8 +10,9 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 | Standard tuning | Selects a known open-string arrangement such as Guitar Standard, Drop D, DADGAD, Open G, Bass, Ukulele, Violin/Mandolin, or Viola/Cello. |
 | String / target | Chooses the particular string to tune. Chromatic mode follows the closest detected pitch. |
 | Concert pitch | Sets A4 from 430 through 450 Hz. Use 440 Hz unless the ensemble or source requires another reference. |
-| Drum standard | Selects a practical starting point for snares, rack toms, floor toms, bass drum, or timpani. |
-| Measurement | Chooses whole drum, batter head, resonant head, or lug. Timpani offer whole drum, playing head, and lug only because they have no resonant head. Lug mode supplies positions 1 through 16. |
+| Percussion type | Selects snare, tom, bass drum, timpani, djembe, conga, timbales, bongos, or tabla. |
+| Size / voice | Selects the diameter or traditional voice within that family, such as quinto, tumba, macho, hembra, dayan, or bayan. |
+| Measurement | Adapts to the selected instrument. Double-headed drums offer batter and resonant heads. Single-headed drums offer the playing head only. Djembe and tabla use tension-point terminology. |
 | Start Tuner | Requests microphone permission when needed, then begins local analysis. |
 | Stop Tuner | Releases the microphone. Stop when finished so another app can use it. |
 | Play Reference | Plays the selected target as a short local tone. Do not play the reference while measuring through the same microphone. |
@@ -24,7 +25,7 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 | Drum head map | Orange is selected, green is in range, cyan is low, and coral is high. Select a numbered lug or use Previous and Next. |
 | Capture Lug | Stores the clear reading for the selected lug, colors it on the map, and advances using the selected order. |
 | Practical comparison | Shows typical fundamental, batter-lug, and resonant-lug ranges as both musical note spans and exact frequencies. These are comparison bands, not required tunings. |
-| Musical range map | Places every supported diameter in the selected drum family on one chromatic pitch scale. The selected diameter is orange, making overlaps and useful registers easy to compare. |
+| Musical range map | Places every supported size or voice in the selected percussion family on one chromatic pitch scale. The selected instrument is orange, making overlaps and useful registers easy to compare. |
 | Save tuning to... | Selects an existing Gear item and saves the target, measurement, zone, and notes. |
 
 ## Tune a pitched instrument
@@ -41,8 +42,8 @@ Open **Music & Live > Tuners**. The Android tuner analyzes microphone audio loca
 
 The supplied values are useful starting points, not mandatory tunings for every shell, head, room, or musical style.
 
-1. Select **Percussion** and the nearest drum standard.
-2. Choose **Whole drum**, **Batter head**, **Resonant head**, or **Lug**.
+1. Select **Percussion**, the instrument family, and then its size or traditional voice.
+2. Choose one of the measurements offered for that instrument. Resonant head appears only for double-headed drums; djembe and tabla use tension points instead of lugs.
 3. Choose **Studio** in a controlled room, **Quiet** for ordinary practice, **Noisy** around nearby sound, or **Gig** on a loud stage. This filters ambient triggers; it does not alter pitch accuracy.
 4. For a head measurement, lightly damp the opposite head. For a whole-drum reading, let both heads respond.
 5. For lugs, hold the device microphone about 2 inches / 5 cm from the head, select **Star** while balancing the head, and strike consistently near the selected tension rod.

@@ -56,7 +56,7 @@ import kotlin.math.roundToInt
 private data class TuningPreset(val id: String, val name: String, val notes: List<String>)
 private data class DrumStandard(val id: String, val name: String, val note: String, val wholeHz: Double, val batterHz: Double = wholeHz, val resonantHz: Double = wholeHz, val lugs: Int = 8, val fundamentalRange: ClosedFloatingPointRange<Double>, val batterRange: ClosedFloatingPointRange<Double>? = null, val resonantRange: ClosedFloatingPointRange<Double>? = null)
 private data class TunerEnvironment(val id: String, val name: String, val description: String, val gate: Float, val confidence: Double, val smoothing: Int, val toleranceHz: Double)
-private data class DrumVisualRange(val family: String, val name: String, val diameter: Int, val lowHz: Double, val highHz: Double)
+private data class DrumVisualRange(val family: String, val name: String, val diameter: Int, val lowHz: Double, val highHz: Double, val sizeLabel: String? = null)
 private data class NoteTarget(val label: String, val frequency: Double)
 
 private val instrumentTunings = listOf(
@@ -89,6 +89,30 @@ private val drumStandards = listOf(
     DrumStandard("timpani_29", "29 in Timpani - F2 to C3", "F2", 87.31, lugs = 8, fundamentalRange = 87.31..130.81),
     DrumStandard("timpani_26", "26 in Timpani - Bb2 to F3", "Bb2", 116.54, lugs = 8, fundamentalRange = 116.54..174.61),
     DrumStandard("timpani_23", "23 in Timpani - D3 to A3", "D3", 146.83, lugs = 8, fundamentalRange = 146.83..220.0),
+    DrumStandard("djembe_10", "10 in Djembe", "C4", 261.63, lugs = 12, fundamentalRange = 220.0..293.66),
+    DrumStandard("djembe_12", "12 in Djembe", "G3", 196.0, lugs = 12, fundamentalRange = 174.61..233.08),
+    DrumStandard("djembe_13", "13 in Djembe", "F#3", 185.0, lugs = 12, fundamentalRange = 164.81..220.0),
+    DrumStandard("djembe_14", "14 in Djembe", "E3", 164.81, lugs = 12, fundamentalRange = 146.83..196.0),
+    DrumStandard("conga_requinto", "9.75 in Requinto", "E4", 329.63, lugs = 5, fundamentalRange = 261.63..349.23),
+    DrumStandard("conga_quinto", "11 in Quinto", "D4", 293.66, lugs = 6, fundamentalRange = 246.94..329.63),
+    DrumStandard("conga_conga", "11.75 in Conga", "A3", 220.0, lugs = 6, fundamentalRange = 196.0..261.63),
+    DrumStandard("conga_tumba", "12.5 in Tumba", "G3", 196.0, lugs = 6, fundamentalRange = 164.81..220.0),
+    DrumStandard("timbales_13", "13 in Timbal", "C4", 261.63, lugs = 6, fundamentalRange = 196.0..293.66),
+    DrumStandard("timbales_14", "14 in Timbal", "A3", 220.0, lugs = 6, fundamentalRange = 174.61..261.63),
+    DrumStandard("timbales_15", "15 in Timbal", "G3", 196.0, lugs = 6, fundamentalRange = 164.81..246.94),
+    DrumStandard("bongo_macho", "7.25 in Macho", "G4", 392.0, lugs = 4, fundamentalRange = 293.66..440.0),
+    DrumStandard("bongo_hembra", "8.625 in Hembra", "D4", 293.66, lugs = 4, fundamentalRange = 220.0..329.63),
+    DrumStandard("tabla_dayan_5", "5 in Dayan", "D4", 293.66, lugs = 16, fundamentalRange = 293.66..329.63),
+    DrumStandard("tabla_dayan_525", "5.25 in Dayan", "C#4", 277.18, lugs = 16, fundamentalRange = 261.63..293.66),
+    DrumStandard("tabla_dayan_55", "5.5 in Dayan", "C#4", 277.18, lugs = 16, fundamentalRange = 246.94..277.18),
+    DrumStandard("tabla_dayan_575", "5.75 in Dayan", "A#3", 233.08, lugs = 16, fundamentalRange = 207.65..233.08),
+    DrumStandard("tabla_dayan_6", "6 in Dayan", "G3", 196.0, lugs = 16, fundamentalRange = 185.0..233.08),
+    DrumStandard("tabla_bayan_85", "8.5 in Bayan", "C3", 130.81, lugs = 16, fundamentalRange = 130.81..261.63),
+)
+
+private val drumFamilies = listOf(
+    "snare" to "Snare Drum", "tom" to "Tom / Floor Tom", "kick" to "Bass Drum", "timpani" to "Timpani",
+    "djembe" to "Djembe", "conga" to "Conga Family", "timbales" to "Timbales", "bongo" to "Bongos", "tabla" to "Tabla",
 )
 
 private val tunerEnvironments = listOf(
@@ -119,7 +143,42 @@ private val drumVisualRanges = listOf(
     DrumVisualRange("timpani", "26 in Timpani", 26, 116.54, 174.61),
     DrumVisualRange("timpani", "29 in Timpani", 29, 87.31, 130.81),
     DrumVisualRange("timpani", "32 in Timpani", 32, 73.42, 110.0),
+    DrumVisualRange("djembe", "10 in Djembe", 10, 220.0, 293.66),
+    DrumVisualRange("djembe", "12 in Djembe", 12, 174.61, 233.08),
+    DrumVisualRange("djembe", "13 in Djembe", 13, 164.81, 220.0),
+    DrumVisualRange("djembe", "14 in Djembe", 14, 146.83, 196.0),
+    DrumVisualRange("conga", "9.75 in Requinto", 10, 261.63, 349.23, "9.75 in"),
+    DrumVisualRange("conga", "11 in Quinto", 11, 246.94, 329.63),
+    DrumVisualRange("conga", "11.75 in Conga", 12, 196.0, 261.63, "11.75 in"),
+    DrumVisualRange("conga", "12.5 in Tumba", 13, 164.81, 220.0, "12.5 in"),
+    DrumVisualRange("timbales", "13 in Timbal", 13, 196.0, 293.66),
+    DrumVisualRange("timbales", "14 in Timbal", 14, 174.61, 261.63),
+    DrumVisualRange("timbales", "15 in Timbal", 15, 164.81, 246.94),
+    DrumVisualRange("bongo", "7.25 in Macho", 7, 293.66, 440.0, "7.25 in"),
+    DrumVisualRange("bongo", "8.625 in Hembra", 9, 220.0, 329.63, "8.625 in"),
+    DrumVisualRange("tabla", "5 in Dayan", 5, 293.66, 329.63),
+    DrumVisualRange("tabla", "5.25 in Dayan", 5, 261.63, 293.66, "5.25 in"),
+    DrumVisualRange("tabla", "5.5 in Dayan", 6, 246.94, 277.18, "5.5 in"),
+    DrumVisualRange("tabla", "5.75 in Dayan", 6, 207.65, 233.08, "5.75 in"),
+    DrumVisualRange("tabla", "6 in Dayan", 6, 185.0, 233.08),
+    DrumVisualRange("tabla", "8.5 in Bayan", 9, 130.81, 261.63, "8.5 in"),
 )
+
+private fun DrumStandard.familyId(): String = when {
+    id.startsWith("floor_tom") || id.startsWith("tom") -> "tom"
+    id.startsWith("kick") -> "kick"
+    id.startsWith("timpani") -> "timpani"
+    id.startsWith("djembe") -> "djembe"
+    id.startsWith("conga") -> "conga"
+    id.startsWith("timbales") -> "timbales"
+    id.startsWith("bongo") -> "bongo"
+    id.startsWith("tabla") -> "tabla"
+    else -> "snare"
+}
+
+private fun DrumStandard.singleHeaded(): Boolean = familyId() !in setOf("snare", "tom", "kick")
+private fun DrumStandard.tensionPointLabel(): String = if (familyId() in setOf("djembe", "tabla")) "Tension point" else "Lug"
+private fun DrumStandard.measurementOptions(): List<String> = if (singleHeaded()) listOf("Whole drum", "Playing head", tensionPointLabel()) else listOf("Whole drum", "Batter head", "Resonant head", "Lug")
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -135,6 +194,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
     var mode by remember { mutableStateOf("Tuned Instruments") }
     var instrumentPreset by remember { mutableStateOf(instrumentTunings[1]) }
     var stringIndex by remember { mutableStateOf(0) }
+    var drumFamily by remember { mutableStateOf("snare") }
     var drumStandard by remember { mutableStateOf(drumStandards[0]) }
     var drumZone by remember { mutableStateOf("Whole drum") }
     var lug by remember { mutableStateOf(1) }
@@ -171,7 +231,7 @@ internal fun TunerPanel(model: StudioRackViewModel) {
         val data = JSONObject(item.json)
         return listOf(data.optString("display_name"), categoryNames[data.optString("category_id")], typeNames[data.optString("type_id")]).joinToString(" ").lowercase()
     }
-    val percussionWords = listOf("drum", "percussion", "snare", "tom", "timpani", "cymbal")
+    val percussionWords = listOf("drum", "percussion", "snare", "tom", "timpani", "cymbal", "djembe", "conga", "timbal", "bongo", "tabla")
     val visibleItems = items.filter { item ->
         val percussion = percussionWords.any { it in itemWords(item) }
         if (mode == "Percussion") percussion else !percussion
@@ -182,10 +242,11 @@ internal fun TunerPanel(model: StudioRackViewModel) {
         instrumentPreset.notes.getOrNull(stringIndex)?.let { NoteTarget(it, noteFrequency(it, concertPitch.toDouble())) }
             ?: nearest
     } else {
-        val hz = when (drumZone) { "Batter head", "Playing head", "Lug" -> drumStandard.batterHz; "Resonant head" -> drumStandard.resonantHz; else -> drumStandard.wholeHz }
-        NoteTarget(if (drumZone.startsWith("Lug")) "Lug $lug" else drumStandard.note, hz)
+        val pointMode = drumZone in listOf("Lug", "Tension point")
+        val hz = when (drumZone) { "Batter head", "Playing head", "Lug", "Tension point" -> drumStandard.batterHz; "Resonant head" -> drumStandard.resonantHz; else -> drumStandard.wholeHz }
+        NoteTarget(if (pointMode) "${drumStandard.tensionPointLabel()} $lug" else drumStandard.note, hz)
     }
-    val fixedTarget = if (mode == "Percussion" && lockedTargetHz != null) NoteTarget(if (drumZone == "Lug") "Lug $lug" else drumStandard.note, lockedTargetHz!!) else baseTarget
+    val fixedTarget = if (mode == "Percussion" && lockedTargetHz != null) NoteTarget(if (drumZone in listOf("Lug", "Tension point")) "${drumStandard.tensionPointLabel()} $lug" else drumStandard.note, lockedTargetHz!!) else baseTarget
     val cents = if (reading.frequencyHz > 0 && fixedTarget.frequency > 0) 1200.0 * log2(reading.frequencyHz / fixedTarget.frequency) else 0.0
     val existing = selectedItem?.let { item -> tunings.firstOrNull { it.entityId == item.entityId } }?.let { JSONObject(it.json) }
 
@@ -205,24 +266,30 @@ internal fun TunerPanel(model: StudioRackViewModel) {
                     Text("Concert pitch: A = ${concertPitch.roundToInt()} Hz", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                     Slider(value = concertPitch, onValueChange = { concertPitch = it }, valueRange = 430f..450f, steps = 19)
                 } else {
-                    TunerDropdown("Drum standard", drumStandard.name, drumStandards, text = { it.name }, choose = {
-                        drumStandard = it
-                        if (it.id.startsWith("timpani") && drumZone == "Resonant head") drumZone = "Whole drum"
-                        if (it.id.startsWith("timpani") && drumZone == "Batter head") drumZone = "Playing head"
-                        if (!it.id.startsWith("timpani") && drumZone == "Playing head") drumZone = "Batter head"
+                    TunerDropdown("Percussion type", drumFamilies.first { it.first == drumFamily }.second, drumFamilies, text = { it.second }, choose = { family ->
+                        drumFamily = family.first
+                        drumStandard = drumStandards.first { it.familyId() == drumFamily }
+                        drumZone = "Whole drum"
                         lug = 1
                         lugReadings = emptyMap()
                         lockedTargetHz = null
                     })
-                    val measurementOptions = if (drumStandard.id.startsWith("timpani")) listOf("Whole drum", "Playing head", "Lug") else listOf("Whole drum", "Batter head", "Resonant head", "Lug")
-                    TunerDropdown("Measurement", drumZone, measurementOptions, text = { it }, choose = { drumZone = it; lockedTargetHz = null })
+                    val familyStandards = drumStandards.filter { it.familyId() == drumFamily }
+                    TunerDropdown("Size / voice", drumStandard.name, familyStandards, text = { it.name }, choose = {
+                        drumStandard = it
+                        if (drumZone !in it.measurementOptions()) drumZone = "Whole drum"
+                        lug = 1
+                        lugReadings = emptyMap()
+                        lockedTargetHz = null
+                    })
+                    TunerDropdown("Measurement", drumZone, drumStandard.measurementOptions(), text = { it }, choose = { drumZone = it; lockedTargetHz = null })
                     Text("Environment sensitivity", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     TunerChoices(tunerEnvironments.map { it.name }, environment.name) { name ->
                         environment = tunerEnvironments.first { it.name == name }; recentReadings.clear()
                         if (listening) { engine.stop(); listening = false }
                     }
                     Text("${environment.description}. ±${"%.1f".format(environment.toleranceHz)} Hz comparison tolerance.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    if (drumZone == "Lug") TunerChoices(listOf("Star", "Clockwise"), lugPattern) { lugPattern = it }
+                    if (drumZone in listOf("Lug", "Tension point")) TunerChoices(listOf("Star", "Clockwise"), lugPattern) { lugPattern = it }
                     StudioButton(onClick = { if (reading.frequencyHz > 0) lockedTargetHz = reading.frequencyHz }, enabled = reading.frequencyHz > 0, kind = StudioButtonKind.Secondary) { Text("Lock Current Reading", fontWeight = FontWeight.Bold) }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -352,7 +419,7 @@ private fun DrumTuningConsole(
                         val center = Offset(size.width / 2 + kotlin.math.cos(angle).toFloat() * radius, size.height / 2 + kotlin.math.sin(angle).toFloat() * radius)
                         val value = readings[index + 1]
                         val color = when {
-                            index + 1 == selectedLug && zone == "Lug" -> accent
+                            index + 1 == selectedLug && zone in listOf("Lug", "Tension point") -> accent
                             value == null -> Color(0xFF737B88)
                             abs(value - targetHz) <= toleranceHz -> Color(0xFF55E69B)
                             value < targetHz -> Color(0xFF4ECFF5)
@@ -362,12 +429,12 @@ private fun DrumTuningConsole(
                     }
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (zone == "Lug") "LUG $selectedLug" else zone.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(if (zone in listOf("Lug", "Tension point")) "${standard.tensionPointLabel().uppercase()} $selectedLug" else zone.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Text(if (detectedHz > 0) "%.2f Hz".format(detectedHz) else "--", color = accent, fontSize = 26.sp, fontWeight = FontWeight.Black)
                     Text("Target %.2f Hz".format(targetHz), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
-            if (zone == "Lug") {
+            if (zone in listOf("Lug", "Tension point")) {
                 TunerChoices((1..standard.lugs).map(Int::toString), selectedLug.toString()) { selectLug(it.toInt()) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StudioButton(previous, kind = StudioButtonKind.Secondary) { Text("Previous") }
@@ -384,16 +451,16 @@ private fun DrumTuningConsole(
 
 @Composable
 private fun TypicalRangePanel(standard: DrumStandard, zone: String, frequency: Double) {
-    val timpani = standard.id.startsWith("timpani")
-    val range = when (zone) { "Batter head", "Playing head", "Lug" -> standard.batterRange; "Resonant head" -> standard.resonantRange; else -> standard.fundamentalRange }
+    val singleHeaded = standard.singleHeaded()
+    val range = when (zone) { "Playing head" -> standard.fundamentalRange; "Batter head", "Lug", "Tension point" -> standard.batterRange; "Resonant head" -> standard.resonantRange; else -> standard.fundamentalRange }
     val state = when { range == null -> "No comparison range"; frequency < range.start -> "Below typical range"; frequency > range.endInclusive -> "Above typical range"; else -> "Within typical range" }
     val rangeText: (ClosedFloatingPointRange<Double>?) -> String = { it?.let { value -> "${pitchName(value.start)}–${pitchName(value.endInclusive)} · ${formatHz(value.start)}–${formatHz(value.endInclusive)} Hz" } ?: "Not applicable" }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("PRACTICAL COMPARISON", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Text(state, color = if (state.startsWith("Within")) Color(0xFF55E69B) else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
         Text("Fundamental ${rangeText(standard.fundamentalRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("${if (timpani) "Playing-head lug" else "Batter lug"} ${rangeText(standard.batterRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (!timpani) Text("Resonant lug ${rangeText(standard.resonantRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (standard.batterRange != null) Text("Batter lug ${rangeText(standard.batterRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!singleHeaded) Text("Resonant lug ${rangeText(standard.resonantRange)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         DrumFamilyRangeMap(standard)
         Text("Comparison bands are starting points; shell, heads, sustain, intervals, and the music determine the final sound.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
@@ -401,18 +468,13 @@ private fun TypicalRangePanel(standard: DrumStandard, zone: String, frequency: D
 
 @Composable
 private fun DrumFamilyRangeMap(standard: DrumStandard) {
-    val family = when {
-        standard.id.startsWith("snare") -> "snare"
-        standard.id.startsWith("kick") -> "kick"
-        standard.id.startsWith("timpani") -> "timpani"
-        else -> "tom"
-    }
+    val family = standard.familyId()
     val ranges = drumVisualRanges.filter { it.family == family }.sortedBy { it.diameter }
     if (ranges.isEmpty()) return
     val lowMidi = kotlin.math.floor(ranges.minOf { 69 + 12 * log2(it.lowHz / 440.0) } - 1)
     val highMidi = kotlin.math.ceil(ranges.maxOf { 69 + 12 * log2(it.highHz / 440.0) } + 1)
     val position: (Double) -> Float = { hz -> ((69 + 12 * log2(hz / 440.0) - lowMidi) / (highMidi - lowMidi)).toFloat().coerceIn(0f, 1f) }
-    val familyTitle = when (family) { "snare" -> "Snare sizes"; "kick" -> "Bass drum sizes"; "timpani" -> "Timpani sizes"; else -> "Tom sizes" }
+    val familyTitle = "${drumFamilies.firstOrNull { it.first == family }?.second ?: "Drum"} sizes / voices"
     Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .6f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape = RoundedCornerShape(7.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text("MUSICAL RANGE MAP", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
@@ -423,10 +485,10 @@ private fun DrumFamilyRangeMap(standard: DrumStandard) {
                 Text(pitchName(440.0 * 2.0.pow((highMidi - 69) / 12.0)), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
             ranges.forEach { item ->
-                val selected = item.diameter == standard.name.substringBefore(" in").toIntOrNull()
+                val selected = standard.name.startsWith(item.name)
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("${item.diameter} in", color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Black, modifier = Modifier.widthIn(min = 38.dp))
+                        Text(item.sizeLabel ?: "${item.diameter} in", color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Black, modifier = Modifier.widthIn(min = 48.dp))
                         Canvas(Modifier.weight(1f).height(18.dp)) {
                             drawRoundRect(Color.White.copy(alpha = .07f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
                             val left = size.width * position(item.lowHz)
