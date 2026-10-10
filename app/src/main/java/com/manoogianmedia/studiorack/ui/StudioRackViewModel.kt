@@ -96,6 +96,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val items: StateFlow<List<SupportingRecord>> = repository.supporting("item")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val tunings: StateFlow<List<CachedRecord>> = repository.records("tuning")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val kits: StateFlow<List<SupportingRecord>> = repository.supporting("kit")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val itemSpecs: StateFlow<List<SupportingRecord>> = repository.supporting("item_spec")
@@ -538,6 +540,17 @@ class StudioRackViewModel(
     }
 
     fun deleteSongAttachment(id: String) = deleteRecord("song_attachment", id) {}
+
+    fun saveTuning(itemId: String, data: JSONObject, done: () -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching { repository.save("tuning", itemId, data.put("item_id", itemId)) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(message = "Tuning saved to gear. Synchronization is queued.", syncError = false)
+                    done()
+                }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save the tuning.", syncError = true) }
+        }
+    }
 
     fun saveLiveAudioBus(id: String?, data: JSONObject, done: () -> Unit = {}) {
         val recordId = id ?: "bus_${UUID.randomUUID().toString().replace("-", "").take(12)}"

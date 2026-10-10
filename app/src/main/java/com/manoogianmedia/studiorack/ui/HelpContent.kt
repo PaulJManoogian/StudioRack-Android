@@ -70,6 +70,12 @@ internal fun studioLeviathanHelpSections(
                 "Synchronize attachments before a performance so $liveName can read local copies without cellular service.",
             )),
             HelpTopic("Set Lists", listOf("Create sets, search and add songs, then drag to reorder. Rename, copy, print, share, favorite, or export a list. Named medley and tribute groups indent only their songs and show each song's position in Chart mode. Song lengths calculate estimated set time.")),
+            HelpTopic("Instrument And Drum Tuners", points = listOf(
+                "Open Music & Live > Tuners. Tuned Instruments provides chromatic mode, common guitar/bass/ukulele/orchestral string standards, a string target, concert-pitch adjustment, and a reference tone.",
+                "Percussion provides starting standards for snares, toms, floor toms, bass drums, and timpani. Measure the whole drum, batter head, resonant head, or an individual lug.",
+                "Start Tuner requests microphone permission and analyzes audio only on this device. Center is in tune; left is flat; right is sharp. Weak, clipping, or uncertain states are not precise readings.",
+                "Save tuning to... associates the target, measurement, zone, and notes with existing Gear. The change queues offline and synchronizes later.",
+            )),
             HelpTopic(liveName, points = listOf(
                 "List mode provides a large, scannable running order.",
                 "Chart mode shows stage-critical song facts and the selected chart, lyrics, tab, or other material.",

@@ -13,8 +13,9 @@ This documentation describes the Android phone, Android tablet, and Wear OS appl
 7. [Offline Work and Synchronization](offline-and-sync.md) - queued changes, attachment readiness, conflicts, and recovery.
 8. [Wear OS Companion](wear-os.md) - installation, connection states, controls, and limitations.
 9. [Theme System](theme-system.md) - cross-platform appearance choices, Android controls, offline persistence, and Leviathan Live behavior.
-10. [Troubleshooting and Support](troubleshooting.md) - symptom-based checks and the information to include with a support request.
-11. [Glossary](glossary.md) - product terms used across the web, Android, and Wear applications.
+10. [Instrument and Drum Tuners](tuners.md) - standard tunings, pitch controls, drum-head and lug procedure, and saving results to Gear.
+11. [Troubleshooting and Support](troubleshooting.md) - symptom-based checks and the information to include with a support request.
+12. [Glossary](glossary.md) - product terms used across the web, Android, and Wear applications.
 
 ## Product boundaries
 

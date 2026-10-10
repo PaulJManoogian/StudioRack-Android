@@ -1354,16 +1354,16 @@ private fun LibraryScreen(model: StudioRackViewModel) {
         .let { if (sort == "Z-A") it.reversed() else it }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SectionHeading("LIBRARY", "Songs and Set Lists") }
-        item { ChoiceStrip(listOf("Songs", "Set Lists"), tab) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
-        item {
+        item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, and Tuners") }
+        item { ChoiceStrip(listOf("Songs", "Set Lists", "Tuners"), tab) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
+        if (tab != "Tuners") item {
             StudioButton(
                 onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (tab == "Songs") "Add Song" else "Create Set List", color = Ink, fontWeight = FontWeight.Black) }
         }
-        item { DictationTextField(query, { query = it }, if (tab == "Songs") "Find a song" else "Find a set list") }
-        item {
+        if (tab != "Tuners") item { DictationTextField(query, { query = it }, if (tab == "Songs") "Find a song" else "Find a set list") }
+        if (tab != "Tuners") item {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 ChoiceStrip(listOf("All", "Favorites"), favoriteScope) { favoriteScope = it }
                 ChoiceStrip(listOf("A-Z", "Z-A"), sort) { sort = it }
@@ -1483,7 +1483,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     }
                 }
             }
-        } else {
+        } else if (tab == "Set Lists") {
             val songNames = songs.associate { it.entityId to recordJson(it).optString("title", "Song") }
             item {
                 StudioButton(
@@ -1520,6 +1520,8 @@ private fun LibraryScreen(model: StudioRackViewModel) {
                     }
                 }
             }
+        } else {
+            item { TunerPanel(model) }
         }
     }
     editingSong?.let { target ->
