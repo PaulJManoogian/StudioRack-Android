@@ -4,11 +4,11 @@ Built locally on October 10, 2026.
 
 ## Android phone and tablet
 
-- File: `release/studio-leviathan-mobile-0.33.4-130.aab`
-- Version name: `0.33.4`
-- Version code: `130`
+- File: `release/studio-leviathan-mobile-0.33.5-131.aab`
+- Version name: `0.33.5`
+- Version code: `131`
 - Target SDK: `36`
-- SHA-256: `10FC3D580BCEB1D33BDC529220408144DC1B989733FB5EED2FD87D854334AA2F`
+- SHA-256: `9CE31C446AD96D131A33BC7FA1C271E9E9016FF3E5D7F032309039688AE59BF9`
 
 ## Wear OS companion
 

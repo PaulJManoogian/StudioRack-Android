@@ -1449,7 +1449,6 @@ private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Song
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(if (compactPhone) 10.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(if (compactPhone) 8.dp else 12.dp)) {
         if (!(compactPhone && tab in setOf("Live BPM", "Metronome"))) item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, Tuners, Live BPM, and Metronome") }
-        item { LibraryChoiceStrip(tab, compactPhone) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
         if (tab !in setOf("Tuners", "Live BPM", "Metronome")) item {
             StudioButton(
                 onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
@@ -4151,32 +4150,6 @@ private fun ChoiceStrip(options: List<String>, selected: String, choose: (String
                 onClick = { choose(option) },
                 kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary,
             ) { Text(option, color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
-        }
-    }
-}
-
-@Composable
-private fun LibraryChoiceStrip(selected: String, compact: Boolean, choose: (String) -> Unit) {
-    val options = listOf("Songs", "Set Lists", "Tuners", "Live BPM", "Metronome")
-    if (!compact) {
-        ChoiceStrip(options, selected, choose)
-        return
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        options.forEach { option ->
-            StudioButton(
-                onClick = { choose(option) },
-                kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    when (option) { "Set Lists" -> "Sets"; "Live BPM" -> "BPM"; "Metronome" -> "Metro"; else -> option },
-                    color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-            }
         }
     }
 }

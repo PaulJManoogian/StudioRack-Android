@@ -6,6 +6,7 @@ Studio Leviathan closed beta
 - Live BPM practice and performance monitoring with target tempo, tap tempo, history, and rushing/dragging guidance.
 - New full practice metronome with subdivisions, accents, polyrhythms, tempo training, silent bars, visual pulse guidance, and full-screen mode.
 - Fixed a crash when opening the practice metronome from the Android menu.
+- Refined the Android metronome with visible tempo controls, adaptive beat and polyrhythm displays, standard note/accent/rest editing, and clearer practice controls.
 - Tuners for pitched instruments and percussion, plus faster navigation aligned with the web application.
 - Wear OS companion controls for supported live-performance workflows.
 - Updated privacy, support, and release-readiness information.

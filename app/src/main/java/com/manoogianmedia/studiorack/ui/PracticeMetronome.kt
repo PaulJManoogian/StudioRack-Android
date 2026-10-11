@@ -4,7 +4,6 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,9 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -265,7 +263,7 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
                     TempoButton("+") { tempo = (tempo + 1).coerceAtMost(300) }; TempoButton("+5") { tempo = (tempo + 5).coerceAtMost(300) }
                 }
                 Slider(tempo.toFloat(), { tempo = it.toInt() }, valueRange = 30f..300f)
-                BeatDisplay(state, meter, poly, pulseA, pulseB)
+                BeatDisplay(state, meter, subdivision, poly, pulseA, pulseB)
                 Text(if (state.silent) "SILENT BAR - HOLD THE PULSE" else if (state.running) "${state.effectiveTempo} BPM  •  BAR ${state.bar + 1}  •  BEAT ${state.beat + 1}" else "READY", color = if (state.silent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             }
         }
@@ -294,17 +292,66 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
     }
 }
 
-@Composable private fun TempoButton(label: String, action: () -> Unit) { OutlinedButton(action, contentPadding = ButtonDefaults.ContentPadding, modifier = Modifier.size(48.dp)) { Text(label, fontWeight = FontWeight.Black) } }
+@Composable
+private fun TempoButton(label: String, action: () -> Unit) {
+    OutlinedButton(
+        onClick = action,
+        contentPadding = PaddingValues(0.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+        modifier = Modifier.size(50.dp, 48.dp),
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.primary, fontSize = 16.sp, fontWeight = FontWeight.Black)
+    }
+}
 
 @Composable
-private fun BeatDisplay(state: PracticeMetronomeState, meter: Int, poly: Boolean, pulseA: Int, pulseB: Int) {
-    Canvas(Modifier.fillMaxWidth().height(86.dp)) {
-        val center = size.width / 2; val bottom = size.height - 5; val side = if (state.running && state.beat % 2 == 0) -1 else 1
-        drawLine(Color(0xFF50D5F9), Offset(center, bottom), Offset(center + side * size.width * .22f, 12f), 5f, StrokeCap.Round)
-        drawCircle(Color(0xFFFFA000), 13f, Offset(center + side * size.width * .22f, 12f))
+private fun BeatDisplay(state: PracticeMetronomeState, meter: Int, subdivision: Int, poly: Boolean, pulseA: Int, pulseB: Int) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            repeat(meter) { beatIndex ->
+                val activeBeat = state.running && beatIndex == state.beat
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Surface(
+                        color = if (activeBeat) MaterialTheme.colorScheme.primary else Color(0xFF182235),
+                        border = BorderStroke(1.dp, if (activeBeat) MaterialTheme.colorScheme.primary else Color(0xFF4C5870)),
+                        shape = CircleShape,
+                        modifier = Modifier.size(if (meter <= 6) 34.dp else 24.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                (beatIndex + 1).toString(),
+                                color = if (activeBeat) Color.Black else MaterialTheme.colorScheme.onSurface,
+                                fontSize = if (meter <= 6) 12.sp else 9.sp,
+                                fontWeight = FontWeight.Black,
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        repeat(subdivision) { subdivisionIndex ->
+                            val activeSubdivision = activeBeat && subdivisionIndex == state.subBeat
+                            Box(
+                                Modifier
+                                    .size(if (subdivision <= 2) 6.dp else 4.dp)
+                                    .background(if (activeSubdivision) MaterialTheme.colorScheme.secondary else Color(0xFF344057), CircleShape),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (poly) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("A", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black)
+                Box(Modifier.weight(1f)) { PulseRow(pulseA, state.pulseA, MaterialTheme.colorScheme.secondary) }
+                Text(pulseA.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("B", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                Box(Modifier.weight(1f)) { PulseRow(pulseB, state.pulseB, MaterialTheme.colorScheme.primary) }
+                Text(pulseB.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+            }
+        }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { repeat(meter) { index -> Box(Modifier.size(if (index == state.beat && state.running) 18.dp else 13.dp).background(if (index == state.beat && state.running) MaterialTheme.colorScheme.primary else Color(0xFF344057), CircleShape)) } }
-    if (poly) Text("$pulseA : $pulseB", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black)
 }
 
 @Composable
@@ -317,7 +364,11 @@ private fun BeatControls(meter: Int, setMeter: (Int) -> Unit, subdivision: Int, 
         Text("BEAT NOTATION AND ACCENTS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Black)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) { accents.forEachIndexed { index, level ->
             Surface(Modifier.width(58.dp).clickable { accents[index] = (level + 2) % 3 }, color = if (level == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape = RoundedCornerShape(7.dp)) {
-                Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(if (subdivision == 3) "3" else "♪", fontSize = 25.sp, color = if (level == 2) Color.Black else MaterialTheme.colorScheme.onSurface); Text("${index + 1} ${if (level == 2) "ACC" else if (level == 0) "MUTE" else ""}", fontSize = 8.sp, color = if (level == 2) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant) }
+                Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (level == 2) Text(">", fontSize = 13.sp, lineHeight = 10.sp, color = Color.Black, fontWeight = FontWeight.Black)
+                    Text(if (level == 0) "\uD834\uDD3D" else "\u2669", fontSize = 25.sp, color = if (level == 2) Color.Black else MaterialTheme.colorScheme.onSurface)
+                    Text("${index + 1} ${when (level) { 2 -> "ACCENT"; 0 -> "REST"; else -> "NOTE" }}", fontSize = 8.sp, color = if (level == 2) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         } }
     } }
@@ -335,10 +386,12 @@ private fun BeatControls(meter: Int, setMeter: (Int) -> Unit, subdivision: Int, 
     Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .3f), shape = RoundedCornerShape(8.dp)) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ToggleLine("Tempo Trainer", "Move toward a goal automatically", trainer, setTrainer)
         Stepper("Goal BPM", goal, { setGoal((goal - 1).coerceAtLeast(30)) }, { setGoal((goal + 1).coerceAtMost(300)) })
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Box(Modifier.weight(1f)) { Stepper("Change", step, { setStep((step - 1).coerceAtLeast(1)) }, { setStep((step + 1).coerceAtMost(20)) }) }; Box(Modifier.weight(1f)) { Stepper("Every bars", every, { setEvery((every - 1).coerceAtLeast(1)) }, { setEvery((every + 1).coerceAtMost(32)) }) } }
+        Stepper("Change by BPM", step, { setStep((step - 1).coerceAtLeast(1)) }, { setStep((step + 1).coerceAtMost(20)) })
+        Stepper("Every bars", every, { setEvery((every - 1).coerceAtLeast(1)) }, { setEvery((every + 1).coerceAtMost(32)) })
         LinearProgressIndicator(progress = { if (goal == tempo) 1f else (tempo.toFloat() / goal.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
         ToggleLine("Silent Bars", "Keep the display moving while the click drops out", silent, setSilent)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Box(Modifier.weight(1f)) { Stepper("Sound bars", soundBars, { setSound((soundBars - 1).coerceAtLeast(1)) }, { setSound((soundBars + 1).coerceAtMost(16)) }) }; Box(Modifier.weight(1f)) { Stepper("Silent bars", mutedBars, { setMuted((mutedBars - 1).coerceAtLeast(1)) }, { setMuted((mutedBars + 1).coerceAtMost(16)) }) } }
+        Stepper("Sound bars", soundBars, { setSound((soundBars - 1).coerceAtLeast(1)) }, { setSound((soundBars + 1).coerceAtMost(16)) })
+        Stepper("Silent bars", mutedBars, { setMuted((mutedBars - 1).coerceAtLeast(1)) }, { setMuted((mutedBars + 1).coerceAtMost(16)) })
     } }
 }
 
