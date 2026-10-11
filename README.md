@@ -28,6 +28,7 @@ User-facing product and assistant identity is isolated behind Android string res
 - Searchable song and set-list library.
 - Compact primary navigation aligned with the canonical web application: Home, Live, Gear, People, Reports, and More, with contextual submenus for each working area.
 - Live BPM practice and performance monitoring with microphone tempo detection, tap tempo, target controls, click reference, history graph, and rushing/dragging feedback.
+- Full practice metronome with exact and tapped tempo, meter, subdivisions, per-beat accents and mutes, two-voice polyrhythms, progressive tempo training, silent-bar practice, visual notation, and full-screen mode.
 - Offline reports, Crew skills/history, reference data, and account details.
 - Offline-first song and scheduled-event creation, editing, and deletion.
 - Offline set-list creation and editing, including named sets, ordered songs, manual entries, per-entry notes, performance attachment choices, and deletion.

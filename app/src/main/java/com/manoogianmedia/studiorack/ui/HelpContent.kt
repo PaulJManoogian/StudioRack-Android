@@ -86,6 +86,13 @@ internal fun studioLeviathanHelpSections(
                 "Use ÷2 or ×2 when the musical pulse is being interpreted at half or double time. Low confidence is not a result; move closer to the rhythmic source, reduce background sound, or use Tap Tempo.",
                 "In Leviathan Live Chart mode, the waveform button shows or hides a compact tracker whose target comes from the current song. Tempo analysis remains local and does not record or synchronize audio.",
             )),
+            HelpTopic("Practice Metronome", points = listOf(
+                "Open Music & Live > Metronome. Set tempo with the slider, exact number, step buttons, or Tap Tempo, then choose Start.",
+                "Beat controls provide meters from 1 through 12, quarter through sixteenth subdivisions, and an Accent, Normal, or Mute state for every beat.",
+                "Poly overlays two independently voiced pulse counts in one cycle. Begin with 3:2 and follow the two colored pulse rows.",
+                "Practice mode can move toward a goal tempo after a chosen number of bars and can alternate audible bars with silent bars to test internal time.",
+                "Full Screen keeps the animated pulse and controls visible from a music stand. The practice metronome is local and does not change songs, set lists, Live BPM, or Leviathan Live playback.",
+            )),
             HelpTopic(liveName, points = listOf(
                 "List mode provides a large, scannable running order.",
                 "Chart mode shows stage-critical song facts and the selected chart, lyrics, tab, or other material.",

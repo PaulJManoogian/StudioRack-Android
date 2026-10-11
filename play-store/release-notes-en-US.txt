@@ -4,6 +4,7 @@ Studio Leviathan closed beta
 - Leviathan Live performance mode with synchronized charts, lyrics, timing, controls, and local networking.
 - Full calendar views, multi-day events, reminders, participant delivery, and calendar export.
 - Live BPM practice and performance monitoring with target tempo, tap tempo, history, and rushing/dragging guidance.
+- New full practice metronome with subdivisions, accents, polyrhythms, tempo training, silent bars, visual pulse guidance, and full-screen mode.
 - Tuners for pitched instruments and percussion, plus faster navigation aligned with the web application.
 - Wear OS companion controls for supported live-performance workflows.
 - Updated privacy, support, and release-readiness information.

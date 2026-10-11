@@ -364,6 +364,7 @@ private fun MainShell(
             NavigationChoice("Schedule", AppRoute(AppSection.SESSIONS, PrimarySection.LIVE, "Schedule")),
             NavigationChoice("Tuners", AppRoute(AppSection.LIBRARY, PrimarySection.LIVE, "Tuners")),
             NavigationChoice("Live BPM", AppRoute(AppSection.LIBRARY, PrimarySection.LIVE, "Live BPM")),
+            NavigationChoice("Metronome", AppRoute(AppSection.LIBRARY, PrimarySection.LIVE, "Metronome")),
             NavigationChoice("Live Settings", AppRoute(AppSection.SESSIONS, PrimarySection.LIVE, "Leviathan Live")),
             NavigationChoice("Open Leviathan Live", AppRoute(AppSection.SESSIONS, PrimarySection.LIVE, "Schedule")),
         ),
@@ -1447,16 +1448,16 @@ private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Song
         .let { if (sort == "Z-A") it.reversed() else it }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(if (compactPhone) 10.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(if (compactPhone) 8.dp else 12.dp)) {
-        if (!(compactPhone && tab == "Live BPM")) item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, Tuners, and Live BPM") }
+        if (!(compactPhone && tab in setOf("Live BPM", "Metronome"))) item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, Tuners, Live BPM, and Metronome") }
         item { LibraryChoiceStrip(tab, compactPhone) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
-        if (tab !in setOf("Tuners", "Live BPM")) item {
+        if (tab !in setOf("Tuners", "Live BPM", "Metronome")) item {
             StudioButton(
                 onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (tab == "Songs") "Add Song" else "Create Set List", color = Ink, fontWeight = FontWeight.Black) }
         }
-        if (tab !in setOf("Tuners", "Live BPM")) item { DictationTextField(query, { query = it }, if (tab == "Songs") "Find a song" else "Find a set list") }
-        if (tab !in setOf("Tuners", "Live BPM")) item {
+        if (tab !in setOf("Tuners", "Live BPM", "Metronome")) item { DictationTextField(query, { query = it }, if (tab == "Songs") "Find a song" else "Find a set list") }
+        if (tab !in setOf("Tuners", "Live BPM", "Metronome")) item {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 ChoiceStrip(listOf("All", "Favorites"), favoriteScope) { favoriteScope = it }
                 ChoiceStrip(listOf("A-Z", "Z-A"), sort) { sort = it }
@@ -1615,8 +1616,10 @@ private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Song
             }
         } else if (tab == "Tuners") {
             item { TunerPanel(model) }
-        } else {
+        } else if (tab == "Live BPM") {
             item { TempoPanel() }
+        } else {
+            item { PracticeMetronomePanel() }
         }
     }
     editingSong?.let { target ->
@@ -4154,7 +4157,7 @@ private fun ChoiceStrip(options: List<String>, selected: String, choose: (String
 
 @Composable
 private fun LibraryChoiceStrip(selected: String, compact: Boolean, choose: (String) -> Unit) {
-    val options = listOf("Songs", "Set Lists", "Tuners", "Live BPM")
+    val options = listOf("Songs", "Set Lists", "Tuners", "Live BPM", "Metronome")
     if (!compact) {
         ChoiceStrip(options, selected, choose)
         return
@@ -4167,9 +4170,9 @@ private fun LibraryChoiceStrip(selected: String, compact: Boolean, choose: (Stri
                 modifier = Modifier.weight(1f),
             ) {
                 Text(
-                    when (option) { "Set Lists" -> "Sets"; "Live BPM" -> "BPM"; else -> option },
+                    when (option) { "Set Lists" -> "Sets"; "Live BPM" -> "BPM"; "Metronome" -> "Metro"; else -> option },
                     color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                 )

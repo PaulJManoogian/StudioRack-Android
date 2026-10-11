@@ -1,14 +1,14 @@
 # Closed Beta Build Manifest
 
-Built locally on October 4, 2026.
+Built locally on October 10, 2026.
 
 ## Android phone and tablet
 
-- File: `release/studio-leviathan-mobile-0.28.0-117.aab`
-- Version name: `0.28.0`
-- Version code: `117`
+- File: `release/studio-leviathan-mobile-0.33.3-129.aab`
+- Version name: `0.33.3`
+- Version code: `129`
 - Target SDK: `36`
-- SHA-256: `11EFEF52AFCB405E5CD9BC7749A0484E8D2AFC2955979183D42EACB6F8D10DEE`
+- SHA-256: `E6D241E0AAF094E9506975F8DDB5AC6E5F4AE89E1D8334F402E3F2CD5934906B`
 
 ## Wear OS companion
 

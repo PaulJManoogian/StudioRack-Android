@@ -75,7 +75,7 @@ See [Calendar and Events](calendar-and-events.md) and [Leviathan Live](leviathan
 
 ## Library
 
-The **Music & Live** library contains **Songs**, **Set Lists**, **Tuners**, and **Live BPM**.
+The **Music & Live** library contains **Songs**, **Set Lists**, **Tuners**, **Live BPM**, and **Metronome**.
 
 ### Tuners
 
@@ -88,6 +88,10 @@ Select **Listen** to grant microphone access and begin local pitch analysis. The
 Live BPM follows repeated rhythmic attacks from the device microphone or deliberate taps. Set a target, select **Start Listening**, and use the recent-history graph with the **Dragging / Rushing** meter to see whether the pulse is stable. **Tap Tempo** works without microphone input, while **Start Click** provides an audible practice reference. Use **÷2** or **×2** when the detected pulse is musically correct but interpreted at half or double time.
 
 Leviathan Live Chart mode provides the same analyzer in a compact optional panel. The current song BPM becomes the target, while the existing metronome remains a separate audible and visual reference. See [Live BPM](live-bpm.md) for operating guidance and limitations.
+
+### Practice Metronome
+
+Open **Music & Live > Metronome** for a dedicated device-local practice instrument. Set tempo by slider, exact entry, step buttons, or **Tap Tempo**. Beat mode controls meter, subdivisions, and the accent, normal, or muted state of every beat. Poly mode overlays two independently voiced pulse counts. Practice mode can raise or lower tempo toward a goal and alternate audible bars with silent bars that test internal time. **Full Screen** keeps the animated pulse, bar position, and controls visible from a music stand without changing any song or Leviathan Live setting. See [Practice Metronome](practice-metronome.md).
 
 ### Browse songs
 
