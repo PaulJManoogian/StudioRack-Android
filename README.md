@@ -26,6 +26,8 @@ User-facing product and assistant identity is isolated behind Android string res
 - Full Month and Agenda scheduling with multi-day/all-day events, Sunday/Monday week starts, color, importance, private designation, participant communication, reminders, and ICS sharing.
 - Searchable equipment and kit browsing with synchronized details and membership.
 - Searchable song and set-list library.
+- Compact primary navigation aligned with the canonical web application: Home, Live, Gear, People, Reports, and More, with contextual submenus for each working area.
+- Live BPM practice and performance monitoring with microphone tempo detection, tap tempo, target controls, click reference, history graph, and rushing/dragging feedback.
 - Offline reports, Crew skills/history, reference data, and account details.
 - Offline-first song and scheduled-event creation, editing, and deletion.
 - Offline set-list creation and editing, including named sets, ordered songs, manual entries, per-entry notes, performance attachment choices, and deletion.

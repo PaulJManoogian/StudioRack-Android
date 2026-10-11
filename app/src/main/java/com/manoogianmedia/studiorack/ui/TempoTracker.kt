@@ -231,9 +231,13 @@ internal fun TempoPanel(compact: Boolean = false, initialTargetBpm: Int = 120) {
                             value = targetText,
                             onValueChange = { value -> targetText = value.filter(Char::isDigit).take(3) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = if (narrowPractice) 15.sp else 18.sp,
+                                lineHeight = if (narrowPractice) 18.sp else 22.sp,
+                            ),
                             singleLine = true,
                             supportingText = null,
-                            modifier = Modifier.width(if (narrowPractice) 60.dp else 74.dp),
+                            modifier = Modifier.width(if (narrowPractice) 64.dp else 74.dp),
                         )
                     }
                 }

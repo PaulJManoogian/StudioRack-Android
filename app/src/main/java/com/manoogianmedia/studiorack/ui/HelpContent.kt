@@ -26,8 +26,9 @@ internal fun studioLeviathanHelpSections(
         listOf(
             HelpTopic("First Steps", points = listOf(
                 "Home: See workspace identity, studio value, upcoming work, care priorities, recent $agentName activity, and synchronized totals.",
-                "Gear: Search synchronized equipment, record field notes, review service history, complete maintenance, and export the visible list.",
-                "Library: Add and edit songs, lyrics, charts, and set lists. Sessions contains the full calendar and Leviathan Live settings.",
+                "Live: Open Songs & Charts, Set Lists, Schedule, Tuners, Live BPM, Live Settings, or $liveName from one menu.",
+                "Gear: Open Equipment, Kits, or Maintenance. Search synchronized equipment, record field notes, review service history, complete maintenance, and export the visible list.",
+                "People: Open People & Places or Sharing. Reports opens the reporting workspace directly; More contains members, Crew, modules, Help, synchronization, and settings.",
             )),
             HelpTopic("Items", listOf("Items are the main equipment records. Android displays synchronized identity, category/type, location, status, units, serials, category-specific details, images, notes, and maintenance. Use the canonical web application for complete item creation and comprehensive equipment-field editing.")),
             HelpTopic(agentName, listOf("$agentName watches care details, sends trackable reminders, reads replies, updates matching actions, and keeps an action history. Configure timing and quiet hours, test delivery, and teach enabled skills how your organization works.")),

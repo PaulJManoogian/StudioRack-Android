@@ -102,6 +102,7 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LightMode
@@ -294,14 +295,25 @@ fun StudioRackApp(
     }
 }
 
-private enum class AppSection(val label: String, val mark: String) {
-    DASHBOARD("Home", "HOME"),
-    EQUIPMENT("Gear", "GEAR"),
-    KITS("Kits", "KITS"),
-    SESSIONS("Sessions", "LIVE"),
-    LIBRARY("Library", "MUSIC"),
-    MORE("More", "MORE"),
+private enum class AppSection { DASHBOARD, EQUIPMENT, KITS, SESSIONS, LIBRARY, MORE }
+
+private enum class PrimarySection(val label: String) {
+    HOME("Home"),
+    LIVE("Live"),
+    GEAR("Gear"),
+    PEOPLE("People"),
+    REPORTS("Reports"),
+    MORE("More"),
 }
+
+private data class AppRoute(
+    val section: AppSection,
+    val primary: PrimarySection,
+    val tab: String = "",
+    val reportTab: String = "Overview",
+)
+
+private data class NavigationChoice(val label: String, val route: AppRoute)
 
 @Composable
 private fun MainShell(
@@ -310,7 +322,7 @@ private fun MainShell(
     notificationRoutes: Flow<NotificationRoute>,
     openGig: (String) -> Unit,
 ) {
-    var section by remember { mutableStateOf(AppSection.DASHBOARD) }
+    var route by remember { mutableStateOf(AppRoute(AppSection.DASHBOARD, PrimarySection.HOME)) }
     var showingAlerts by remember { mutableStateOf(false) }
     var showingFeedback by remember { mutableStateOf(false) }
     val pending by model.pendingCount.collectAsState()
@@ -318,19 +330,20 @@ private fun MainShell(
     val syncHealth by model.syncHealth.collectAsState()
     val notificationCount by model.notificationCount.collectAsState()
     val productName = stringResource(R.string.app_name_marked)
+    val agentName = stringResource(R.string.agent_name)
     val compactShell = LocalConfiguration.current.screenWidthDp < 600
     LaunchedEffect(notificationRoutes) {
-        notificationRoutes.collect { route ->
-            if (route.destination == "alerts") {
+        notificationRoutes.collect { notificationRoute ->
+            if (notificationRoute.destination == "alerts") {
                 showingAlerts = true
                 showingFeedback = false
             } else {
                 showingAlerts = false
                 showingFeedback = false
-                section = when (route.destination) {
-                    "equipment" -> AppSection.EQUIPMENT
-                    "sessions" -> AppSection.SESSIONS
-                    else -> AppSection.DASHBOARD
+                route = when (notificationRoute.destination) {
+                    "equipment" -> AppRoute(AppSection.EQUIPMENT, PrimarySection.GEAR)
+                    "sessions" -> AppRoute(AppSection.SESSIONS, PrimarySection.LIVE, "Schedule")
+                    else -> AppRoute(AppSection.DASHBOARD, PrimarySection.HOME)
                 }
             }
         }
@@ -343,6 +356,35 @@ private fun MainShell(
         uiState.syncError || syncHealth.error != null,
         pending,
         maintenanceMessage != null,
+    )
+    val navigationChoices = mapOf(
+        PrimarySection.LIVE to listOf(
+            NavigationChoice("Songs & Charts", AppRoute(AppSection.LIBRARY, PrimarySection.LIVE, "Songs")),
+            NavigationChoice("Set Lists", AppRoute(AppSection.LIBRARY, PrimarySection.LIVE, "Set Lists")),
+            NavigationChoice("Schedule", AppRoute(AppSection.SESSIONS, PrimarySection.LIVE, "Schedule")),
+            NavigationChoice("Tuners", AppRoute(AppSection.LIBRARY, PrimarySection.LIVE, "Tuners")),
+            NavigationChoice("Live BPM", AppRoute(AppSection.LIBRARY, PrimarySection.LIVE, "Live BPM")),
+            NavigationChoice("Live Settings", AppRoute(AppSection.SESSIONS, PrimarySection.LIVE, "Leviathan Live")),
+            NavigationChoice("Open Leviathan Live", AppRoute(AppSection.SESSIONS, PrimarySection.LIVE, "Schedule")),
+        ),
+        PrimarySection.GEAR to listOf(
+            NavigationChoice("Equipment", AppRoute(AppSection.EQUIPMENT, PrimarySection.GEAR)),
+            NavigationChoice("Kits", AppRoute(AppSection.KITS, PrimarySection.GEAR)),
+            NavigationChoice("Maintenance", AppRoute(AppSection.MORE, PrimarySection.GEAR, "Reports", "Maintenance")),
+        ),
+        PrimarySection.PEOPLE to listOf(
+            NavigationChoice("People & Places", AppRoute(AppSection.MORE, PrimarySection.PEOPLE, "People")),
+            NavigationChoice("Sharing", AppRoute(AppSection.MORE, PrimarySection.PEOPLE, "Sharing")),
+        ),
+        PrimarySection.MORE to listOf(
+            NavigationChoice("Members", AppRoute(AppSection.MORE, PrimarySection.MORE, "Members")),
+            NavigationChoice(agentName, AppRoute(AppSection.MORE, PrimarySection.MORE, agentName)),
+            NavigationChoice("Module Data", AppRoute(AppSection.MORE, PrimarySection.MORE, "Module Data")),
+            NavigationChoice("Modules", AppRoute(AppSection.MORE, PrimarySection.MORE, "Modules")),
+            NavigationChoice("Help", AppRoute(AppSection.MORE, PrimarySection.MORE, "Help")),
+            NavigationChoice("Sync", AppRoute(AppSection.MORE, PrimarySection.MORE, "Sync")),
+            NavigationChoice("Settings", AppRoute(AppSection.MORE, PrimarySection.MORE, "Settings")),
+        ),
     )
     Scaffold(
         containerColor = Ink,
@@ -387,11 +429,16 @@ private fun MainShell(
             ) {
                 val compactNavigation = maxWidth < 600.dp
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (compactNavigation) 2.dp else 8.dp)) {
-                    AppSection.entries.forEach { destination ->
-                        StudioNavPill(
+                    PrimarySection.entries.forEach { destination ->
+                        StudioNavigationItem(
                             destination = destination,
-                            selected = !showingAlerts && !showingFeedback && section == destination,
-                            onClick = { showingAlerts = false; showingFeedback = false; section = destination },
+                            choices = navigationChoices[destination].orEmpty(),
+                            selected = !showingAlerts && !showingFeedback && route.primary == destination,
+                            onChoose = { selectedRoute ->
+                                showingAlerts = false
+                                showingFeedback = false
+                                route = selectedRoute
+                            },
                             compact = compactNavigation,
                             modifier = Modifier.weight(1f),
                         )
@@ -416,20 +463,28 @@ private fun MainShell(
                 } else if (showingAlerts) {
                     AlertsScreen(model) { destination, _ ->
                         showingAlerts = false
-                        section = when (destination) {
-                            "equipment" -> AppSection.EQUIPMENT
-                            "sessions" -> AppSection.SESSIONS
-                            else -> AppSection.DASHBOARD
+                        route = when (destination) {
+                            "equipment" -> AppRoute(AppSection.EQUIPMENT, PrimarySection.GEAR)
+                            "sessions" -> AppRoute(AppSection.SESSIONS, PrimarySection.LIVE, "Schedule")
+                            else -> AppRoute(AppSection.DASHBOARD, PrimarySection.HOME)
                         }
                     }
                 } else {
-                    when (section) {
-                        AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
-                        AppSection.EQUIPMENT -> EquipmentScreen(model)
-                        AppSection.KITS -> KitsScreen(model)
-                        AppSection.SESSIONS -> SessionsScreen(model, openGig)
-                        AppSection.LIBRARY -> LibraryScreen(model)
-                        AppSection.MORE -> MoreScreen(model, uiState)
+                    key(route) {
+                        when (route.section) {
+                            AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
+                            AppSection.EQUIPMENT -> EquipmentScreen(model)
+                            AppSection.KITS -> KitsScreen(model)
+                            AppSection.SESSIONS -> SessionsScreen(model, openGig, route.tab.ifBlank { "Schedule" })
+                            AppSection.LIBRARY -> LibraryScreen(model, route.tab.ifBlank { "Songs" })
+                            AppSection.MORE -> MoreScreen(
+                                model,
+                                uiState,
+                                route.tab.ifBlank { "Settings" },
+                                route.reportTab,
+                                showNavigation = route.primary == PrimarySection.MORE,
+                            )
+                        }
                     }
                 }
             }
@@ -537,17 +592,53 @@ private fun TesterFeedbackScreen(model: StudioRackViewModel, testerPhase: String
 }
 
 @Composable
-private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: () -> Unit, compact: Boolean = false, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.height(if (compact) 34.dp else 44.dp).clickable(onClick = onClick),
-        color = if (selected) Amber else PanelRaised,
-        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(1.dp, if (selected) Amber else Color(0x33FFFFFF)),
-        shape = RoundedCornerShape(50),
-        shadowElevation = if (selected) 5.dp else 0.dp,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(destination.label, fontSize = if (compact) 9.sp else 12.sp, maxLines = 1, fontWeight = FontWeight.Black)
+private fun StudioNavigationItem(
+    destination: PrimarySection,
+    choices: List<NavigationChoice>,
+    selected: Boolean,
+    onChoose: (AppRoute) -> Unit,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(if (compact) 34.dp else 44.dp).clickable {
+                when {
+                    choices.isNotEmpty() -> expanded = true
+                    destination == PrimarySection.REPORTS -> onChoose(AppRoute(AppSection.MORE, PrimarySection.REPORTS, "Reports"))
+                    else -> onChoose(AppRoute(AppSection.DASHBOARD, PrimarySection.HOME))
+                }
+            },
+            color = if (selected) Amber else PanelRaised,
+            contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+            border = BorderStroke(1.dp, if (selected) Amber else Color(0x33FFFFFF)),
+            shape = RoundedCornerShape(50),
+            shadowElevation = if (selected) 5.dp else 0.dp,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(destination.label, fontSize = if (compact) 9.sp else 12.sp, maxLines = 1, fontWeight = FontWeight.Black)
+                    if (choices.isNotEmpty()) {
+                        Icon(Icons.Rounded.KeyboardArrowUp, null, Modifier.size(if (compact) 12.dp else 15.dp))
+                    }
+                }
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = PanelRaised,
+        ) {
+            choices.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choice.label, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) },
+                    onClick = {
+                        expanded = false
+                        onChoose(choice.route)
+                    },
+                )
+            }
         }
     }
 }
@@ -1101,6 +1192,7 @@ private fun KitsScreen(model: StudioRackViewModel) {
 private fun SessionsScreen(
     model: StudioRackViewModel,
     openGig: (String) -> Unit,
+    initialTab: String = "Schedule",
 ) {
     val events by model.events.collectAsState()
     val venues by model.venues.collectAsState()
@@ -1119,7 +1211,7 @@ private fun SessionsScreen(
     val context = LocalContext.current
     val online = rememberNetworkConnected()
     var query by remember { mutableStateOf("") }
-    var sessionTab by remember { mutableStateOf("Schedule") }
+    var sessionTab by remember(initialTab) { mutableStateOf(initialTab) }
     var type by remember { mutableStateOf("All") }
     var scheduleView by remember { mutableStateOf("Month") }
     var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
@@ -1314,7 +1406,7 @@ private fun parseCalendarColor(value: String): Color = runCatching { Color(andro
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun LibraryScreen(model: StudioRackViewModel) {
+private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Songs") {
     val context = LocalContext.current
     val compactPhone = LocalConfiguration.current.screenWidthDp < 600
     val scope = rememberCoroutineScope()
@@ -1326,7 +1418,7 @@ private fun LibraryScreen(model: StudioRackViewModel) {
     val cachedAttachments by model.cachedAttachments.collectAsState()
     val reportState by model.reportState.collectAsState()
     val online = rememberNetworkConnected()
-    var tab by remember { mutableStateOf("Songs") }
+    var tab by remember(initialTab) { mutableStateOf(initialTab) }
     var query by remember { mutableStateOf("") }
     var favoriteScope by remember { mutableStateOf("All") }
     var sort by remember { mutableStateOf("A-Z") }
@@ -1550,15 +1642,23 @@ private fun LibraryScreen(model: StudioRackViewModel) {
 }
 
 @Composable
-private fun MoreScreen(model: StudioRackViewModel, uiState: StudioRackUiState) {
+private fun MoreScreen(
+    model: StudioRackViewModel,
+    uiState: StudioRackUiState,
+    initialTab: String = "Reports",
+    initialReportTab: String = "Overview",
+    showNavigation: Boolean = true,
+) {
     val productName = stringResource(R.string.app_name)
     val agentName = stringResource(R.string.agent_name)
-    var tab by remember { mutableStateOf("Reports") }
+    var tab by remember(initialTab) { mutableStateOf(initialTab) }
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SectionHeading(productName.uppercase(), "More") }
-        item { MoreChoiceStrip(tab, agentName) { tab = it } }
+        if (showNavigation) {
+            item { SectionHeading(productName.uppercase(), "More") }
+            item { MoreChoiceStrip(tab, agentName) { tab = it } }
+        }
         when (tab) {
-            "Reports" -> reportsContent(model)
+            "Reports" -> reportsContent(model, initialReportTab)
             "Sharing" -> sharingContent(model)
             "People" -> directoryContent(model)
             "Members" -> workspaceMembersContent(model)
@@ -2935,12 +3035,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.syncContent(model: St
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.reportsContent(model: StudioRackViewModel) {
-    item { ReportsPanel(model) }
+private fun androidx.compose.foundation.lazy.LazyListScope.reportsContent(model: StudioRackViewModel, initialTab: String = "Overview") {
+    item { ReportsPanel(model, initialTab) }
 }
 
 @Composable
-private fun ReportsPanel(model: StudioRackViewModel) {
+private fun ReportsPanel(model: StudioRackViewModel, initialTab: String = "Overview") {
     val items by model.items.collectAsState()
     val kits by model.kits.collectAsState()
     val events by model.events.collectAsState()
@@ -2959,7 +3059,7 @@ private fun ReportsPanel(model: StudioRackViewModel) {
     val specRows = specs.map(::supportingJson)
     val maintenanceHistory by model.maintenanceHistory.collectAsState()
     val careRows = maintenanceRows(specRows, itemRows, brands.map(::supportingJson), locations.map(::supportingJson), windowDays = 36500, fieldNotes = maintenanceNotes.map(::recordJson), completions = maintenanceHistory.filter { it.revision == 0 }.map(::recordJson))
-    var tab by remember { mutableStateOf("Overview") }
+    var tab by remember(initialTab) { mutableStateOf(initialTab) }
     var question by remember { mutableStateOf("") }
 
     LaunchedEffect(online) {
