@@ -116,7 +116,7 @@ internal class PracticeMetronomeEngine {
     val state = mutableState.asStateFlow()
     @Volatile private var config = PracticeMetronomeConfig()
     private var job: Job? = null
-    private val player = PracticeClickPlayer()
+    private var player: PracticeClickPlayer? = null
 
     fun configure(value: PracticeMetronomeConfig) { config = value }
     fun toggle() { if (mutableState.value.running) stop() else start() }
@@ -126,6 +126,7 @@ internal class PracticeMetronomeEngine {
         mutableState.value = PracticeMetronomeState(running = true, effectiveTempo = config.tempo)
         job = scope.launch {
             try {
+                val clickPlayer = player ?: PracticeClickPlayer().also { player = it }
                 var step = 0
                 var bar = 0
                 var next = System.nanoTime()
@@ -144,11 +145,11 @@ internal class PracticeMetronomeEngine {
                     val polyB = if (current.polyrhythm && step % (grid / current.pulseB) == 0) step / (grid / current.pulseB) else -1
                     if (!silent && step % normalEvery == 0) {
                         val level = if (subBeat == 0) current.accents.getOrElse(beat) { 1 } else 1
-                        if (level > 0) player.play(if (level == 2) ClickVoice.ACCENT else ClickVoice.NORMAL)
+                        if (level > 0) clickPlayer.play(if (level == 2) ClickVoice.ACCENT else ClickVoice.NORMAL)
                     }
                     if (!silent && current.polyrhythm) {
-                        if (polyA >= 0) player.play(ClickVoice.POLY_A)
-                        if (polyB >= 0) player.play(ClickVoice.POLY_B)
+                        if (polyA >= 0) clickPlayer.play(ClickVoice.POLY_A)
+                        if (polyB >= 0) clickPlayer.play(ClickVoice.POLY_B)
                     }
                     mutableState.value = PracticeMetronomeState(
                         running = true, effectiveTempo = current.tempo, beat = beat, subBeat = subBeat,
@@ -176,8 +177,8 @@ internal class PracticeMetronomeEngine {
         }
     }
 
-    fun stop() { mutableState.value = PracticeMetronomeState(); job?.cancel(); job = null; player.stop() }
-    fun close() { stop(); player.close(); scope.cancel() }
+    fun stop() { mutableState.value = PracticeMetronomeState(); job?.cancel(); job = null; player?.stop() }
+    fun close() { stop(); player?.close(); player = null; scope.cancel() }
 }
 
 private class PracticeMetronomeUiState {
@@ -246,8 +247,12 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
     var mode by session.mode; var lastTap by session.lastTap; val taps = session.taps
     fun configuration() = PracticeMetronomeConfig(tempo, meter, subdivision, accents.toList(), poly, pulseA, pulseB, trainer, goal, step, every, silent, soundBars, mutedBars)
     engine.configure(configuration())
-    val scroll = rememberScrollState()
-    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(if (fullScreen) 18.dp else 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val contentModifier = if (fullScreen) {
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)
+    } else {
+        Modifier.fillMaxWidth().padding(2.dp)
+    }
+    Column(contentModifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Column { Text("PRACTICE TOOL", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black); Text("Metronome", fontSize = 24.sp, fontWeight = FontWeight.Black) }
             OutlinedButton(onClick = openFullScreen) { Text(if (fullScreen) "Close Full Screen" else "Full Screen") }
