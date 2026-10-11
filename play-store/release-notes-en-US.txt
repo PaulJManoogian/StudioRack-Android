@@ -9,6 +9,8 @@ Studio Leviathan closed beta
 - Refined the Android metronome with visible tempo controls, adaptive beat and polyrhythm displays, standard note/accent/rest editing, and clearer practice controls.
 - Added editable Nashville-style drum charts and drum tabs with visual percussion grids in song previews and Leviathan Live Chart Mode.
 - Added Nashville Drum Notation as a separate text-driven option with a song-form overview and conventional percussion staff rendering; existing Nashville Drum Charts and Drum Tabs remain unchanged.
+- Drum charts now fit the available screen width, place a prominent bar count beside each section name, and identify every instrument abbreviation used in the notation.
+- Expanded the in-app documentation with a complete written drum-chart appendix covering Nashville Drum Charts, Drum Tabs, Nashville Drum Notation, symbols, labels, and copy-ready examples.
 - Tuners for pitched instruments and percussion, plus faster navigation aligned with the web application.
 - Wear OS companion controls for supported live-performance workflows.
 - Updated privacy, support, and release-readiness information.

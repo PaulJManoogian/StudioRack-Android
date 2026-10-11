@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -132,9 +133,11 @@ internal fun DrumChartDocumentView(source: String, format: String) {
         } else sections.forEach { section ->
             Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .55f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .18f)), shape = RoundedCornerShape(7.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(section.name.uppercase(), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = 14.sp)
-                        if (section.bars > 0) Text("${section.bars} bars", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(section.name.uppercase(), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = 17.sp)
+                        if (section.bars > 0) Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = .14f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = .55f)), shape = RoundedCornerShape(50)) {
+                            Text("${section.bars} ${if (section.bars == 1) "bar" else "bars"}", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                        }
                     }
                     DrumPatternGrid(section.rows)
                     if (section.notes.isNotEmpty()) Text(section.notes.joinToString("  •  "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -148,15 +151,23 @@ internal fun DrumChartDocumentView(source: String, format: String) {
 private fun DrumSongForm(sections: List<DrumChartSection>) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text("SONG FORM", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Black)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            sections.forEach { section ->
-                Column(
-                    Modifier.width(116.dp).height(68.dp).border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .28f)).padding(7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(section.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                    if (section.bars > 0) Text("${section.bars} bars", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = (maxWidth.value / 104f).toInt().coerceIn(1, 4)
+            val cellWidth = maxWidth / columns
+            Column {
+                sections.chunked(columns).forEach { rowSections ->
+                    Row(Modifier.fillMaxWidth()) {
+                        rowSections.forEach { section ->
+                            Column(
+                                Modifier.width(cellWidth).height(64.dp).border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .28f)).padding(6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Text(section.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                                if (section.bars > 0) Text("${section.bars} ${if (section.bars == 1) "bar" else "bars"}", color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -167,15 +178,46 @@ private fun DrumSongForm(sections: List<DrumChartSection>) {
 private fun DrumStaffSection(section: DrumChartSection, timeSignature: String) {
     Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .55f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = .28f)), shape = RoundedCornerShape(7.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(section.name.uppercase(), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = 14.sp)
-                if (section.bars > 0) Text("${section.bars} bars", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Black, fontSize = 12.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(section.name.uppercase(), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = 17.sp)
+                if (section.bars > 0) Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = .14f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = .55f)), shape = RoundedCornerShape(50)) {
+                    Text("${section.bars} ${if (section.bars == 1) "bar" else "bars"}", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                }
             }
             Text("Percussion staff  •  $timeSignature", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                DrumStaffNotation(section.rows, timeSignature)
-            }
+            DrumStaffKey(section.rows)
+            DrumStaffNotation(section.rows, timeSignature)
             if (section.notes.isNotEmpty()) Text(section.notes.joinToString("  •  "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+private val drumStaffNames = mapOf(
+    "CR" to "Crash", "CC" to "Crash", "RC" to "Ride crash",
+    "HH" to "Hi-hat", "OH" to "Open hi-hat", "RD" to "Ride",
+    "T1" to "High tom", "HT" to "High tom", "T2" to "Mid tom", "MT" to "Mid tom",
+    "SD" to "Snare", "SN" to "Snare", "RS" to "Rimshot",
+    "T3" to "Low tom", "LT" to "Low tom", "FT" to "Floor tom",
+    "BD" to "Bass drum", "KD" to "Kick", "K" to "Kick", "HF" to "Hi-hat foot",
+)
+
+@Composable
+private fun DrumStaffKey(rows: List<DrumPatternRow>) {
+    val labels = rows.map { it.label.uppercase() }.distinct()
+    if (labels.isEmpty()) return
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth < 360.dp) 2 else 3
+        val cellWidth = maxWidth / columns
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            labels.chunked(columns).forEach { line ->
+                Row(Modifier.fillMaxWidth()) {
+                    line.forEach { label ->
+                        Surface(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .045f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .16f)), shape = RoundedCornerShape(4.dp), modifier = Modifier.width(cellWidth).padding(end = 4.dp)) {
+                            Text("$label  ${drumStaffNames[label] ?: label.lowercase().replaceFirstChar(Char::uppercase)}", Modifier.padding(horizontal = 6.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -200,17 +242,16 @@ private fun DrumStaffNotation(rows: List<DrumPatternRow>, timeSignature: String)
     val notationColor = MaterialTheme.colorScheme.onSurface
     val softColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f)
     val accentColor = MaterialTheme.colorScheme.primary
-    val staffWidth = 740.dp
-    Box(Modifier.width(staffWidth).height(154.dp)) {
+    Box(Modifier.fillMaxWidth().height(154.dp)) {
     Canvas(Modifier.fillMaxSize()) {
         fun fy(value: Float) = size.height * value / 154f
-        val left = 86.dp.toPx()
-        val right = size.width - 10.dp.toPx()
+        val left = 64.dp.toPx().coerceAtMost(size.width * .28f)
+        val right = size.width - 6.dp.toPx()
         listOf(57f, 69f, 81f, 93f, 105f).forEach { y ->
             drawLine(softColor, Offset(left, fy(y)), Offset(right, fy(y)), 1.2.dp.toPx())
         }
-        drawLine(notationColor, Offset(63.dp.toPx(), fy(65f)), Offset(63.dp.toPx(), fy(99f)), 4.dp.toPx())
-        drawLine(notationColor, Offset(72.dp.toPx(), fy(65f)), Offset(72.dp.toPx(), fy(99f)), 4.dp.toPx())
+        drawLine(notationColor, Offset(left - 22.dp.toPx(), fy(65f)), Offset(left - 22.dp.toPx(), fy(99f)), 4.dp.toPx())
+        drawLine(notationColor, Offset(left - 14.dp.toPx(), fy(65f)), Offset(left - 14.dp.toPx(), fy(99f)), 4.dp.toPx())
 
         val steps = rows.maxOfOrNull { it.pattern.length }?.coerceIn(4, 32) ?: 8
         val spacing = (right - left) / (steps - 1).coerceAtLeast(1)
@@ -268,7 +309,7 @@ private fun DrumStaffNotation(rows: List<DrumPatternRow>, timeSignature: String)
         }
     }
         val signature = timeSignature.split("/", limit = 2).let { it.firstOrNull().orEmpty().ifBlank { "4" } to it.getOrNull(1).orEmpty().ifBlank { "4" } }
-        Column(Modifier.offset(x = 75.dp, y = 52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.offset(x = 47.dp, y = 52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(signature.first, color = notationColor, fontSize = 16.sp, fontWeight = FontWeight.Black, lineHeight = 16.sp)
             Text(signature.second, color = notationColor, fontSize = 16.sp, fontWeight = FontWeight.Black, lineHeight = 16.sp)
         }
