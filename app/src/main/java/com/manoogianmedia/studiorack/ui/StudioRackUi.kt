@@ -7473,7 +7473,10 @@ private fun PerformanceSongScreen(
             val textMaterial = textAttachment?.optString("content_text").orEmpty()
             val textFormat = textAttachment?.optString("content_format", "chordpro").orEmpty()
             when {
-                textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_staff", "drum_tab") -> {
+                textMaterial.isNotBlank() && textFormat == "drum_staff" -> {
+                    DrumChartDocumentView(textMaterial, textFormat, performanceMode = true)
+                }
+                textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_tab") -> {
                     FitPerformanceMaterial(Modifier.fillMaxSize()) {
                         DrumChartDocumentView(textMaterial, textFormat)
                     }
@@ -7505,27 +7508,17 @@ internal fun performanceFitScale(
     contentHeight: Int,
 ): Float {
     if (availableWidth <= 0 || availableHeight <= 0 || contentWidth <= 0 || contentHeight <= 0) return 1f
-    return minOf(
-        1f,
-        availableWidth.toFloat() / contentWidth.toFloat(),
-        availableHeight.toFloat() / contentHeight.toFloat(),
-    )
+    return minOf(1f, availableWidth.toFloat() / contentWidth, availableHeight.toFloat() / contentHeight)
 }
 
 @Composable
 private fun FitPerformanceMaterial(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Layout(content = content, modifier = modifier) { measurables, constraints ->
         val width = constraints.maxWidth.coerceAtLeast(constraints.minWidth)
-        val boundedHeight = if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
+        val height = (if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight).coerceAtLeast(constraints.minHeight)
         val placeable = measurables.firstOrNull()?.measure(
-            Constraints(
-                minWidth = width,
-                maxWidth = width,
-                minHeight = 0,
-                maxHeight = Constraints.Infinity,
-            ),
+            Constraints(minWidth = width, maxWidth = width, minHeight = 0, maxHeight = Constraints.Infinity),
         )
-        val height = boundedHeight.coerceAtLeast(constraints.minHeight)
         if (placeable == null) {
             layout(width, height) {}
         } else {

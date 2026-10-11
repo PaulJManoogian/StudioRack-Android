@@ -40,13 +40,19 @@ class PerformanceAttachmentSizingTest {
     }
 
     @Test
-    fun performanceMaterialFitsTallPageInsideAvailableStageHeight() {
-        assertEquals(0.75f, performanceFitScale(1200, 600, 800, 800), 0.001f)
-        assertEquals(0.5f, performanceFitScale(600, 800, 1200, 900), 0.001f)
+    fun performanceDrumSectionsShareAvailableVerticalSpace() {
+        assertEquals(140f, performanceDrumSectionSlot(500f, 80f, 3), 0.001f)
+        assertEquals(105f, performanceDrumSectionSlot(500f, 80f, 4), 0.001f)
     }
 
     @Test
-    fun performanceMaterialNeverEnlargesSmallerCharts() {
+    fun performanceDrumSectionsRetainMinimumUsableHeight() {
+        assertEquals(76f, performanceDrumSectionSlot(300f, 100f, 4), 0.001f)
+    }
+
+    @Test
+    fun otherWrittenChartsStillFitInsideThePerformanceViewport() {
+        assertEquals(0.75f, performanceFitScale(1200, 600, 800, 800), 0.001f)
         assertEquals(1f, performanceFitScale(1200, 900, 800, 600), 0.001f)
     }
 }

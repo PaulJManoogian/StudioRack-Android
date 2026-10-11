@@ -35,6 +35,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -106,11 +108,15 @@ private data class MutableDrumSection(
 }
 
 @Composable
-internal fun DrumChartDocumentView(source: String, format: String) {
+internal fun DrumChartDocumentView(source: String, format: String, performanceMode: Boolean = false) {
     val document = remember(source) { parseDrumChart(source) }
     val sections = remember(document, format) {
         if (document.sections.isNotEmpty()) document.sections
         else listOf(DrumChartSection(if (format == "drum_tab") "Drum Tab" else "Chart", rows = document.rows, notes = document.notes))
+    }
+    if (performanceMode && format == "drum_staff") {
+        PerformanceDrumStaffChart(document, sections)
+        return
     }
     Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         document.metadata["title"]?.takeIf(String::isNotBlank)?.let {
@@ -149,23 +155,59 @@ internal fun DrumChartDocumentView(source: String, format: String) {
 }
 
 @Composable
-private fun DrumSongForm(sections: List<DrumChartSection>) {
+private fun PerformanceDrumStaffChart(document: DrumChartDocument, sections: List<DrumChartSection>) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val columns = (maxWidth.value / 92f).toInt().coerceIn(1, 6)
+        val formRows = ((sections.size + columns - 1) / columns).coerceAtLeast(1)
+        val uniqueRows = sections.flatMap { it.rows }.distinctBy { it.label.uppercase() }
+        val keyLines = ((uniqueRows.size + 3) / 4).coerceAtLeast(1).coerceAtMost(2)
+        val overhead = 18f + (formRows * 40f) + (keyLines * 16f) + 12f
+        val sectionSlot = performanceDrumSectionSlot(maxHeight.value, overhead, sections.size)
+        val staffHeight = (sectionSlot - 42f).coerceIn(64f, 126f).dp
+
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            DrumSongForm(sections, compact = true)
+            DrumStaffKey(uniqueRows, compact = true)
+            sections.forEach { section ->
+                DrumStaffSection(
+                    section = section,
+                    timeSignature = document.metadata["time"].orEmpty().ifBlank { "4/4" },
+                    compact = true,
+                    showKey = false,
+                    staffHeight = staffHeight,
+                    sectionHeight = sectionSlot.dp,
+                )
+            }
+        }
+    }
+}
+
+internal fun performanceDrumSectionSlot(availableHeight: Float, overhead: Float, sectionCount: Int): Float {
+    if (sectionCount <= 0) return 0f
+    return ((availableHeight - overhead).coerceAtLeast(0f) / sectionCount).coerceAtLeast(76f)
+}
+
+@Composable
+private fun DrumSongForm(sections: List<DrumChartSection>, compact: Boolean = false) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text("SONG FORM", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Black)
+        Text("SONG FORM", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (compact) 9.sp else 11.sp, fontWeight = FontWeight.Black)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val columns = (maxWidth.value / 104f).toInt().coerceIn(1, 4)
+            val columns = (maxWidth.value / if (compact) 92f else 104f).toInt().coerceIn(1, if (compact) 6 else 4)
             val cellWidth = maxWidth / columns
             Column {
                 sections.chunked(columns).forEach { rowSections ->
                     Row(Modifier.fillMaxWidth()) {
                         rowSections.forEach { section ->
                             Column(
-                                Modifier.width(cellWidth).height(64.dp).border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .28f)).padding(6.dp),
+                                Modifier.width(cellWidth).height(if (compact) 40.dp else 64.dp).border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .28f)).padding(if (compact) 3.dp else 6.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
-                                Text(section.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                                if (section.bars > 0) Text("${section.bars} ${if (section.bars == 1) "bar" else "bars"}", color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                                Text(section.name, color = MaterialTheme.colorScheme.onSurface, fontSize = if (compact) 10.sp else 13.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (section.bars > 0) Text("${section.bars} ${if (section.bars == 1) "bar" else "bars"}", color = MaterialTheme.colorScheme.secondary, fontSize = if (compact) 9.sp else 12.sp, fontWeight = FontWeight.Black)
                             }
                         }
                     }
@@ -176,19 +218,34 @@ private fun DrumSongForm(sections: List<DrumChartSection>) {
 }
 
 @Composable
-private fun DrumStaffSection(section: DrumChartSection, timeSignature: String) {
-    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .55f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = .28f)), shape = RoundedCornerShape(7.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+private fun DrumStaffSection(
+    section: DrumChartSection,
+    timeSignature: String,
+    compact: Boolean = false,
+    showKey: Boolean = true,
+    staffHeight: Dp = 154.dp,
+    sectionHeight: Dp? = null,
+) {
+    val sectionModifier = if (sectionHeight == null) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().height(sectionHeight)
+    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .55f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = .28f)), shape = RoundedCornerShape(7.dp), modifier = sectionModifier) {
+        Column(Modifier.padding(if (compact) 5.dp else 9.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(section.name.uppercase(), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = 17.sp)
+                Text(section.name.uppercase(), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = if (compact) 13.sp else 17.sp, maxLines = 1)
                 if (section.bars > 0) Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = .14f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = .55f)), shape = RoundedCornerShape(50)) {
-                    Text("${section.bars} ${if (section.bars == 1) "bar" else "bars"}", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                    Text("${section.bars} ${if (section.bars == 1) "bar" else "bars"}", Modifier.padding(horizontal = if (compact) 6.dp else 9.dp, vertical = if (compact) 2.dp else 4.dp), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Black, fontSize = if (compact) 10.sp else 14.sp)
                 }
             }
-            Text("Percussion staff  •  $timeSignature", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            DrumStaffKey(section.rows)
-            DrumStaffNotation(section.rows, timeSignature)
-            if (section.notes.isNotEmpty()) Text(section.notes.joinToString("  •  "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            if (!compact) Text("Percussion staff  •  $timeSignature", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            if (showKey) DrumStaffKey(section.rows)
+            DrumStaffNotation(section.rows, timeSignature, staffHeight, compact)
+            if (section.notes.isNotEmpty()) Text(
+                section.notes.joinToString("  •  "),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = if (compact) 9.sp else 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = if (compact) 1 else Int.MAX_VALUE,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -203,9 +260,22 @@ private val drumStaffNames = mapOf(
 )
 
 @Composable
-private fun DrumStaffKey(rows: List<DrumPatternRow>) {
+private fun DrumStaffKey(rows: List<DrumPatternRow>, compact: Boolean = false) {
     val labels = rows.map { it.label.uppercase() }.distinct()
     if (labels.isEmpty()) return
+    if (compact) {
+        Text(
+            labels.joinToString("  •  ") { "$it ${drumStaffNames[it] ?: it.lowercase().replaceFirstChar(Char::uppercase)}" },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 12.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        return
+    }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val columns = if (maxWidth < 360.dp) 2 else 3
         val cellWidth = maxWidth / columns
@@ -238,12 +308,12 @@ private fun drumStaffY(label: String): Float = when (label.uppercase()) {
 }
 
 @Composable
-private fun DrumStaffNotation(rows: List<DrumPatternRow>, timeSignature: String) {
+private fun DrumStaffNotation(rows: List<DrumPatternRow>, timeSignature: String, height: Dp = 154.dp, compact: Boolean = false) {
     if (rows.isEmpty()) return
     val notationColor = MaterialTheme.colorScheme.onSurface
     val softColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f)
     val accentColor = MaterialTheme.colorScheme.primary
-    Box(Modifier.fillMaxWidth().height(154.dp)) {
+    Box(Modifier.fillMaxWidth().height(height)) {
     Canvas(Modifier.fillMaxSize()) {
         fun fy(value: Float) = size.height * value / 154f
         val left = 64.dp.toPx().coerceAtMost(size.width * .28f)
@@ -312,19 +382,19 @@ private fun DrumStaffNotation(rows: List<DrumPatternRow>, timeSignature: String)
         rows.groupBy { drumStaffY(it.label) }.toSortedMap().forEach { (position, positionRows) ->
             Text(
                 positionRows.map { it.label.uppercase() }.distinct().joinToString("/"),
-                modifier = Modifier.width(39.dp).offset(x = 0.dp, y = (position - 7f).dp),
+                modifier = Modifier.width(39.dp).offset(x = 0.dp, y = ((position - 7f) * (height.value / 154f)).dp),
                 color = MaterialTheme.colorScheme.secondary,
                 fontFamily = FontFamily.Monospace,
-                fontSize = 9.sp,
+                fontSize = if (compact) 8.sp else 9.sp,
                 fontWeight = FontWeight.Black,
                 maxLines = 1,
                 textAlign = TextAlign.End,
             )
         }
         val signature = timeSignature.split("/", limit = 2).let { it.firstOrNull().orEmpty().ifBlank { "4" } to it.getOrNull(1).orEmpty().ifBlank { "4" } }
-        Column(Modifier.offset(x = 47.dp, y = 52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(signature.first, color = notationColor, fontSize = 16.sp, fontWeight = FontWeight.Black, lineHeight = 16.sp)
-            Text(signature.second, color = notationColor, fontSize = 16.sp, fontWeight = FontWeight.Black, lineHeight = 16.sp)
+        Column(Modifier.offset(x = 47.dp, y = (52f * (height.value / 154f)).dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(signature.first, color = notationColor, fontSize = if (compact) 13.sp else 16.sp, fontWeight = FontWeight.Black, lineHeight = if (compact) 12.sp else 16.sp)
+            Text(signature.second, color = notationColor, fontSize = if (compact) 13.sp else 16.sp, fontWeight = FontWeight.Black, lineHeight = if (compact) 12.sp else 16.sp)
         }
     }
 }
