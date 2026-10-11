@@ -33,5 +33,18 @@ class DrumChartTest {
         assertEquals(3, document.rows.size)
         assertEquals("o---o---", document.rows.last().pattern)
     }
+
+    @Test
+    fun parsesNotationInstructionsWithoutChangingPatternRows() {
+        val document = parseDrumChart("""{time: 4/4}
+            |[Chorus] x8
+            |pattern: CR|>-------| HH|x-x-x-x-| SD|--g---f-| BD|o-o---o-|
+            |sticking: R L R L
+            |dynamics: mf
+        """.trimMargin())
+        assertEquals(listOf("CR", "HH", "SD", "BD"), document.sections.single().rows.map { it.label })
+        assertTrue(document.sections.single().notes.contains("Sticking: R L R L"))
+        assertTrue(document.sections.single().notes.contains("Dynamics: mf"))
+    }
 }
 

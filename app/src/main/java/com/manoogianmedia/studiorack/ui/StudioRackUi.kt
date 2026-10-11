@@ -4846,8 +4846,8 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             kind = StudioButtonKind.Secondary,
         ) { Text(if (writingLyrics) "Close Chart Editor" else "Write Chart Text", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
         if (writingLyrics) {
-            ChoiceStrip(listOf("ChordPro", "Nashville Drum Chart", "Drum Tab"), when (writtenFormat) { "drum_nashville" -> "Nashville Drum Chart"; "drum_tab" -> "Drum Tab"; else -> "ChordPro" }) {
-                writtenFormat = when (it) { "Nashville Drum Chart" -> "drum_nashville"; "Drum Tab" -> "drum_tab"; else -> "chordpro" }
+            ChoiceStrip(listOf("ChordPro", "Nashville Drum Chart", "Nashville Drum Notation", "Drum Tab"), when (writtenFormat) { "drum_nashville" -> "Nashville Drum Chart"; "drum_staff" -> "Nashville Drum Notation"; "drum_tab" -> "Drum Tab"; else -> "ChordPro" }) {
+                writtenFormat = when (it) { "Nashville Drum Chart" -> "drum_nashville"; "Nashville Drum Notation" -> "drum_staff"; "Drum Tab" -> "drum_tab"; else -> "chordpro" }
                 if (lyricsDraft.text.isBlank()) lyricsName = if (writtenFormat.startsWith("drum_")) "Drum Chart" else "Lyrics"
             }
             StudioField("Material name", lyricsName, dictation = false) { lyricsName = it }
@@ -4917,14 +4917,16 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
 @OptIn(ExperimentalLayoutApi::class)
 private fun WrittenMaterialEditor(value: TextFieldValue, format: String, onValueChange: (TextFieldValue) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val drum = format == "drum_nashville" || format == "drum_tab"
-        Text(if (format == "drum_nashville") "Nashville Drum Chart" else if (format == "drum_tab") "Drum Tab" else "Lyrics / ChordPro", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        val drum = format in setOf("drum_nashville", "drum_staff", "drum_tab")
+        Text(if (format == "drum_nashville") "Nashville Drum Chart" else if (format == "drum_staff") "Nashville Drum Notation" else if (format == "drum_tab") "Drum Tab" else "Lyrics / ChordPro", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val tools = if (drum) listOf(
                 "Section" to ("[Verse] x8\n" to ""),
                 "Pattern" to ("pattern: HH|x-x-x-x-| SD|--o---o-| BD|o---o---|\n" to ""),
                 "Cue" to ("cue: " to ""),
                 "Fill" to ("fill: last bar\n" to ""),
+                "Sticking" to ("sticking: R L R L\n" to ""),
+                "Dynamics" to ("dynamics: mf\n" to ""),
             ) else listOf(
                 "Verse" to ("{start_of_verse}\n" to "\n{end_of_verse}"), "Chorus" to ("{start_of_chorus}\n" to "\n{end_of_chorus}"),
                 "Bridge" to ("{start_of_bridge}\n" to "\n{end_of_bridge}"), "Timing Mark" to ("{x_leviathan_time: 0:00}\n" to ""),
@@ -5062,7 +5064,7 @@ private fun TextAttachmentPreviewDialog(name: String, content: String, format: S
                     TextButton(onClick = close) { Text("Close", color = MaterialTheme.colorScheme.secondary) }
                 }
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
-                    if (format == "drum_nashville" || format == "drum_tab") DrumChartDocumentView(content, format) else ChordProDocument(content)
+                    if (format in setOf("drum_nashville", "drum_staff", "drum_tab")) DrumChartDocumentView(content, format) else ChordProDocument(content)
                 }
             }
         }
@@ -7347,7 +7349,7 @@ private fun PerformanceSongScreen(
                 val textMaterial = textAttachment?.optString("content_text").orEmpty()
                 val textFormat = textAttachment?.optString("content_format", "chordpro").orEmpty()
                 when {
-                    textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_tab") -> DrumChartDocumentView(textMaterial, textFormat)
+                    textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_staff", "drum_tab") -> DrumChartDocumentView(textMaterial, textFormat)
                     textMaterial.isNotBlank() -> ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs, materialScrollState)
                     !rendered.complete -> CircularProgressIndicator()
                     renderedBitmap == null -> SongDetailFallback(item)
