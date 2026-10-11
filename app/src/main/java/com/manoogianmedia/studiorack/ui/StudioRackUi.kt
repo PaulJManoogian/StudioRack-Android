@@ -199,6 +199,7 @@ import com.manoogianmedia.studiorack.performance.NativeMetronome
 import com.manoogianmedia.studiorack.performance.PedalAction
 import com.manoogianmedia.studiorack.performance.PerformanceSettings
 import com.manoogianmedia.studiorack.performance.MidiOutputRouter
+import com.manoogianmedia.studiorack.performance.DrumAuditionPlayer
 import com.manoogianmedia.studiorack.performance.AudioDeviceCatalog
 import com.manoogianmedia.studiorack.performance.LiveAudioDevice
 import com.manoogianmedia.studiorack.performance.CompatibleRoutingProfile
@@ -233,8 +234,6 @@ import java.time.temporal.ChronoUnit
 import java.util.Date
 import kotlin.math.roundToInt
 import kotlin.math.log10
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 private val Ink = Color(0xFF07090F)
 private val Panel = Color(0xFF121621)
@@ -5775,10 +5774,6 @@ private fun LocalLiveDialog(model: StudioRackViewModel, suggestedEvent: JSONObje
     }
 }
 
-private suspend fun MidiOutputRouter.sendAwait(payload: JSONObject): Boolean = suspendCoroutine { continuation ->
-    send(payload) { sent -> continuation.resume(sent) }
-}
-
 @Composable
 private fun GigModeScreen(
     model: StudioRackViewModel,
@@ -5952,6 +5947,7 @@ private fun GigModeScreen(
     var playbackAutoStartRequest by remember(eventId, setListId) { mutableIntStateOf(0) }
     var pedalPerformanceCommand by remember(eventId) { mutableStateOf(PedalPerformanceCommand()) }
     val midiRouter = remember(eventId) { MidiOutputRouter(context.applicationContext) }
+    val drumAuditionPlayer = remember(eventId) { DrumAuditionPlayer() }
     var midiDestinations by remember(eventId) { mutableStateOf(midiRouter.destinations()) }
     var selectedMidiKey by remember(eventId) { mutableStateOf(midiRouter.selectedKey()) }
     var drumAuditionJob by remember(eventId) { mutableStateOf<Job?>(null) }
@@ -6092,6 +6088,12 @@ private fun GigModeScreen(
 
     DisposableEffect(Unit) { onDispose { metronome.close() } }
     DisposableEffect(midiRouter) { onDispose { midiRouter.close() } }
+    DisposableEffect(drumAuditionPlayer) { onDispose { drumAuditionPlayer.close() } }
+    LaunchedEffect(selectedAudioDeviceId, audioHardwareRevision) {
+        drumAuditionPlayer.setOutputDevice(
+            selectedAudioDeviceId.takeIf { it >= 0 }?.let { AudioDeviceCatalog.outputInfo(context, it) }
+        )
+    }
     LaunchedEffect(settings.metronomeMuted) { metronome.setMuted(settings.metronomeMuted) }
     LaunchedEffect(currentSong, performanceSongs.size, settings.metronomeMode, settings.metronomeSound) {
         performanceSongs.getOrNull(currentSong)?.song?.let { song ->
@@ -6279,27 +6281,29 @@ private fun GigModeScreen(
                 if (drumAuditionJob?.isActive == true) {
                     drumAuditionJob?.cancel()
                     drumAuditionJob = null
-                } else if (selectedMidiKey.isBlank()) {
-                    midiDestinations = midiRouter.destinations()
-                    liveHardwareView = "device"
-                    showLiveHardware = true
                 } else {
                     val steps = drumAuditionSteps(parseDrumChart(source), metronomeState.tempo, metronomeState.beatsPerMeasure)
                     drumAuditionJob = pedalScope.launch {
                         try {
                             for (step in steps) {
                                 step.notes.forEach { (note, velocity) ->
-                                    midiRouter.sendAwait(JSONObject().put("command", "note_on").put("channel", 10).put("number", note).put("value", velocity))
+                                    drumAuditionPlayer.play(note, velocity)
+                                    if (selectedMidiKey.isNotBlank()) {
+                                        midiRouter.send(JSONObject().put("command", "note_on").put("channel", 10).put("number", note).put("value", velocity))
+                                    }
                                 }
                                 val soundingMs = step.durationMs.coerceAtMost(90L)
                                 delay(soundingMs)
-                                step.notes.forEach { (note, _) ->
-                                    midiRouter.sendAwait(JSONObject().put("command", "note_off").put("channel", 10).put("number", note).put("value", 0))
+                                if (selectedMidiKey.isNotBlank()) step.notes.forEach { (note, _) ->
+                                    midiRouter.send(JSONObject().put("command", "note_off").put("channel", 10).put("number", note).put("value", 0))
                                 }
                                 delay((step.durationMs - soundingMs).coerceAtLeast(0L))
                             }
                         } finally {
-                            midiRouter.send(JSONObject().put("command", "control_change").put("channel", 10).put("number", 123).put("value", 0))
+                            drumAuditionPlayer.stop()
+                            if (selectedMidiKey.isNotBlank()) {
+                                midiRouter.send(JSONObject().put("command", "control_change").put("channel", 10).put("number", 123).put("value", 0))
+                            }
                             drumAuditionJob = null
                         }
                     }
