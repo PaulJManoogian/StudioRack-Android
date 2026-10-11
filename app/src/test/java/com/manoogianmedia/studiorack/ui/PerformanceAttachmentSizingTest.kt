@@ -41,13 +41,26 @@ class PerformanceAttachmentSizingTest {
 
     @Test
     fun performanceDrumSectionsShareAvailableVerticalSpace() {
-        assertEquals(140f, performanceDrumSectionSlot(500f, 80f, 3), 0.001f)
-        assertEquals(105f, performanceDrumSectionSlot(500f, 80f, 4), 0.001f)
+        assertEquals(154f, performanceDrumSectionSlot(500f, 80f, 3), 0.001f)
+        assertEquals(154f, performanceDrumSectionSlot(500f, 80f, 4), 0.001f)
     }
 
     @Test
     fun performanceDrumSectionsRetainMinimumUsableHeight() {
-        assertEquals(76f, performanceDrumSectionSlot(300f, 100f, 4), 0.001f)
+        assertEquals(154f, performanceDrumSectionSlot(300f, 100f, 4), 0.001f)
+    }
+
+    @Test
+    fun drumChartProgressFollowsSectionBarsAndBeats() {
+        val sections = listOf(
+            DrumChartSection("Pickup", bars = 1),
+            DrumChartSection("Intro", bars = 4),
+            DrumChartSection("Chorus", bars = 8),
+        )
+        assertEquals(DrumChartProgress(0, 0, 0), drumChartProgress(sections, 0L, 120, 4))
+        assertEquals(DrumChartProgress(1, 0, 0), drumChartProgress(sections, 2_000L, 120, 4))
+        assertEquals(DrumChartProgress(1, 1, 2), drumChartProgress(sections, 5_000L, 120, 4))
+        assertEquals(DrumChartProgress(2, 0, 0), drumChartProgress(sections, 10_000L, 120, 4))
     }
 
     @Test

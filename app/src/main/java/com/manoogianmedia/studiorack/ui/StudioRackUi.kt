@@ -7474,7 +7474,15 @@ private fun PerformanceSongScreen(
             val textFormat = textAttachment?.optString("content_format", "chordpro").orEmpty()
             when {
                 textMaterial.isNotBlank() && textFormat == "drum_staff" -> {
-                    DrumChartDocumentView(textMaterial, textFormat, performanceMode = true)
+                    DrumChartDocumentView(
+                        textMaterial,
+                        textFormat,
+                        performanceMode = true,
+                        metronomeRunning = metronomeState.running,
+                        metronomePositionMs = timelinePositionMs,
+                        metronomeTempo = metronomeState.tempo,
+                        metronomeBeatsPerMeasure = metronomeState.beatsPerMeasure,
+                    )
                 }
                 textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_tab") -> {
                     FitPerformanceMaterial(Modifier.fillMaxSize()) {
