@@ -348,7 +348,8 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
             }, modifier = Modifier.weight(1f)) { Text("Tap Tempo") }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("Beat", "Poly", "Practice").forEach { choice ->
-            if (choice == mode) Button({ mode = choice }, Modifier.weight(1f)) { Text(choice) } else OutlinedButton({ mode = choice }, Modifier.weight(1f)) { Text(choice) }
+            if (choice == mode) Button({ mode = choice }, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)) { Text(choice, fontSize = 13.sp, maxLines = 1, softWrap = false) }
+            else OutlinedButton({ mode = choice }, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)) { Text(choice, fontSize = 13.sp, maxLines = 1, softWrap = false) }
         } }
         ClickOutputControls(clickSound, { clickSound = it }, clickVolume, { clickVolume = it })
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
