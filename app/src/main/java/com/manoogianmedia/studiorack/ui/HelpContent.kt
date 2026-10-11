@@ -98,10 +98,12 @@ internal fun studioLeviathanHelpSections(
             )),
             HelpTopic("Practice Metronome", points = listOf(
                 "Open Music & Live > Metronome. Set tempo with the slider, exact number, step buttons, or Tap Tempo, then choose Start.",
-                "Beat controls provide meters from 1 through 12, quarter through sixteenth subdivisions, and an Accent, Normal, or Mute state for every beat.",
+                "Beat controls provide meters from 1 through 12 with half-, quarter-, eighth-, or sixteenth-note beat units. The stacked meter uses a proper fraction bar, and changing meter immediately removes or adds beat controls to match.",
+                "Compact notation buttons select half, quarter, eighth, triplet, sixteenth, thirty-second, or sixty-fourth notes. Every beat cycles through Accent, Note, and Rest.",
+                "The Live BPM panel can listen while the metronome runs. Its graph and rushing-or-dragging meter compare the microphone estimate with the current metronome tempo; microphone audio is not recorded or synchronized.",
                 "Poly overlays two independently voiced pulse counts in one cycle. Begin with 3:2 and follow the two colored pulse rows.",
                 "Practice mode can move toward a goal tempo after a chosen number of bars and can alternate audible bars with silent bars to test internal time.",
-                "Full Screen keeps the animated pulse and controls visible from a music stand. The practice metronome is local and does not change songs, set lists, Live BPM, or Leviathan Live playback.",
+                "Full Screen keeps the animated pulse and controls visible from a music stand. The practice metronome is local and does not change songs, set lists, or Leviathan Live playback.",
             )),
             HelpTopic(liveName, points = listOf(
                 "List mode provides a large, scannable running order.",

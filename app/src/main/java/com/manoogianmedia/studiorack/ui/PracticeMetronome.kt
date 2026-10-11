@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +39,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -48,9 +50,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,7 +81,8 @@ import kotlin.math.sin
 internal data class PracticeMetronomeConfig(
     val tempo: Int = 120,
     val meter: Int = 4,
-    val subdivision: Int = 1,
+    val beatUnit: Int = 4,
+    val subdivision: Int = 4,
     val accents: List<Int> = listOf(2, 1, 1, 1),
     val polyrhythm: Boolean = false,
     val pulseA: Int = 3,
@@ -99,9 +108,17 @@ internal data class PracticeMetronomeState(
 )
 
 internal fun practiceGrid(config: PracticeMetronomeConfig): Int {
-    val base = config.meter.coerceIn(1, 12) * config.subdivision.coerceIn(1, 4)
+    val base = config.meter.coerceIn(1, 12) * subdivisionStepsPerBeat(config.beatUnit, config.subdivision)
     return if (!config.polyrhythm) base else lcmPractice(lcmPractice(base, config.pulseA.coerceIn(2, 12)), config.pulseB.coerceIn(2, 12))
 }
+
+internal fun subdivisionStepsPerBeat(beatUnit: Int, subdivision: Int): Int = when (subdivision) {
+    3 -> 3
+    else -> if (subdivision >= beatUnit) (subdivision / beatUnit).coerceAtLeast(1) else 1
+}
+
+internal fun normalizePracticeAccents(accents: List<Int>, meter: Int): List<Int> =
+    List(meter.coerceIn(1, 12)) { index -> accents.getOrNull(index) ?: if (index == 0) 2 else 1 }
 
 private fun lcmPractice(a: Int, b: Int): Int {
     fun gcd(x: Int, y: Int): Int = if (y == 0) x else gcd(y, x % y)
@@ -135,13 +152,16 @@ internal class PracticeMetronomeEngine {
                     if (remaining > 1_000_000L) delay(remaining / 1_000_000L)
                     if (!isActive || !mutableState.value.running) break
                     val beatEvery = grid / current.meter.coerceIn(1, 12)
-                    val normalEvery = grid / (current.meter.coerceIn(1, 12) * current.subdivision.coerceIn(1, 4))
+                    val subdivisionSteps = subdivisionStepsPerBeat(current.beatUnit, current.subdivision)
+                    val normalEvery = grid / (current.meter.coerceIn(1, 12) * subdivisionSteps)
                     val beat = (step / beatEvery).coerceAtMost(current.meter - 1)
                     val subBeat = (step % beatEvery) / normalEvery
                     val silent = current.silentBars && bar % (current.soundBars + current.mutedBars).coerceAtLeast(1) >= current.soundBars
                     val polyA = if (current.polyrhythm && step % (grid / current.pulseA) == 0) step / (grid / current.pulseA) else -1
                     val polyB = if (current.polyrhythm && step % (grid / current.pulseB) == 0) step / (grid / current.pulseB) else -1
-                    if (!silent && step % normalEvery == 0) {
+                    val longNoteEvery = if (current.subdivision != 3 && current.subdivision < current.beatUnit) current.beatUnit / current.subdivision else 1
+                    val regularTick = if (longNoteEvery > 1) step % beatEvery == 0 && beat % longNoteEvery == 0 else step % normalEvery == 0
+                    if (!silent && regularTick) {
                         val level = if (subBeat == 0) current.accents.getOrElse(beat) { 1 } else 1
                         if (level > 0) clickPlayer.play(if (level == 2) ClickVoice.ACCENT else ClickVoice.NORMAL)
                     }
@@ -182,7 +202,8 @@ internal class PracticeMetronomeEngine {
 private class PracticeMetronomeUiState {
     val tempo = mutableIntStateOf(120)
     val meter = mutableIntStateOf(4)
-    val subdivision = mutableIntStateOf(1)
+    val beatUnit = mutableIntStateOf(4)
+    val subdivision = mutableIntStateOf(4)
     val accents = mutableStateListOf(2, 1, 1, 1)
     val poly = mutableStateOf(false)
     val pulseA = mutableIntStateOf(3)
@@ -237,13 +258,22 @@ internal fun PracticeMetronomePanel() {
 @OptIn(ExperimentalLayoutApi::class)
 private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeMetronomeUiState, fullScreen: Boolean, openFullScreen: () -> Unit) {
     val state by engine.state.collectAsState()
-    var tempo by session.tempo; var meter by session.meter; var subdivision by session.subdivision
+    var tempo by session.tempo; var meter by session.meter; var beatUnit by session.beatUnit; var subdivision by session.subdivision
     val accents = session.accents
     var poly by session.poly; var pulseA by session.pulseA; var pulseB by session.pulseB
     var trainer by session.trainer; var goal by session.goal; var step by session.step; var every by session.every
     var silent by session.silent; var soundBars by session.soundBars; var mutedBars by session.mutedBars
     var mode by session.mode; var lastTap by session.lastTap; val taps = session.taps
-    fun configuration() = PracticeMetronomeConfig(tempo, meter, subdivision, accents.toList(), poly, pulseA, pulseB, trainer, goal, step, every, silent, soundBars, mutedBars)
+    LaunchedEffect(meter) {
+        val normalized = normalizePracticeAccents(accents, meter)
+        if (normalized != accents.toList()) { accents.clear(); accents.addAll(normalized) }
+    }
+    fun configuration() = PracticeMetronomeConfig(
+        tempo = tempo, meter = meter, beatUnit = beatUnit, subdivision = subdivision,
+        accents = accents.toList(), polyrhythm = poly, pulseA = pulseA, pulseB = pulseB,
+        trainer = trainer, trainerGoal = goal, trainerStep = step, trainerBars = every,
+        silentBars = silent, soundBars = soundBars, mutedBars = mutedBars,
+    )
     engine.configure(configuration())
     val contentModifier = if (fullScreen) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)
@@ -263,7 +293,7 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
                     TempoButton("+") { tempo = (tempo + 1).coerceAtMost(300) }; TempoButton("+5") { tempo = (tempo + 5).coerceAtMost(300) }
                 }
                 Slider(tempo.toFloat(), { tempo = it.toInt() }, valueRange = 30f..300f)
-                BeatDisplay(state, meter, subdivision, poly, pulseA, pulseB)
+                BeatDisplay(state, meter, beatUnit, subdivision, poly, pulseA, pulseB)
                 Text(if (state.silent) "SILENT BAR - HOLD THE PULSE" else if (state.running) "${state.effectiveTempo} BPM  •  BAR ${state.bar + 1}  •  BEAT ${state.beat + 1}" else "READY", color = if (state.silent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             }
         }
@@ -280,15 +310,17 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
         } }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("QUICK STARTS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.CenterVertically))
-            OutlinedButton({ tempo = 120; meter = 4; subdivision = 2; poly = false }) { Text("Straight 4") }
-            OutlinedButton({ tempo = 88; meter = 6; subdivision = 3; poly = false; accents.clear(); repeat(6) { accents.add(if (it == 0 || it == 3) 2 else 1) } }) { Text("Triplet 6/8") }
-            OutlinedButton({ tempo = 72; meter = 4; subdivision = 1; poly = true; pulseA = 3; pulseB = 2; mode = "Poly" }) { Text("3 : 2") }
+            OutlinedButton({ tempo = 120; meter = 4; beatUnit = 4; subdivision = 8; poly = false }) { Text("Straight 4") }
+            OutlinedButton({ tempo = 88; meter = 6; beatUnit = 8; subdivision = 3; poly = false; accents.clear(); repeat(6) { accents.add(if (it == 0 || it == 3) 2 else 1) } }) { Text("Triplet 6/8") }
+            OutlinedButton({ tempo = 72; meter = 4; beatUnit = 4; subdivision = 4; poly = true; pulseA = 3; pulseB = 2; mode = "Poly" }) { Text("3 : 2") }
         }
         when (mode) {
-            "Beat" -> BeatControls(meter, { newMeter -> meter = newMeter; accents.clear(); repeat(newMeter) { accents.add(if (it == 0) 2 else 1) } }, subdivision, { subdivision = it }, accents)
+            "Beat" -> BeatControls(meter, { meter = it }, beatUnit, { beatUnit = it }, subdivision, { subdivision = it }, accents)
             "Poly" -> PolyControls(poly, { poly = it }, pulseA, { pulseA = it }, pulseB, { pulseB = it }, state)
             else -> PracticeControls(trainer, { trainer = it }, goal, { goal = it }, step, { step = it }, every, { every = it }, silent, { silent = it }, soundBars, { soundBars = it }, mutedBars, { mutedBars = it }, tempo)
         }
+        Text("LIVE BPM", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, fontWeight = FontWeight.Black)
+        TempoPanel(compact = true, initialTargetBpm = tempo)
     }
 }
 
@@ -305,9 +337,11 @@ private fun TempoButton(label: String, action: () -> Unit) {
 }
 
 @Composable
-private fun BeatDisplay(state: PracticeMetronomeState, meter: Int, subdivision: Int, poly: Boolean, pulseA: Int, pulseB: Int) {
+private fun BeatDisplay(state: PracticeMetronomeState, meter: Int, beatUnit: Int, subdivision: Int, poly: Boolean, pulseA: Int, pulseB: Int) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MeterSignature(meter, beatUnit)
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             repeat(meter) { beatIndex ->
                 val activeBeat = state.running && beatIndex == state.beat
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -327,16 +361,17 @@ private fun BeatDisplay(state: PracticeMetronomeState, meter: Int, subdivision: 
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        repeat(subdivision) { subdivisionIndex ->
+                        repeat(subdivisionStepsPerBeat(beatUnit, subdivision)) { subdivisionIndex ->
                             val activeSubdivision = activeBeat && subdivisionIndex == state.subBeat
                             Box(
                                 Modifier
-                                    .size(if (subdivision <= 2) 6.dp else 4.dp)
+                                    .size(if (subdivisionStepsPerBeat(beatUnit, subdivision) <= 2) 6.dp else 4.dp)
                                     .background(if (activeSubdivision) MaterialTheme.colorScheme.secondary else Color(0xFF344057), CircleShape),
                             )
                         }
                     }
                 }
+            }
             }
         }
         if (poly) {
@@ -356,13 +391,20 @@ private fun BeatDisplay(state: PracticeMetronomeState, meter: Int, subdivision: 
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun BeatControls(meter: Int, setMeter: (Int) -> Unit, subdivision: Int, setSubdivision: (Int) -> Unit, accents: MutableList<Int>) {
+private fun BeatControls(meter: Int, setMeter: (Int) -> Unit, beatUnit: Int, setBeatUnit: (Int) -> Unit, subdivision: Int, setSubdivision: (Int) -> Unit, accents: MutableList<Int>) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .3f), shape = RoundedCornerShape(8.dp)) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Stepper("Meter", meter, { setMeter((meter - 1).coerceAtLeast(1)) }, { setMeter((meter + 1).coerceAtMost(12)) })
+        Text("BEAT UNIT", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Black)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf(2, 4, 8, 16).forEach { value -> RhythmChoice(value, value == beatUnit, "${noteName(value)} beat") { setBeatUnit(value) } } }
         Text("SUBDIVISION", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Black)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { listOf(1 to "Quarter", 2 to "Eighth", 3 to "Triplet", 4 to "Sixteenth").forEach { (value, label) -> ChoiceButton(label, value == subdivision) { setSubdivision(value) } } }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(2, 4, 8, 3, 16, 32, 64).forEach { value ->
+                RhythmChoice(value, value == subdivision, if (value == 3) "Eighth-note triplet" else noteName(value)) { setSubdivision(value) }
+            }
+        }
         Text("BEAT NOTATION AND ACCENTS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Black)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) { accents.forEachIndexed { index, level ->
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) { repeat(meter) { index ->
+            val level = accents.getOrElse(index) { if (index == 0) 2 else 1 }
             Surface(Modifier.width(58.dp).clickable { accents[index] = (level + 2) % 3 }, color = if (level == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline), shape = RoundedCornerShape(7.dp)) {
                 Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (level == 2) Text(">", fontSize = 13.sp, lineHeight = 10.sp, color = Color.Black, fontWeight = FontWeight.Black)
@@ -372,6 +414,43 @@ private fun BeatControls(meter: Int, setMeter: (Int) -> Unit, subdivision: Int, 
             }
         } }
     } }
+}
+
+private fun noteName(value: Int): String = when (value) { 2 -> "Half note"; 4 -> "Quarter note"; 8 -> "Eighth note"; 16 -> "Sixteenth note"; 32 -> "Thirty-second note"; else -> "Sixty-fourth note" }
+
+@Composable
+private fun MeterSignature(meter: Int, beatUnit: Int) {
+    Column(Modifier.width(38.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(meter.toString(), fontSize = 16.sp, lineHeight = 16.sp, fontWeight = FontWeight.Black)
+        Box(Modifier.fillMaxWidth().height(2.dp).background(MaterialTheme.colorScheme.secondary))
+        Text(beatUnit.toString(), fontSize = 16.sp, lineHeight = 16.sp, fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
+private fun RhythmChoice(value: Int, selected: Boolean, label: String, action: () -> Unit) {
+    val modifier = Modifier.size(48.dp).semantics { contentDescription = label }
+    if (selected) Button(action, modifier, contentPadding = PaddingValues(5.dp)) { RhythmNoteIcon(value, Color.Black) }
+    else OutlinedButton(action, modifier, contentPadding = PaddingValues(5.dp)) { RhythmNoteIcon(value, MaterialTheme.colorScheme.onSurface) }
+}
+
+@Composable
+private fun RhythmNoteIcon(value: Int, color: Color) {
+    Box(Modifier.size(30.dp), contentAlignment = Alignment.TopEnd) {
+        Canvas(Modifier.fillMaxSize()) {
+            if (value == 2) drawOval(color, topLeft = Offset(size.width * .17f, size.height * .66f), size = androidx.compose.ui.geometry.Size(size.width * .38f, size.height * .22f), style = Stroke(2.5f))
+            else drawOval(color, topLeft = Offset(size.width * .17f, size.height * .66f), size = androidx.compose.ui.geometry.Size(size.width * .38f, size.height * .22f))
+            drawLine(color, Offset(size.width * .52f, size.height * .7f), Offset(size.width * .52f, size.height * .12f), 2.6f, StrokeCap.Round)
+            val flags = when (value) { 8, 3 -> 1; 16 -> 2; 32 -> 3; 64 -> 4; else -> 0 }
+            repeat(flags) { index ->
+                val y = size.height * (.13f + index * .13f)
+                val path = Path().apply { moveTo(size.width * .52f, y); quadraticTo(size.width * .88f, y + size.height * .06f, size.width * .72f, y + size.height * .22f) }
+                drawPath(path, color, style = Stroke(2.5f, cap = StrokeCap.Round))
+            }
+            if (value == 3) drawCircle(color, 2.2f, Offset(size.width * .88f, size.height * .16f))
+        }
+        if (value == 3) Text("3", color = color, fontSize = 9.sp, lineHeight = 9.sp, fontWeight = FontWeight.Black)
+    }
 }
 
 @Composable private fun PolyControls(enabled: Boolean, setEnabled: (Boolean) -> Unit, a: Int, setA: (Int) -> Unit, b: Int, setB: (Int) -> Unit, state: PracticeMetronomeState) {
