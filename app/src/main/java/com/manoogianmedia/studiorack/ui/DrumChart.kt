@@ -54,8 +54,8 @@ internal data class DrumChartDocument(
 
 private val drumMetadata = setOf("title", "artist", "tempo", "time", "feel", "subdivision")
 private val drumRowPattern = Regex("(?:^|\\s)([A-Za-z][A-Za-z0-9 +#/-]{0,15})\\|([^|]+)\\|")
-private val drumSectionPattern = Regex("^\\[([^]]+)](?:\\s*(?:x|bars?\\s*=?)?\\s*(\\d+))?(?:\\s*bars?)?$", RegexOption.IGNORE_CASE)
-private val drumMetadataPattern = Regex("^\\{([^}:]+):\\s*(.*)}$")
+private val drumSectionPattern = Regex("^\\[([^\\]]+)\\](?:\\s*(?:x|bars?\\s*=?)?\\s*(\\d+))?(?:\\s*bars?)?$", RegexOption.IGNORE_CASE)
+private val drumMetadataPattern = Regex("^\\{([^}:]+):\\s*(.*)\\}$")
 
 internal fun parseDrumChart(source: String): DrumChartDocument {
     val metadata = linkedMapOf<String, String>()
