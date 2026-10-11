@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -54,6 +55,36 @@ internal data class DrumChartDocument(
     val notes: List<String>,
 )
 internal data class DrumChartProgress(val sectionIndex: Int, val barIndex: Int, val beatIndex: Int)
+internal data class DrumAuditionStep(val notes: List<Pair<Int, Int>>, val durationMs: Long)
+
+private val drumMidiNotes = mapOf(
+    "BD" to 36, "KD" to 36, "K" to 36, "RS" to 37, "SD" to 38, "SN" to 38,
+    "FT" to 43, "HF" to 44, "T3" to 45, "LT" to 45, "OH" to 46,
+    "T2" to 47, "MT" to 47, "CR" to 49, "CC" to 49, "T1" to 50, "HT" to 50,
+    "RC" to 51, "RD" to 51, "HH" to 42,
+)
+
+internal fun drumAuditionSteps(document: DrumChartDocument, fallbackTempo: Int = 120, fallbackBeats: Int = 4): List<DrumAuditionStep> {
+    val tempo = document.metadata["tempo"]?.filter(Char::isDigit)?.toIntOrNull()?.coerceIn(30, 300) ?: fallbackTempo.coerceIn(30, 300)
+    val beats = document.metadata["time"]?.substringBefore('/')?.trim()?.toIntOrNull()?.coerceIn(1, 12) ?: fallbackBeats.coerceIn(1, 12)
+    val sections = document.sections.ifEmpty { listOf(DrumChartSection("Chart", bars = 1, rows = document.rows)) }
+    return buildList {
+        sections.forEach { section ->
+            val steps = section.rows.maxOfOrNull { it.pattern.length }?.coerceIn(1, 64) ?: return@forEach
+            val durationMs = ((60_000.0 / tempo) * beats / steps).toLong().coerceAtLeast(20L)
+            repeat(section.bars.coerceAtLeast(1)) {
+                repeat(steps) { index ->
+                    val notes = section.rows.mapNotNull { row ->
+                        val mark = row.pattern.getOrNull(index)?.takeUnless { it in "-_. " } ?: return@mapNotNull null
+                        val note = drumMidiNotes[row.label.uppercase()] ?: return@mapNotNull null
+                        note to when (mark) { '>', 'A' -> 120; 'g', 'G' -> 58; else -> 96 }
+                    }
+                    add(DrumAuditionStep(notes, durationMs))
+                }
+            }
+        }
+    }
+}
 
 internal fun drumChartProgress(
     sections: List<DrumChartSection>,
@@ -67,10 +98,11 @@ internal fun drumChartProgress(
     val elapsedBeat = (positionMs / beatDurationMs).toLong().coerceAtLeast(0L)
     val elapsedBar = elapsedBeat / beats
     val totalBars = sections.sumOf { it.bars.coerceAtLeast(1) }.coerceAtLeast(1)
-    var remainingBar = (elapsedBar % totalBars).toInt()
+    val chartComplete = elapsedBar >= totalBars
+    var remainingBar = elapsedBar.coerceAtMost((totalBars - 1).toLong()).toInt()
     sections.forEachIndexed { index, section ->
         val bars = section.bars.coerceAtLeast(1)
-        if (remainingBar < bars) return DrumChartProgress(index, remainingBar, (elapsedBeat % beats).toInt())
+        if (remainingBar < bars) return DrumChartProgress(index, remainingBar, if (chartComplete) beats - 1 else (elapsedBeat % beats).toInt())
         remainingBar -= bars
     }
     return DrumChartProgress(0, 0, 0)
@@ -138,6 +170,8 @@ internal fun DrumChartDocumentView(
     metronomePositionMs: Long = 0L,
     metronomeTempo: Int = 120,
     metronomeBeatsPerMeasure: Int = 4,
+    auditioning: Boolean = false,
+    onAudition: (() -> Unit)? = null,
 ) {
     val document = remember(source) { parseDrumChart(source) }
     val sections = remember(document, format) {
@@ -149,6 +183,8 @@ internal fun DrumChartDocumentView(
             document,
             sections,
             drumChartProgress(sections, metronomePositionMs, metronomeTempo, metronomeBeatsPerMeasure).takeIf { metronomeRunning },
+            auditioning,
+            onAudition,
         )
         return
     }
@@ -189,7 +225,7 @@ internal fun DrumChartDocumentView(
 }
 
 @Composable
-private fun PerformanceDrumStaffChart(document: DrumChartDocument, sections: List<DrumChartSection>, progress: DrumChartProgress?) {
+private fun PerformanceDrumStaffChart(document: DrumChartDocument, sections: List<DrumChartSection>, progress: DrumChartProgress?, auditioning: Boolean, onAudition: (() -> Unit)?) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val columns = (maxWidth.value / 92f).toInt().coerceIn(1, 6)
         val formRows = ((sections.size + columns - 1) / columns).coerceAtLeast(1)
@@ -203,7 +239,7 @@ private fun PerformanceDrumStaffChart(document: DrumChartDocument, sections: Lis
             Modifier.fillMaxSize().padding(horizontal = 2.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            DrumSongForm(sections, compact = true)
+            DrumSongForm(sections, compact = true, auditioning = auditioning, onAudition = onAudition)
             DrumStaffKey(uniqueRows, compact = true)
             sections.forEachIndexed { sectionIndex, section ->
                 DrumStaffSection(
@@ -226,9 +262,14 @@ internal fun performanceDrumSectionSlot(availableHeight: Float, overhead: Float,
 }
 
 @Composable
-private fun DrumSongForm(sections: List<DrumChartSection>, compact: Boolean = false) {
+private fun DrumSongForm(sections: List<DrumChartSection>, compact: Boolean = false, auditioning: Boolean = false, onAudition: (() -> Unit)? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text("SONG FORM", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (compact) 9.sp else 11.sp, fontWeight = FontWeight.Black)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("SONG FORM", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (compact) 9.sp else 11.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+            if (onAudition != null) TextButton(onClick = onAudition, modifier = Modifier.height(30.dp)) {
+                Text(if (auditioning) "Stop Audition" else "Audition", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, fontWeight = FontWeight.Black)
+            }
+        }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val columns = (maxWidth.value / if (compact) 92f else 104f).toInt().coerceIn(1, if (compact) 6 else 4)
             val cellWidth = maxWidth / columns
@@ -426,7 +467,7 @@ private fun DrumStaffNotation(rows: List<DrumPatternRow>, timeSignature: String,
         for (start in 0 until steps step groupSize) {
             val group = active.subList(start, (start + groupSize).coerceAtMost(steps)).filterNotNull()
             if (group.size > 1) repeat(beamCount) { beam ->
-                drawLine(notationColor, Offset(group.first() + 5.dp.toPx(), fy(18f + beam * 5f)), Offset(group.last() + 7.dp.toPx(), fy(18f + beam * 5f)), 4.dp.toPx())
+                drawLine(notationColor, Offset(group.first() + 5.dp.toPx(), fy(16f + beam * 10f)), Offset(group.last() + 7.dp.toPx(), fy(16f + beam * 10f)), 4.dp.toPx())
             }
         }
         activeBeat?.coerceIn(0, beatCount - 1)?.let { beat ->

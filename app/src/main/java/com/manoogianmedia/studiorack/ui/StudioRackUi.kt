@@ -214,6 +214,7 @@ import com.manoogianmedia.studiorack.liveprotocol.LiveSong
 import com.manoogianmedia.studiorack.wear.LiveWearBridge
 import com.manoogianmedia.studiorack.wear.WearCompanionManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -232,6 +233,8 @@ import java.time.temporal.ChronoUnit
 import java.util.Date
 import kotlin.math.roundToInt
 import kotlin.math.log10
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 private val Ink = Color(0xFF07090F)
 private val Panel = Color(0xFF121621)
@@ -5772,6 +5775,10 @@ private fun LocalLiveDialog(model: StudioRackViewModel, suggestedEvent: JSONObje
     }
 }
 
+private suspend fun MidiOutputRouter.sendAwait(payload: JSONObject): Boolean = suspendCoroutine { continuation ->
+    send(payload) { sent -> continuation.resume(sent) }
+}
+
 @Composable
 private fun GigModeScreen(
     model: StudioRackViewModel,
@@ -5947,6 +5954,7 @@ private fun GigModeScreen(
     val midiRouter = remember(eventId) { MidiOutputRouter(context.applicationContext) }
     var midiDestinations by remember(eventId) { mutableStateOf(midiRouter.destinations()) }
     var selectedMidiKey by remember(eventId) { mutableStateOf(midiRouter.selectedKey()) }
+    var drumAuditionJob by remember(eventId) { mutableStateOf<Job?>(null) }
     var showControlArmed by remember(eventId) { mutableStateOf(false) }
     var showLiveHardware by remember(eventId) { mutableStateOf(false) }
     var liveHardwareView by remember(eventId) { mutableStateOf("device") }
@@ -6265,6 +6273,37 @@ private fun GigModeScreen(
                 midiDestinations = midiRouter.destinations()
                 liveHardwareView = "routing"
                 showLiveHardware = true
+            },
+            drumAuditioning = drumAuditionJob?.isActive == true,
+            onAuditionDrumChart = { source ->
+                if (drumAuditionJob?.isActive == true) {
+                    drumAuditionJob?.cancel()
+                    drumAuditionJob = null
+                } else if (selectedMidiKey.isBlank()) {
+                    midiDestinations = midiRouter.destinations()
+                    liveHardwareView = "device"
+                    showLiveHardware = true
+                } else {
+                    val steps = drumAuditionSteps(parseDrumChart(source), metronomeState.tempo, metronomeState.beatsPerMeasure)
+                    drumAuditionJob = pedalScope.launch {
+                        try {
+                            for (step in steps) {
+                                step.notes.forEach { (note, velocity) ->
+                                    midiRouter.sendAwait(JSONObject().put("command", "note_on").put("channel", 10).put("number", note).put("value", velocity))
+                                }
+                                val soundingMs = step.durationMs.coerceAtMost(90L)
+                                delay(soundingMs)
+                                step.notes.forEach { (note, _) ->
+                                    midiRouter.sendAwait(JSONObject().put("command", "note_off").put("channel", 10).put("number", note).put("value", 0))
+                                }
+                                delay((step.durationMs - soundingMs).coerceAtLeast(0L))
+                            }
+                        } finally {
+                            midiRouter.send(JSONObject().put("command", "control_change").put("channel", 10).put("number", 123).put("value", 0))
+                            drumAuditionJob = null
+                        }
+                    }
+                }
             },
             setListName = performanceSetListName,
             locationLabel = performanceLocation,
@@ -6888,6 +6927,8 @@ private fun PerformanceSongScreen(
     showControlArmed: Boolean,
     audioHardwareRevision: Int,
     onOpenLiveHardware: () -> Unit,
+    drumAuditioning: Boolean,
+    onAuditionDrumChart: (String) -> Unit,
     setListName: String,
     locationLabel: String,
     dateTimeLabel: String,
@@ -6932,6 +6973,17 @@ private fun PerformanceSongScreen(
     val countInDurationMs = remember(countInMeasures, metronomeState.tempo, metronomeState.beatsPerMeasure) {
         countInMeasures * metronomeState.beatsPerMeasure * (60_000L / metronomeState.tempo.coerceAtLeast(1))
     }
+    val activeTextAttachment = item.attachment?.takeIf { it.optString("source_type") == "text" }
+    val activeTextMaterial = activeTextAttachment?.optString("content_text").orEmpty()
+    val activeTextFormat = activeTextAttachment?.optString("content_format", "chordpro").orEmpty()
+    val drumChartDurationMs = remember(activeTextMaterial, activeTextFormat, metronomeState.tempo, metronomeState.beatsPerMeasure) {
+        if (activeTextFormat != "drum_staff" || activeTextMaterial.isBlank()) null
+        else {
+            val sections = parseDrumChart(activeTextMaterial).sections
+            val totalBars = sections.sumOf { it.bars.coerceAtLeast(1) }.coerceAtLeast(1)
+            totalBars * metronomeState.beatsPerMeasure.coerceIn(1, 12) * (60_000L / metronomeState.tempo.coerceIn(30, 300))
+        }
+    }
     val songSections = remember(item.performanceCues) {
         preferredSongSections(item.performanceCues.filter { it.type == "section" && it.label.isNotBlank() }
             .mapIndexed { index, cue ->
@@ -6961,7 +7013,7 @@ private fun PerformanceSongScreen(
     LaunchedEffect(path, attachmentVersion, isPdf, page) {
         if (!rendered.complete) rendered = withContext(Dispatchers.IO) { loadPerformanceAttachment(path, attachmentVersion, isPdf, page) }
     }
-    LaunchedEffect(item.entry.optString("id"), item.playbackAudio, item.playbackStems, metronomeState.running, metronomeState.startedAtEpochMs, countInDurationMs) {
+    LaunchedEffect(item.entry.optString("id"), item.playbackAudio, item.playbackStems, metronomeState.running, metronomeState.startedAtEpochMs, countInDurationMs, drumChartDurationMs) {
         if (item.playbackAudio != null || item.playbackStems.isNotEmpty()) return@LaunchedEffect
         if (!metronomeState.running || metronomeState.startedAtEpochMs <= 0L) {
             countInRemainingMs = 0L
@@ -6971,6 +7023,12 @@ private fun PerformanceSongScreen(
             val elapsed = (System.currentTimeMillis() - metronome.state.value.startedAtEpochMs).coerceAtLeast(0L)
             countInRemainingMs = (countInDurationMs - elapsed).coerceAtLeast(0L)
             timelinePositionMs = (elapsed - countInDurationMs).coerceAtLeast(0L)
+            if (drumChartDurationMs != null && timelinePositionMs >= drumChartDurationMs) {
+                timelinePositionMs = drumChartDurationMs
+                onPlaybackPosition(timelinePositionMs)
+                metronome.stop()
+                break
+            }
             onPlaybackPosition(timelinePositionMs)
             delay(50)
         }
@@ -7469,9 +7527,8 @@ private fun PerformanceSongScreen(
             Modifier.fillMaxWidth().weight(1f).padding(top = 6.dp),
             contentAlignment = Alignment.Center,
         ) {
-            val textAttachment = item.attachment?.takeIf { it.optString("source_type") == "text" }
-            val textMaterial = textAttachment?.optString("content_text").orEmpty()
-            val textFormat = textAttachment?.optString("content_format", "chordpro").orEmpty()
+            val textMaterial = activeTextMaterial
+            val textFormat = activeTextFormat
             when {
                 textMaterial.isNotBlank() && textFormat == "drum_staff" -> {
                     DrumChartDocumentView(
@@ -7482,6 +7539,8 @@ private fun PerformanceSongScreen(
                         metronomePositionMs = timelinePositionMs,
                         metronomeTempo = metronomeState.tempo,
                         metronomeBeatsPerMeasure = metronomeState.beatsPerMeasure,
+                        auditioning = drumAuditioning,
+                        onAudition = { onAuditionDrumChart(textMaterial) },
                     )
                 }
                 textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_tab") -> {

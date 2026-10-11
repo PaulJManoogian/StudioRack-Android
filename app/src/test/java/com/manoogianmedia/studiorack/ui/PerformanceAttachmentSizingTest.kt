@@ -61,6 +61,22 @@ class PerformanceAttachmentSizingTest {
         assertEquals(DrumChartProgress(1, 0, 0), drumChartProgress(sections, 2_000L, 120, 4))
         assertEquals(DrumChartProgress(1, 1, 2), drumChartProgress(sections, 5_000L, 120, 4))
         assertEquals(DrumChartProgress(2, 0, 0), drumChartProgress(sections, 10_000L, 120, 4))
+        assertEquals(DrumChartProgress(2, 7, 3), drumChartProgress(sections, 120_000L, 120, 4))
+    }
+
+    @Test
+    fun drumAuditionUsesGeneralMidiPercussionAndRepeatsSectionBars() {
+        val document = parseDrumChart("""{tempo: 120}
+{time: 4/4}
+[Intro] x2
+HH|x-x-|
+SD|--o-|
+BD|o---|""")
+        val steps = drumAuditionSteps(document)
+        assertEquals(8, steps.size)
+        assertEquals(listOf(42 to 96, 36 to 96), steps[0].notes)
+        assertEquals(listOf(42 to 96, 38 to 96), steps[2].notes)
+        assertEquals(500L, steps[0].durationMs)
     }
 
     @Test
