@@ -52,6 +52,11 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Keep development and device-test installs isolated from the user's offline library.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
         }
