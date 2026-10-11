@@ -60,6 +60,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -8368,7 +8369,7 @@ private fun LiveMixerVerticalStrip(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 LiveMixerVerticalMeter(signalLevel)
-                Box(Modifier.width(48.dp).height(110.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(62.dp).height(110.dp), contentAlignment = Alignment.Center) {
                     Slider(
                         value = gainDb,
                         onValueChange = onGainChanged,
@@ -8378,7 +8379,10 @@ private fun LiveMixerVerticalStrip(
                             activeTrackColor = Cyan,
                             inactiveTrackColor = Color(0xFF4E485C),
                         ),
-                        modifier = Modifier.width(110.dp).graphicsLayer { rotationZ = -90f }
+                        modifier = Modifier.requiredWidth(110.dp).graphicsLayer {
+                            rotationZ = -90f
+                            scaleY = 1.3f
+                        }
                             .semantics { contentDescription = "$name gain" },
                     )
                 }
