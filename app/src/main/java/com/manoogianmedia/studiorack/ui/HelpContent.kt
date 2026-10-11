@@ -70,7 +70,7 @@ internal fun studioLeviathanHelpSections(
                 "Expand a song in the Songs list to open any synchronized or linked performance material directly. Use Night view for rendered PDF and image pages when a bright document would be distracting on stage.",
                 "Synchronize attachments before a performance so $liveName can read local copies without cellular service.",
             )),
-            HelpTopic("Appendix: Written Drum Chart Formats", points = listOf(
+            HelpTopic("Written Drum Chart Formats", points = listOf(
                 "Shared structure: optional facts use {title: Song}, {tempo: 120}, {time: 4/4}, and {feel: Straight 8ths}. Start sections with [Intro] x4, [Verse] 8 bars, or [Tag] bars=2. The section name and a prominent bar-count badge appear together before the pattern in Chart Mode.",
                 "Nashville Drum Chart is the compact performance roadmap. Example: [Chorus] x8 followed by pattern: CR|>-------| HH|x-x-x-x-| SD|--o---o-| BD|o-o---o-| and fill: Toms across final bar. In Chart Mode, the metronome follows the declared sections and stops after the final bar. Choose Audition to hear recognized rows through the selected Audio Out. A selected MIDI destination also receives General MIDI percussion notes on channel 10.",
                 "Drum Tab keeps every instrument row visible as a labeled grid. Four pattern characters represent quarter-note space, eight represent eighth-note space, and sixteen represent sixteenth-note space. Keep every row in one section the same length.",
