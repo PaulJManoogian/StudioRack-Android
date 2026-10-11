@@ -20,10 +20,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +44,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -153,6 +156,7 @@ internal fun calculateTempo(times: List<Long>): TempoReading {
 @OptIn(ExperimentalLayoutApi::class)
 internal fun TempoPanel(compact: Boolean = false, initialTargetBpm: Int = 120) {
     val context = LocalContext.current
+    val narrowPractice = !compact && LocalConfiguration.current.screenWidthDp < 600
     val scope = rememberCoroutineScope()
     val engine = remember { AndroidTempoEngine() }
     val click = remember { NativeMetronome() }
@@ -200,52 +204,121 @@ internal fun TempoPanel(compact: Boolean = false, initialTargetBpm: Int = 120) {
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(if (compact) 10.dp else 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(if (narrowPractice) 7.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(if (narrowPractice) 4.dp else if (compact) 10.dp else 7.dp)) {
             if (!compact) {
-                Text("LIVE BPM", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
-                Text("Practice tempo tracker", color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Black)
-                Text("Microphone analysis stays on this device. Audio is never recorded or uploaded.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = .62f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .55f)),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = if (narrowPractice) 7.dp else 10.dp, vertical = if (narrowPractice) 3.dp else 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column(Modifier.width(if (narrowPractice) 62.dp else 78.dp)) {
+                            Text("TARGET", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                            Text("$target BPM", color = MaterialTheme.colorScheme.primary, fontSize = if (narrowPractice) 13.sp else 17.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                        }
+                        Slider(
+                            value = target.toFloat(),
+                            onValueChange = { targetText = it.toInt().coerceIn(30, 300).toString() },
+                            valueRange = 30f..300f,
+                            steps = 269,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = targetText,
+                            onValueChange = { value -> targetText = value.filter(Char::isDigit).take(3) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            supportingText = null,
+                            modifier = Modifier.width(if (narrowPractice) 60.dp else 74.dp),
+                        )
+                    }
+                }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(if (compact) .34f else .42f)) {
-                    Text(if (displayedBpm > 0) "%.1f".format(displayedBpm) else "--", color = stateColor, fontSize = if (compact) 36.sp else 64.sp, lineHeight = if (compact) 40.sp else 66.sp, fontWeight = FontWeight.Black)
-                    Text("BPM  •  $direction", color = stateColor, fontSize = if (compact) 11.sp else 14.sp, fontWeight = FontWeight.Bold)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(if (compact) .34f else if (narrowPractice) .31f else .42f)) {
+                    Text(if (displayedBpm > 0) "%.1f".format(displayedBpm) else "--", color = stateColor, fontSize = if (compact) 36.sp else if (narrowPractice) 38.sp else 54.sp, lineHeight = if (compact) 40.sp else if (narrowPractice) 40.sp else 56.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                    Text(if (narrowPractice) "BPM  •  ${shortTempoStatus(direction)}" else "BPM  •  $direction", color = stateColor, fontSize = if (compact || narrowPractice) 11.sp else 14.sp, fontWeight = FontWeight.Bold, maxLines = if (narrowPractice) 2 else 1)
                     if (displayedBpm > 0) Text("${if (delta > 0) "+" else ""}${"%.1f".format(delta)} from $target", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 }
-                TempoHistoryGraph(history, target, Modifier.weight(1f).height(if (compact) 88.dp else 145.dp))
+                TempoHistoryGraph(history, target, Modifier.weight(1f).height(if (compact) 88.dp else if (narrowPractice) 78.dp else 112.dp))
             }
             TempoDriftMeter(delta, stateColor)
             LinearProgressIndicator(progress = { reading.confidence }, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondary, trackColor = MaterialTheme.colorScheme.outline.copy(alpha = .22f))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                StudioButton(onClick = {
+            TempoActions(
+                compactRow = narrowPractice,
+                listening = listening,
+                clickRunning = clickState.running,
+                showClick = !compact,
+                onListen = {
                     if (listening) { engine.stop(); listening = false; reading = reading.copy(status = "Listening stopped") }
                     else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
                     else permission.launch(Manifest.permission.RECORD_AUDIO)
-                }) { Text(if (listening) "Stop Listening" else "Start Listening", color = Color(0xFF07090F), fontWeight = FontWeight.Black) }
-                StudioButton(onClick = {
+                },
+                onTap = {
                     val now = System.currentTimeMillis()
                     val current = if (taps.isNotEmpty() && now - taps.last() > 2500) emptyList() else taps
                     taps = (current + now).takeLast(12)
                     val tapped = calculateTempo(taps)
                     if (tapped.bpm > 0) accept(tapped.copy(confidence = max(.45f, tapped.confidence), status = "Tap tempo is active"))
                     else reading = reading.copy(status = "Tap ${max(0, 4 - taps.size)} more times")
-                }, kind = StudioButtonKind.Secondary) { Text(if (compact) "Tap" else "Tap Tempo", fontWeight = FontWeight.Bold) }
-                if (!compact) StudioButton(onClick = {
+                },
+                onClick = {
                     click.configure(target.toString(), "4/4", "tempo", "tone")
                     click.toggle()
-                }, kind = StudioButtonKind.Secondary) { Text(if (clickState.running) "Stop Click" else "Start Click", fontWeight = FontWeight.Bold) }
-                StudioButton(onClick = { factor *= .5; reading = reading.copy(bpm = (reading.bpm * .5).coerceIn(0.0, 300.0)); history = history.map { it * .5 } }, kind = StudioButtonKind.Secondary) { Text("÷2", fontWeight = FontWeight.Bold) }
-                StudioButton(onClick = { factor *= 2; reading = reading.copy(bpm = (reading.bpm * 2).coerceIn(0.0, 300.0)); history = history.map { it * 2 } }, kind = StudioButtonKind.Secondary) { Text("×2", fontWeight = FontWeight.Bold) }
-            }
-            if (!compact) OutlinedTextField(
-                value = targetText,
-                onValueChange = { value -> targetText = value.filter(Char::isDigit).take(3) },
-                label = { Text("Target BPM") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                },
+                onHalf = { factor *= .5; reading = reading.copy(bpm = (reading.bpm * .5).coerceIn(0.0, 300.0)); history = history.map { it * .5 } },
+                onDouble = { factor *= 2; reading = reading.copy(bpm = (reading.bpm * 2).coerceIn(0.0, 300.0)); history = history.map { it * 2 } },
             )
-            Text(reading.status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            Text(reading.status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1)
+        }
+    }
+}
+
+private fun shortTempoStatus(value: String): String = when {
+    value.contains("wait", true) -> "Waiting"
+    value.contains("find", true) -> "Finding pulse"
+    value.contains("steady", true) -> "Steady"
+    else -> value
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun TempoActions(
+    compactRow: Boolean,
+    listening: Boolean,
+    clickRunning: Boolean,
+    showClick: Boolean,
+    onListen: () -> Unit,
+    onTap: () -> Unit,
+    onClick: () -> Unit,
+    onHalf: () -> Unit,
+    onDouble: () -> Unit,
+) {
+    @Composable
+    fun Action(label: String, action: () -> Unit, primary: Boolean = false, modifier: Modifier = Modifier) {
+        StudioButton(onClick = action, kind = if (primary) StudioButtonKind.Primary else StudioButtonKind.Secondary, modifier = modifier) {
+            Text(label, color = if (primary) Color(0xFF07090F) else MaterialTheme.colorScheme.onSurface, fontSize = if (compactRow) 10.sp else 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+    if (compactRow) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Action(if (listening) "Stop" else "Listen", onListen, true, Modifier.weight(1.18f))
+            Action("Tap", onTap, modifier = Modifier.weight(1f))
+            if (showClick) Action(if (clickRunning) "Stop" else "Click", onClick, modifier = Modifier.weight(1f))
+            Action("÷2", onHalf, modifier = Modifier.weight(1f))
+            Action("×2", onDouble, modifier = Modifier.weight(1f))
+        }
+    } else {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Action(if (listening) "Stop" else "Listen", onListen, true)
+            Action("Tap", onTap)
+            if (showClick) Action(if (clickRunning) "Stop Click" else "Click", onClick)
+            Action("÷2", onHalf)
+            Action("×2", onDouble)
         }
     }
 }

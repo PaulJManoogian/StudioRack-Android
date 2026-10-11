@@ -81,7 +81,7 @@ internal fun studioLeviathanHelpSections(
             HelpTopic("Live BPM", points = listOf(
                 "Open Music & Live > Live BPM for a dedicated practice tempo display. Start Listening uses the device microphone; Tap Tempo works without microphone access and settles after several consistent taps.",
                 "The history graph shows recent movement against the target line. The rush/drag meter moves right when the detected tempo is faster than target and left when it is slower. Green is within about 1 BPM, yellow is close, and red needs attention.",
-                "Set Target BPM to the tempo you intend to hold, then Start Click when an audible reference is useful. The click and tracker are independent: the tracker measures what reaches the microphone, not the metronome's internal clock.",
+                "Move the Target BPM slider for fast adjustment, or tap the number and enter an exact tempo. Choose Click when an audible reference is useful. The click and tracker are independent: the tracker measures what reaches the microphone, not the metronome's internal clock.",
                 "Use ÷2 or ×2 when the musical pulse is being interpreted at half or double time. Low confidence is not a result; move closer to the rhythmic source, reduce background sound, or use Tap Tempo.",
                 "In Leviathan Live Chart mode, the waveform button shows or hides a compact tracker whose target comes from the current song. Tempo analysis remains local and does not record or synchronize audio.",
             )),

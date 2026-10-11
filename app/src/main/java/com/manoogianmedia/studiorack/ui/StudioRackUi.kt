@@ -318,6 +318,7 @@ private fun MainShell(
     val syncHealth by model.syncHealth.collectAsState()
     val notificationCount by model.notificationCount.collectAsState()
     val productName = stringResource(R.string.app_name_marked)
+    val compactShell = LocalConfiguration.current.screenWidthDp < 600
     LaunchedEffect(notificationRoutes) {
         notificationRoutes.collect { route ->
             if (route.destination == "alerts") {
@@ -382,21 +383,18 @@ private fun MainShell(
                     .fillMaxWidth()
                     .background(Color(0xF20A0D15))
                     .navigationBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 10.dp),
+                    .padding(horizontal = if (compactShell) 4.dp else 6.dp, vertical = if (compactShell) 4.dp else 6.dp),
             ) {
-                val rows = if (maxWidth >= 600.dp) listOf(AppSection.entries.toList()) else AppSection.entries.toList().chunked(3)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rows.forEach { destinations ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            destinations.forEach { destination ->
-                                StudioNavPill(
-                                    destination = destination,
-                                    selected = !showingAlerts && !showingFeedback && section == destination,
-                                    onClick = { showingAlerts = false; showingFeedback = false; section = destination },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
+                val compactNavigation = maxWidth < 600.dp
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (compactNavigation) 2.dp else 8.dp)) {
+                    AppSection.entries.forEach { destination ->
+                        StudioNavPill(
+                            destination = destination,
+                            selected = !showingAlerts && !showingFeedback && section == destination,
+                            onClick = { showingAlerts = false; showingFeedback = false; section = destination },
+                            compact = compactNavigation,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             }
@@ -539,9 +537,9 @@ private fun TesterFeedbackScreen(model: StudioRackViewModel, testerPhase: String
 }
 
 @Composable
-private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: () -> Unit, compact: Boolean = false, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier.height(48.dp).clickable(onClick = onClick),
+        modifier = modifier.height(if (compact) 34.dp else 44.dp).clickable(onClick = onClick),
         color = if (selected) Amber else PanelRaised,
         contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, if (selected) Amber else Color(0x33FFFFFF)),
@@ -549,7 +547,7 @@ private fun StudioNavPill(destination: AppSection, selected: Boolean, onClick: (
         shadowElevation = if (selected) 5.dp else 0.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(destination.label, fontSize = 14.sp, fontWeight = FontWeight.Black)
+            Text(destination.label, fontSize = if (compact) 9.sp else 12.sp, maxLines = 1, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -1318,6 +1316,7 @@ private fun parseCalendarColor(value: String): Color = runCatching { Color(andro
 @OptIn(ExperimentalLayoutApi::class)
 private fun LibraryScreen(model: StudioRackViewModel) {
     val context = LocalContext.current
+    val compactPhone = LocalConfiguration.current.screenWidthDp < 600
     val scope = rememberCoroutineScope()
     val songs by model.songs.collectAsState()
     val setLists by model.setLists.collectAsState()
@@ -1355,9 +1354,9 @@ private fun LibraryScreen(model: StudioRackViewModel) {
         .sortedBy { recordJson(it).optString("name").lowercase() }
         .let { if (sort == "Z-A") it.reversed() else it }
     Box(Modifier.fillMaxSize()) {
-    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, Tuners, and Live BPM") }
-        item { ChoiceStrip(listOf("Songs", "Set Lists", "Tuners", "Live BPM"), tab) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
+    LazyColumn(Modifier.fillMaxSize().padding(if (compactPhone) 10.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(if (compactPhone) 8.dp else 12.dp)) {
+        if (!(compactPhone && tab == "Live BPM")) item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, Tuners, and Live BPM") }
+        item { LibraryChoiceStrip(tab, compactPhone) { tab = it; query = ""; favoriteScope = "All"; sort = "A-Z" } }
         if (tab !in setOf("Tuners", "Live BPM")) item {
             StudioButton(
                 onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
@@ -4049,6 +4048,32 @@ private fun ChoiceStrip(options: List<String>, selected: String, choose: (String
                 onClick = { choose(option) },
                 kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary,
             ) { Text(option, color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+@Composable
+private fun LibraryChoiceStrip(selected: String, compact: Boolean, choose: (String) -> Unit) {
+    val options = listOf("Songs", "Set Lists", "Tuners", "Live BPM")
+    if (!compact) {
+        ChoiceStrip(options, selected, choose)
+        return
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        options.forEach { option ->
+            StudioButton(
+                onClick = { choose(option) },
+                kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    when (option) { "Set Lists" -> "Sets"; "Live BPM" -> "BPM"; else -> option },
+                    color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
