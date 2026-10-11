@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -308,6 +309,18 @@ private fun DrumStaffNotation(rows: List<DrumPatternRow>, timeSignature: String)
             }
         }
     }
+        rows.groupBy { drumStaffY(it.label) }.toSortedMap().forEach { (position, positionRows) ->
+            Text(
+                positionRows.map { it.label.uppercase() }.distinct().joinToString("/"),
+                modifier = Modifier.width(39.dp).offset(x = 0.dp, y = (position - 7f).dp),
+                color = MaterialTheme.colorScheme.secondary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                textAlign = TextAlign.End,
+            )
+        }
         val signature = timeSignature.split("/", limit = 2).let { it.firstOrNull().orEmpty().ifBlank { "4" } to it.getOrNull(1).orEmpty().ifBlank { "4" } }
         Column(Modifier.offset(x = 47.dp, y = 52.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(signature.first, color = notationColor, fontSize = 16.sp, fontWeight = FontWeight.Black, lineHeight = 16.sp)
