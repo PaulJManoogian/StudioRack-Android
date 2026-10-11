@@ -233,7 +233,7 @@ class StudioRackRepository(
                 .put("attachment_type", input.attachmentType)
                 .put("display_name", input.displayName.substringBeforeLast('.').ifBlank { input.attachmentType })
                 .put("instrument_role", "")
-                .put("file_ref", if (input.sourceType == "text") "text://chordpro" else "pending-upload://$attachmentId")
+                .put("file_ref", if (input.sourceType == "text") "text://${input.contentFormat}" else "pending-upload://$attachmentId")
                 .put("source_type", input.sourceType)
                 .put("content_format", if (input.sourceType == "text") input.contentFormat else "")
                 .put("content_text", input.contentText)

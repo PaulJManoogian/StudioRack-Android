@@ -1434,7 +1434,7 @@ private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Song
     var durationMessage by remember { mutableStateOf("") }
     var appliedDurationSongs by remember { mutableStateOf(emptySet<String>()) }
     var attachmentPreview by remember { mutableStateOf<CachedAttachment?>(null) }
-    var textAttachmentPreview by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var textAttachmentPreview by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     val attachmentCacheById = cachedAttachments.associateBy(CachedAttachment::attachmentId)
     val filteredSongs = songs
         .filter { query.isBlank() || recordJson(it).toString().contains(query, true) }
@@ -1553,7 +1553,7 @@ private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Song
                             Text("Attachment", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             when {
                                 textContent != null -> StudioButton(
-                                    onClick = { textAttachmentPreview = attachmentLabel(attachment) to textContent },
+                                    onClick = { textAttachmentPreview = Triple(attachmentLabel(attachment), textContent, attachment.optString("content_format", "chordpro")) },
                                     kind = StudioButtonKind.Secondary,
                                 ) { Text(attachmentLabel(attachment), color = MaterialTheme.colorScheme.onSurface) }
                                 cached?.status == "ready" && !cached.localPath.isNullOrBlank() -> StudioButton(
@@ -1639,7 +1639,7 @@ private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Song
     }
     exportTarget?.let { target -> ContextExportDialog(target, online, reportState, model) { exportTarget = null } }
     attachmentPreview?.let { attachment -> AttachmentPreviewDialog(attachment) { attachmentPreview = null } }
-    textAttachmentPreview?.let { (name, content) -> TextAttachmentPreviewDialog(name, content) { textAttachmentPreview = null } }
+    textAttachmentPreview?.let { (name, content, format) -> TextAttachmentPreviewDialog(name, content, format) { textAttachmentPreview = null } }
     }
 }
 
@@ -4616,6 +4616,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
     var writingLyrics by remember(target.id) { mutableStateOf(false) }
     var lyricsName by remember(target.id) { mutableStateOf("Lyrics") }
     var lyricsDraft by remember(target.id) { mutableStateOf(TextFieldValue("")) }
+    var writtenFormat by remember(target.id) { mutableStateOf("chordpro") }
     var preview by remember { mutableStateOf<CachedAttachment?>(null) }
     var metadataResults by remember { mutableStateOf(emptyList<JSONObject>()) }
     var metadataMessage by remember { mutableStateOf("") }
@@ -4833,7 +4834,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                 }
             }
         }
-        ChoiceStrip(listOf("Chart", "Lyrics", "Tab", "Sheet Music", "MIDI", "DMX-MIDI", "Other"), attachmentType) { attachmentType = it }
+        ChoiceStrip(listOf("Chart", "Drum Chart", "Lyrics", "Tab", "Sheet Music", "MIDI", "DMX-MIDI", "Other"), attachmentType) { attachmentType = it }
         StudioButton(
             onClick = { attachmentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "audio/midi", "audio/x-midi", "application/x-midi")) },
             modifier = Modifier.fillMaxWidth(),
@@ -4843,20 +4844,25 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             onClick = { writingLyrics = !writingLyrics },
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
-        ) { Text(if (writingLyrics) "Close Lyrics Editor" else "Write Lyrics / ChordPro", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
+        ) { Text(if (writingLyrics) "Close Chart Editor" else "Write Chart Text", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
         if (writingLyrics) {
+            ChoiceStrip(listOf("ChordPro", "Nashville Drum Chart", "Drum Tab"), when (writtenFormat) { "drum_nashville" -> "Nashville Drum Chart"; "drum_tab" -> "Drum Tab"; else -> "ChordPro" }) {
+                writtenFormat = when (it) { "Nashville Drum Chart" -> "drum_nashville"; "Drum Tab" -> "drum_tab"; else -> "chordpro" }
+                if (lyricsDraft.text.isBlank()) lyricsName = if (writtenFormat.startsWith("drum_")) "Drum Chart" else "Lyrics"
+            }
             StudioField("Material name", lyricsName, dictation = false) { lyricsName = it }
-            ChordProEditor(lyricsDraft) { lyricsDraft = it }
+            WrittenMaterialEditor(lyricsDraft, writtenFormat) { lyricsDraft = it }
             StudioButton(
                 onClick = {
                     if (lyricsDraft.text.isNotBlank()) {
                         newAttachments = newAttachments + SongAttachmentInput(
                             uri = "",
                             displayName = lyricsName.ifBlank { "Lyrics" },
-                            attachmentType = "lyrics",
+                            attachmentType = if (writtenFormat.startsWith("drum_")) "drum_chart" else "lyrics",
                             mimeType = "text/plain",
                             sourceType = "text",
                             contentText = lyricsDraft.text,
+                            contentFormat = writtenFormat,
                         )
                         lyricsDraft = TextFieldValue("")
                         lyricsName = "Lyrics"
@@ -4865,7 +4871,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                 },
                 enabled = lyricsDraft.text.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Add Written Lyrics", color = Ink, fontWeight = FontWeight.Black) }
+            ) { Text("Add Written Material", color = Ink, fontWeight = FontWeight.Black) }
         }
         existingAttachments.forEach { record ->
             val attachment = recordJson(record)
@@ -4909,17 +4915,22 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun ChordProEditor(value: TextFieldValue, onValueChange: (TextFieldValue) -> Unit) {
+private fun WrittenMaterialEditor(value: TextFieldValue, format: String, onValueChange: (TextFieldValue) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Lyrics / ChordPro", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        val drum = format == "drum_nashville" || format == "drum_tab"
+        Text(if (format == "drum_nashville") "Nashville Drum Chart" else if (format == "drum_tab") "Drum Tab" else "Lyrics / ChordPro", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(
-                "Verse" to ("{start_of_verse}\n" to "\n{end_of_verse}"),
-                "Chorus" to ("{start_of_chorus}\n" to "\n{end_of_chorus}"),
-                "Bridge" to ("{start_of_bridge}\n" to "\n{end_of_bridge}"),
-                "Timing Mark" to ("{x_leviathan_time: 0:00}\n" to ""),
+            val tools = if (drum) listOf(
+                "Section" to ("[Verse] x8\n" to ""),
+                "Pattern" to ("pattern: HH|x-x-x-x-| SD|--o---o-| BD|o---o---|\n" to ""),
+                "Cue" to ("cue: " to ""),
+                "Fill" to ("fill: last bar\n" to ""),
+            ) else listOf(
+                "Verse" to ("{start_of_verse}\n" to "\n{end_of_verse}"), "Chorus" to ("{start_of_chorus}\n" to "\n{end_of_chorus}"),
+                "Bridge" to ("{start_of_bridge}\n" to "\n{end_of_bridge}"), "Timing Mark" to ("{x_leviathan_time: 0:00}\n" to ""),
                 "Chord" to ("[" to "]"), "Bold" to ("**" to "**"), "Italic" to ("*" to "*"),
-            ).forEach { (label, markers) ->
+            )
+            tools.forEach { (label, markers) ->
                 TextButton(onClick = { onValueChange(wrapTextSelection(value, markers.first, markers.second)) }) {
                     Text(label, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                 }
@@ -4929,7 +4940,7 @@ private fun ChordProEditor(value: TextFieldValue, onValueChange: (TextFieldValue
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp),
-            placeholder = { Text("{start_of_verse}\nLyrics with optional [C]chords...\n{end_of_verse}") },
+            placeholder = { Text(if (drum) "{title: Song Title}\n{tempo: 120}\n{time: 4/4}\n\n[Intro] x4\npattern: HH|x-x-x-x-| SD|--o---o-| BD|o---o---|\ncue: Guitar starts" else "{start_of_verse}\nLyrics with optional [C]chords...\n{end_of_verse}") },
             textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface),
         )
     }
@@ -4962,20 +4973,20 @@ private fun TextMaterialEditor(record: CachedRecord, model: StudioRackViewModel)
             }
             if (expanded) {
                 StudioField("Material name", name, dictation = false) { name = it }
-                ChordProEditor(content) { content = it }
+                WrittenMaterialEditor(content, format) { content = it }
                 StudioButton(
                     onClick = {
                         model.saveSongAttachment(record.entityId, JSONObject(original.toString())
                             .put("display_name", name.trim()).put("source_type", "text")
                             .put("content_format", format).put("content_text", content.text)
-                            .put("file_ref", "text://chordpro"))
+                            .put("file_ref", "text://$format"))
                         expanded = false
                     },
                     enabled = content.text.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Save Lyrics", color = Ink, fontWeight = FontWeight.Black) }
+                ) { Text("Save Material", color = Ink, fontWeight = FontWeight.Black) }
                 TextButton(onClick = { model.deleteSongAttachment(record.entityId) }) {
-                    Text("Delete Lyrics Material", color = Color(0xFFFF6B6B), fontWeight = FontWeight.Bold)
+                    Text("Delete Material", color = Color(0xFFFF6B6B), fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -5042,7 +5053,7 @@ private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> U
 }
 
 @Composable
-private fun TextAttachmentPreviewDialog(name: String, content: String, close: () -> Unit) {
+private fun TextAttachmentPreviewDialog(name: String, content: String, format: String, close: () -> Unit) {
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Ink) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp)) {
@@ -5051,7 +5062,7 @@ private fun TextAttachmentPreviewDialog(name: String, content: String, close: ()
                     TextButton(onClick = close) { Text("Close", color = MaterialTheme.colorScheme.secondary) }
                 }
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
-                    ChordProDocument(content)
+                    if (format == "drum_nashville" || format == "drum_tab") DrumChartDocumentView(content, format) else ChordProDocument(content)
                 }
             }
         }
@@ -7332,8 +7343,11 @@ private fun PerformanceSongScreen(
             contentAlignment = Alignment.TopCenter,
         ) {
             Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {
-                val textMaterial = item.attachment?.takeIf { it.optString("source_type") == "text" }?.optString("content_text").orEmpty()
+                val textAttachment = item.attachment?.takeIf { it.optString("source_type") == "text" }
+                val textMaterial = textAttachment?.optString("content_text").orEmpty()
+                val textFormat = textAttachment?.optString("content_format", "chordpro").orEmpty()
                 when {
+                    textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_tab") -> DrumChartDocumentView(textMaterial, textFormat)
                     textMaterial.isNotBlank() -> ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs, materialScrollState)
                     !rendered.complete -> CircularProgressIndicator()
                     renderedBitmap == null -> SongDetailFallback(item)
