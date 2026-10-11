@@ -38,4 +38,15 @@ class PerformanceAttachmentSizingTest {
         assertEquals(1, performanceAttachmentSampleSize(1000, 1600, 1080, 2160))
         assertEquals(1, performanceAttachmentSampleSize(0, 0, 1080, 2160))
     }
+
+    @Test
+    fun performanceMaterialFitsTallPageInsideAvailableStageHeight() {
+        assertEquals(0.75f, performanceFitScale(1200, 600, 800, 800), 0.001f)
+        assertEquals(0.5f, performanceFitScale(600, 800, 1200, 900), 0.001f)
+    }
+
+    @Test
+    fun performanceMaterialNeverEnlargesSmallerCharts() {
+        assertEquals(1f, performanceFitScale(1200, 900, 800, 600), 0.001f)
+    }
 }

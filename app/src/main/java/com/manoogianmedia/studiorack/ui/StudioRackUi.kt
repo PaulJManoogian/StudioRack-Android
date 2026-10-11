@@ -101,6 +101,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Groups
@@ -150,6 +151,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -157,6 +159,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
@@ -176,6 +179,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
 import com.manoogianmedia.studiorack.crew.CrewBehaviorSettings
 import androidx.compose.ui.window.Dialog
@@ -6380,6 +6384,13 @@ private fun LiveConnectionStatus(connected: Boolean, updating: Boolean, label: S
     }
 }
 
+private enum class PerformanceDetailSize(val preferenceValue: String, val label: String) {
+    SINGLE_LINE("single_line", "Single line"),
+    SMALL("small", "Small"),
+    MEDIUM("medium", "Medium"),
+    LARGE("large", "Large"),
+}
+
 @Composable
 private fun LeviathanLivePerformanceHeader(
     setListName: String,
@@ -6395,7 +6406,10 @@ private fun LeviathanLivePerformanceHeader(
     onLocalLive: () -> Unit,
     onEdit: () -> Unit,
     onToggleView: () -> Unit,
+    detailSize: PerformanceDetailSize? = null,
+    onDetailSizeChanged: (PerformanceDetailSize) -> Unit = {},
 ) {
+    var detailMenuOpen by remember { mutableStateOf(false) }
     Surface(
         color = Color(0xF207090F),
         shape = RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp),
@@ -6423,6 +6437,24 @@ private fun LeviathanLivePerformanceHeader(
                 modifier = Modifier.weight(1f),
             )
             GigIconButton(Icons.Rounded.WifiTethering, "Local live network", onClick = onLocalLive, active = localLiveActive)
+            if (chartView && detailSize != null) Box {
+                GigIconButton(
+                    Icons.Rounded.FormatSize,
+                    "Song details: ${detailSize.label}",
+                    onClick = { detailMenuOpen = true },
+                )
+                DropdownMenu(expanded = detailMenuOpen, onDismissRequest = { detailMenuOpen = false }) {
+                    PerformanceDetailSize.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label, fontWeight = if (option == detailSize) FontWeight.Black else FontWeight.Normal) },
+                            onClick = {
+                                onDetailSizeChanged(option)
+                                detailMenuOpen = false
+                            },
+                        )
+                    }
+                }
+            }
             GigIconButton(Icons.Rounded.Edit, "Edit live set list", onClick = onEdit, enabled = canEdit)
             GigIconButton(
                 if (chartView) Icons.Rounded.ListIcon else Icons.Rounded.Description,
@@ -6874,6 +6906,7 @@ private fun PerformanceSongScreen(
     val context = LocalContext.current
     val nightMode = rememberDocumentNightMode()
     val phoneFormat = rememberLivePhoneFormat()
+    var detailSize by rememberPerformanceDetailSize()
     val narrowDevice = LocalConfiguration.current.screenWidthDp < 600
     val compactPhoneLayout = narrowDevice || phoneFormat.value
     val performanceLayoutFormat = when {
@@ -6885,7 +6918,6 @@ private fun PerformanceSongScreen(
         settings.performanceLayout.items(performanceLayoutFormat)
     }
     fun layoutVisible(id: String): Boolean = performanceLayoutItems.firstOrNull { it.id == id }?.visible != false
-    fun layoutRows(id: String, fallback: Int): Int = performanceLayoutItems.firstOrNull { it.id == id }?.rows ?: fallback
     val mediaLink = normalizedMediaLink(item.song?.optString("media_ref").orEmpty())
     val path = item.cache?.localPath.orEmpty()
     val attachmentVersion = item.cache?.sha256.orEmpty().ifBlank { item.cache?.revision?.toString().orEmpty() }
@@ -6985,9 +7017,28 @@ private fun PerformanceSongScreen(
             onLocalLive = onOpenLocalLive,
             onEdit = onEditLiveSet,
             onToggleView = close,
+            detailSize = detailSize,
+            onDetailSizeChanged = {
+                detailSize = it
+                savePerformanceDetailSize(context, it)
+            },
         )
         Spacer(Modifier.height(8.dp))
         if (compactPhoneLayout) {
+            val compactTitleSize = when (detailSize) {
+                PerformanceDetailSize.LARGE -> 38.sp
+                PerformanceDetailSize.MEDIUM -> 30.sp
+                PerformanceDetailSize.SMALL -> 23.sp
+                PerformanceDetailSize.SINGLE_LINE -> 18.sp
+            }
+            val compactTitleLineHeight = when (detailSize) {
+                PerformanceDetailSize.LARGE -> 42.sp
+                PerformanceDetailSize.MEDIUM -> 34.sp
+                PerformanceDetailSize.SMALL -> 27.sp
+                PerformanceDetailSize.SINGLE_LINE -> 22.sp
+            }
+            val songTitle = item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled")
+            val songArtist = item.song?.optString("artist").orEmpty()
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -6996,30 +7047,36 @@ private fun PerformanceSongScreen(
                 GigIconButton(Icons.Rounded.NavigateBefore, "Previous song", previous, position > 0)
                 Column(Modifier.weight(1f)) {
                     Text(
-                        item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
+                        if (detailSize == PerformanceDetailSize.SINGLE_LINE && songArtist.isNotBlank()) "$songTitle  •  $songArtist" else songTitle,
                         color = MaterialTheme.colorScheme.primary,
                         fontFamily = FontFamily.Serif,
-                        fontSize = 38.sp,
-                        lineHeight = 42.sp,
+                        fontSize = compactTitleSize,
+                        lineHeight = compactTitleLineHeight,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 2,
+                        maxLines = if (detailSize == PerformanceDetailSize.LARGE) 2 else 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
-                    Text(
-                        item.song?.optString("artist").orEmpty(),
+                    if (detailSize != PerformanceDetailSize.SINGLE_LINE) Text(
+                        songArtist,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Serif,
-                        fontSize = 22.sp,
-                        lineHeight = 25.sp,
+                        fontSize = if (detailSize == PerformanceDetailSize.LARGE) 22.sp else if (detailSize == PerformanceDetailSize.MEDIUM) 18.sp else 14.sp,
+                        lineHeight = if (detailSize == PerformanceDetailSize.LARGE) 25.sp else 19.sp,
                         maxLines = 1,
                     )
                     Text(
-                        "${item.sectionName}  •  SONG ${position + 1} OF $total",
+                        if (detailSize == PerformanceDetailSize.SINGLE_LINE) {
+                            "${item.sectionName}  •  ${gigSongCue(item)}"
+                        } else {
+                            "${item.sectionName}  •  SONG ${position + 1} OF $total"
+                        },
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
-                    Text(
+                    if (detailSize in setOf(PerformanceDetailSize.LARGE, PerformanceDetailSize.MEDIUM)) Text(
                         nextItem?.let { "NEXT: ${gigSongTitle(it)}" } ?: "END OF SET LIST",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
@@ -7246,16 +7303,57 @@ private fun PerformanceSongScreen(
         if (layoutVisible("song_identity") && !compactPhoneLayout) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val tablet = maxWidth >= 600.dp
-                Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                val title = item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled")
+                val artist = item.song?.optString("artist").orEmpty()
+                if (detailSize == PerformanceDetailSize.SINGLE_LINE) {
                     Text(
-                        item.song?.optString("title") ?: item.entry.optString("manual_title", "Untitled"),
+                        listOf(title, artist, gigSongCue(item)).filter(String::isNotBlank).joinToString("  •  "),
                         color = MaterialTheme.colorScheme.primary,
                         fontFamily = FontFamily.Serif,
-                        fontSize = if (tablet) 56.sp else 38.sp,
-                        lineHeight = if (tablet) 62.sp else 44.sp,
+                        fontSize = if (tablet) 20.sp else 17.sp,
+                        lineHeight = if (tablet) 24.sp else 21.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                     )
-                    Text(item.song?.optString("artist").orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Serif, fontSize = if (tablet) 28.sp else 23.sp)
+                } else Column(
+                    Modifier.fillMaxWidth().padding(vertical = when (detailSize) {
+                        PerformanceDetailSize.LARGE -> 10.dp
+                        PerformanceDetailSize.MEDIUM -> 6.dp
+                        else -> 2.dp
+                    }),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        title,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = when (detailSize) {
+                            PerformanceDetailSize.LARGE -> if (tablet) 56.sp else 38.sp
+                            PerformanceDetailSize.MEDIUM -> if (tablet) 42.sp else 31.sp
+                            else -> if (tablet) 29.sp else 24.sp
+                        },
+                        lineHeight = when (detailSize) {
+                            PerformanceDetailSize.LARGE -> if (tablet) 62.sp else 44.sp
+                            PerformanceDetailSize.MEDIUM -> if (tablet) 47.sp else 35.sp
+                            else -> if (tablet) 33.sp else 28.sp
+                        },
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = if (detailSize == PerformanceDetailSize.LARGE) 2 else 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        artist,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = when (detailSize) {
+                            PerformanceDetailSize.LARGE -> if (tablet) 28.sp else 23.sp
+                            PerformanceDetailSize.MEDIUM -> if (tablet) 21.sp else 18.sp
+                            else -> if (tablet) 16.sp else 14.sp
+                        },
+                        maxLines = 1,
+                    )
                 }
             }
         }
@@ -7273,19 +7371,51 @@ private fun PerformanceSongScreen(
         val patch = listOf(item.song?.optString("patch_name"), item.song?.optString("patch_number")).filterNotNull().filter(String::isNotBlank).joinToString(" / ")
         if (layoutVisible("song_details")) BoxWithConstraints(Modifier.fillMaxWidth()) {
             val tablet = maxWidth >= 600.dp
-            val primarySize = if (tablet) 34.sp else 25.sp
-            val secondarySize = if (tablet) 27.sp else 20.sp
-            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            val primarySize = when (detailSize) {
+                PerformanceDetailSize.LARGE -> if (tablet) 34.sp else 25.sp
+                PerformanceDetailSize.MEDIUM -> if (tablet) 25.sp else 20.sp
+                else -> if (tablet) 19.sp else 16.sp
+            }
+            val secondarySize = when (detailSize) {
+                PerformanceDetailSize.LARGE -> if (tablet) 27.sp else 20.sp
+                PerformanceDetailSize.MEDIUM -> if (tablet) 21.sp else 17.sp
+                else -> if (tablet) 17.sp else 14.sp
+            }
+            val detailPadding = when (detailSize) {
+                PerformanceDetailSize.LARGE -> 9.dp
+                PerformanceDetailSize.MEDIUM -> 5.dp
+                else -> 2.dp
+            }
+            if (detailSize == PerformanceDetailSize.SINGLE_LINE) {
+                Text(
+                    listOf(
+                        "Starts ${item.song?.optString("starts_by").orEmpty().ifBlank { "Not set" }}",
+                        "Key ${displaySongKey(item.song?.optString("song_key").orEmpty()).ifBlank { "Not set" }}",
+                        "${item.song?.optString("tempo").orEmpty().ifBlank { "Not set" }} BPM",
+                        item.song?.optString("time_signature").orEmpty().ifBlank { "Not set" },
+                        formatDuration(item.song?.optInt("duration_seconds") ?: 0),
+                        item.song?.optString("style").orEmpty().ifBlank { "Not set" },
+                        "Patch ${patch.ifBlank { "Not set" }}",
+                    ).joinToString("  •  "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = if (tablet) 13.sp else 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            } else Column(Modifier.fillMaxWidth().padding(vertical = if (detailSize == PerformanceDetailSize.LARGE) 8.dp else 2.dp)) {
                 Row(Modifier.fillMaxWidth()) {
-                    GigDetail("Starts", item.song?.optString("starts_by").orEmpty(), Modifier.weight(1f), primarySize)
-                    GigDetail("Key", displaySongKey(item.song?.optString("song_key").orEmpty()), Modifier.weight(1f), primarySize)
-                    GigDetail("Tempo", item.song?.optString("tempo").orEmpty(), Modifier.weight(1f), primarySize)
-                    GigDetail("Time", item.song?.optString("time_signature").orEmpty(), Modifier.weight(1f), primarySize)
+                    GigDetail("Starts", item.song?.optString("starts_by").orEmpty(), Modifier.weight(1f), primarySize, detailPadding)
+                    GigDetail("Key", displaySongKey(item.song?.optString("song_key").orEmpty()), Modifier.weight(1f), primarySize, detailPadding)
+                    GigDetail("Tempo", item.song?.optString("tempo").orEmpty(), Modifier.weight(1f), primarySize, detailPadding)
+                    GigDetail("Time", item.song?.optString("time_signature").orEmpty(), Modifier.weight(1f), primarySize, detailPadding)
                 }
                 Row(Modifier.fillMaxWidth()) {
-                    GigDetail("Length", formatDuration(item.song?.optInt("duration_seconds") ?: 0), Modifier.weight(1f), secondarySize)
-                    GigDetail("Style", item.song?.optString("style").orEmpty(), Modifier.weight(1f), secondarySize)
-                    GigDetail("Patch", patch, Modifier.weight(1f), secondarySize)
+                    GigDetail("Length", formatDuration(item.song?.optInt("duration_seconds") ?: 0), Modifier.weight(1f), secondarySize, detailPadding)
+                    GigDetail("Style", item.song?.optString("style").orEmpty(), Modifier.weight(1f), secondarySize, detailPadding)
+                    GigDetail("Patch", patch, Modifier.weight(1f), secondarySize, detailPadding)
                 }
             }
         }
@@ -7335,31 +7465,81 @@ private fun PerformanceSongScreen(
             }
         }
         val renderedBitmap = rendered.bitmap
-        val chartModifier = if (renderedBitmap != null && renderedBitmap.height > 0) {
-            Modifier.fillMaxWidth().aspectRatio(renderedBitmap.width.toFloat() / renderedBitmap.height.toFloat())
-        } else {
-            Modifier.fillMaxWidth().heightIn(min = 320.dp)
-        }
         if (layoutVisible("material")) Box(
-            Modifier.fillMaxWidth().weight(1f).heightIn(min = (layoutRows("material", 7) * 36).dp).verticalScroll(materialScrollState),
-            contentAlignment = Alignment.TopCenter,
+            Modifier.fillMaxWidth().weight(1f).padding(top = 6.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(chartModifier.padding(top = 10.dp), contentAlignment = Alignment.TopCenter) {
-                val textAttachment = item.attachment?.takeIf { it.optString("source_type") == "text" }
-                val textMaterial = textAttachment?.optString("content_text").orEmpty()
-                val textFormat = textAttachment?.optString("content_format", "chordpro").orEmpty()
-                when {
-                    textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_staff", "drum_tab") -> DrumChartDocumentView(textMaterial, textFormat)
-                    textMaterial.isNotBlank() -> ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs, materialScrollState)
-                    !rendered.complete -> CircularProgressIndicator()
-                    renderedBitmap == null -> SongDetailFallback(item)
-                    else -> Image(
-                        renderedBitmap.asImageBitmap(),
-                        contentDescription = item.attachment?.let(::attachmentLabel),
-                        modifier = Modifier.fillMaxWidth(),
-                        contentScale = ContentScale.FillWidth,
-                        colorFilter = if (nightMode.value) DOCUMENT_NIGHT_COLOR_FILTER else null,
-                    )
+            val textAttachment = item.attachment?.takeIf { it.optString("source_type") == "text" }
+            val textMaterial = textAttachment?.optString("content_text").orEmpty()
+            val textFormat = textAttachment?.optString("content_format", "chordpro").orEmpty()
+            when {
+                textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_staff", "drum_tab") -> {
+                    FitPerformanceMaterial(Modifier.fillMaxSize()) {
+                        DrumChartDocumentView(textMaterial, textFormat)
+                    }
+                }
+                textMaterial.isNotBlank() -> Box(
+                    Modifier.fillMaxSize().verticalScroll(materialScrollState),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    ChordProDocument(textMaterial, activeTimelineSection, timelinePositionMs, materialScrollState)
+                }
+                !rendered.complete -> CircularProgressIndicator()
+                renderedBitmap == null -> SongDetailFallback(item)
+                else -> Image(
+                    renderedBitmap.asImageBitmap(),
+                    contentDescription = item.attachment?.let(::attachmentLabel),
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    colorFilter = if (nightMode.value) DOCUMENT_NIGHT_COLOR_FILTER else null,
+                )
+            }
+        }
+    }
+}
+
+internal fun performanceFitScale(
+    availableWidth: Int,
+    availableHeight: Int,
+    contentWidth: Int,
+    contentHeight: Int,
+): Float {
+    if (availableWidth <= 0 || availableHeight <= 0 || contentWidth <= 0 || contentHeight <= 0) return 1f
+    return minOf(
+        1f,
+        availableWidth.toFloat() / contentWidth.toFloat(),
+        availableHeight.toFloat() / contentHeight.toFloat(),
+    )
+}
+
+@Composable
+private fun FitPerformanceMaterial(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val width = constraints.maxWidth.coerceAtLeast(constraints.minWidth)
+        val boundedHeight = if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
+        val placeable = measurables.firstOrNull()?.measure(
+            Constraints(
+                minWidth = width,
+                maxWidth = width,
+                minHeight = 0,
+                maxHeight = Constraints.Infinity,
+            ),
+        )
+        val height = boundedHeight.coerceAtLeast(constraints.minHeight)
+        if (placeable == null) {
+            layout(width, height) {}
+        } else {
+            val scale = performanceFitScale(width, height, placeable.width, placeable.height)
+            val scaledWidth = (placeable.width * scale).roundToInt()
+            val scaledHeight = (placeable.height * scale).roundToInt()
+            layout(width, height) {
+                placeable.placeWithLayer(
+                    x = ((width - scaledWidth) / 2).coerceAtLeast(0),
+                    y = ((height - scaledHeight) / 2).coerceAtLeast(0),
+                ) {
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0f, 0f)
                 }
             }
         }
@@ -8403,6 +8583,23 @@ private fun saveLivePhoneFormat(context: Context, enabled: Boolean) {
         .apply()
 }
 
+@Composable
+private fun rememberPerformanceDetailSize(): MutableState<PerformanceDetailSize> {
+    val context = LocalContext.current
+    return remember(context) {
+        val saved = context.getSharedPreferences(DOCUMENT_VIEW_PREFERENCES, Context.MODE_PRIVATE)
+            .getString(LIVE_DETAIL_SIZE, PerformanceDetailSize.LARGE.preferenceValue)
+        mutableStateOf(PerformanceDetailSize.entries.firstOrNull { it.preferenceValue == saved } ?: PerformanceDetailSize.LARGE)
+    }
+}
+
+private fun savePerformanceDetailSize(context: Context, size: PerformanceDetailSize) {
+    context.getSharedPreferences(DOCUMENT_VIEW_PREFERENCES, Context.MODE_PRIVATE)
+        .edit()
+        .putString(LIVE_DETAIL_SIZE, size.preferenceValue)
+        .apply()
+}
+
 private fun saveDocumentNightMode(context: Context, enabled: Boolean) {
     context.getSharedPreferences(DOCUMENT_VIEW_PREFERENCES, Context.MODE_PRIVATE)
         .edit()
@@ -8420,6 +8617,7 @@ private val DOCUMENT_NIGHT_COLOR_FILTER = ColorFilter.colorMatrix(ColorMatrix(fl
 private const val DOCUMENT_VIEW_PREFERENCES = "studio_leviathan_document_view"
 private const val DOCUMENT_NIGHT_MODE = "night_mode"
 private const val LIVE_PHONE_FORMAT = "live_phone_format"
+private const val LIVE_DETAIL_SIZE = "live_detail_size"
 private const val LIVE_AUDIO_PREFERENCES = "studio_leviathan_live_audio"
 private const val LIVE_AUDIO_DEVICE_ID = "output_device_id"
 private const val LIVE_AUDIO_PROFILE_PREFIX = "routing_profile:"
@@ -8702,8 +8900,14 @@ private fun GigPill(label: String, active: Boolean = false, onClick: (() -> Unit
 }
 
 @Composable
-private fun GigDetail(label: String, value: String, modifier: Modifier = Modifier, valueSize: androidx.compose.ui.unit.TextUnit = 20.sp) {
-    Column(modifier.padding(horizontal = 3.dp, vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun GigDetail(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueSize: androidx.compose.ui.unit.TextUnit = 20.sp,
+    verticalPadding: androidx.compose.ui.unit.Dp = 9.dp,
+) {
+    Column(modifier.padding(horizontal = 3.dp, vertical = verticalPadding), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Black)
         Text(value.ifBlank { "Not set" }, color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Serif, fontSize = valueSize, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }

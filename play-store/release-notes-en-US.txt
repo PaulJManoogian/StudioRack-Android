@@ -12,6 +12,8 @@ Studio Leviathan closed beta
 - Drum charts now fit the available screen width, place a prominent bar count beside each section name, and identify every instrument abbreviation used in the notation.
 - Instrument abbreviations now appear directly beside their corresponding percussion-staff positions while retaining the full-name key above each section.
 - Fixed an Android crash when opening a set list containing a written drum chart.
+- Chart mode now fits complete PDF, image, and generated drum-chart pages within the available performance area instead of requiring hand scrolling.
+- Added persistent Single line, Small, Medium, and Large song-detail sizes in Chart mode; Large preserves the original presentation.
 - Expanded the in-app documentation with a complete written drum-chart appendix covering Nashville Drum Charts, Drum Tabs, Nashville Drum Notation, symbols, labels, and copy-ready examples.
 - Tuners for pitched instruments and percussion, plus faster navigation aligned with the web application.
 - Wear OS companion controls for supported live-performance workflows.

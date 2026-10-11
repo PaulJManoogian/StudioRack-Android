@@ -106,6 +106,8 @@ internal fun studioLeviathanHelpSections(
             HelpTopic(liveName, points = listOf(
                 "List mode provides a large, scannable running order.",
                 "Chart mode shows stage-critical song facts and the selected chart, lyrics, tab, or other material.",
+                "In Chart mode, open the text-size button beside Live Network to choose Single line, Small, Medium, or Large song details. Large is the original full-size presentation; the smaller choices preserve progressively more room for the chart and remain selected between performances.",
+                "A complete PDF or image page is fitted inside the available chart area instead of being enlarged beyond the screen. Nashville drum charts, drum notation, and drum tabs are also fitted as complete performance pages so the whole arrangement remains visible without hand scrolling. Multi-page documents retain explicit page controls.",
                 "Playback audio is independent of charts, lyrics, PDFs, ChordPro, and other performance material. In chart view, one button enables or disables playback and the adjacent button arms or disarms automatic start. A song's only playback track is used automatically; choose the intended track in the set list when a song has more than one.",
                 "The first song always waits for a manual start. With playback and autoplay both active, moving to another song starts its selected audio automatically. Autoplay never runs while playback is disabled. The playback clock is the foundation for timed lyrics, document movement, markers, MIDI, and lighting cues as those capabilities become available.",
                 "Song Timeline uses the canonical web-authored Song Sections and synchronized lyrics. During local playback, Android shows the current Section, current lyric, and next lyric from the same offline-ready records used by the web application.",
@@ -115,7 +117,7 @@ internal fun studioLeviathanHelpSections(
                 "Bluetooth page turners use only configured performance actions. Clock, elapsed time, and set time remaining can each be shown or hidden.",
             )),
             HelpTopic("Live Buttons And Mixer", points = listOf(
-                "Back returns to the event; Live Network opens Local Live status; Edit opens permitted set-list editing; List/Chart toggles the two performance views; X returns from a chart to the running order.",
+                "Back returns to the event; Live Network opens Local Live status; Song Detail Size chooses Single line, Small, Medium, or Large chart-header density; Edit opens permitted set-list editing; List/Chart toggles the two performance views; X returns from a chart to the running order.",
                 "Phone Format changes responsive density; Sun/Moon changes material appearance; Performance Audio enables playback tools; Autoplay arms later song starts; Live Hardware opens audio output, routing profile, MIDI, and show-control choices.",
                 "Previous and Next move through the set list. Metronome starts or stops timing; Metronome Sound mutes the click without stopping its pulse. Arrangement Play/Pause and Stop control every stem together.",
                 "Tracks shows every stem. Its title uses the short Stem Role, such as Vocals, Drums, Guitar, Bass, Click, or Guide, rather than the uploaded filename. The Bus button changes that track's logical destination.",
