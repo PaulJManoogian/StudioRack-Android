@@ -204,6 +204,8 @@ import com.manoogianmedia.studiorack.performance.AudioDeviceCatalog
 import com.manoogianmedia.studiorack.performance.LiveAudioDevice
 import com.manoogianmedia.studiorack.performance.CompatibleRoutingProfile
 import com.manoogianmedia.studiorack.performance.MultichannelPcmEngine
+import com.manoogianmedia.studiorack.performance.MeteringRenderersFactory
+import com.manoogianmedia.studiorack.performance.PlaybackPeakMeter
 import com.manoogianmedia.studiorack.performance.PcmStemRoute
 import com.manoogianmedia.studiorack.performance.mappedPedalAction
 import com.manoogianmedia.studiorack.performance.isSupportedPedalKeyCode
@@ -7810,17 +7812,20 @@ private fun PerformanceAudioControls(
     }
     val trimStart = audio.optLong("audio_trim_start_ms").coerceAtLeast(0L)
     val trimEnd = audio.optLong("audio_trim_end_ms").takeIf { it > trimStart }
-    val players = remember(sourceKey, item.entry.optString("id")) {
+    val meteredPlayers = remember(sourceKey, item.entry.optString("id")) {
         sources.map { source ->
-            ExoPlayer.Builder(context).build().apply {
+            val meter = PlaybackPeakMeter()
+            val player = ExoPlayer.Builder(context, MeteringRenderersFactory(context, meter)).build().apply {
                 val path = source.cache?.localPath.orEmpty()
                 if (path.isNotBlank() && File(path).isFile) {
                     setMediaItem(MediaItem.fromUri(Uri.fromFile(File(path))))
                     prepare()
                 }
             }
+            player to meter
         }
     }
+    val players = remember(meteredPlayers) { meteredPlayers.map { it.first } }
     val player = players.first()
     val audioPreferences = remember { context.getSharedPreferences(LIVE_AUDIO_PREFERENCES, Context.MODE_PRIVATE) }
     var audioDeviceRefresh by remember(sourceKey, audioHardwareRevision) { mutableIntStateOf(0) }
@@ -8022,7 +8027,9 @@ private fun PerformanceAudioControls(
         while (ready) {
             positionMs = discreteEngine?.positionMs ?: player.currentPosition.coerceAtLeast(0L)
             playing = discreteEngine?.isPlaying ?: player.isPlaying
-            liveStemPeaks = discreteEngine?.stemPeaks().orEmpty()
+            liveStemPeaks = discreteEngine?.stemPeaks() ?: sources.mapIndexed { index, source ->
+                source.audio.optString("id") to (meteredPlayers[index].second.readPeak() * players[index].volume)
+            }.toMap()
             liveMasterPeak = discreteEngine?.masterPeak ?: liveStemPeaks.values.maxOrNull() ?: 0f
             if (discreteEngine == null) players.drop(1).forEachIndexed { childIndex, stemPlayer ->
                 val target = (positionMs + sources[childIndex + 1].audio.optLong("audio_sync_offset_ms")).coerceAtLeast(0L)
