@@ -7513,6 +7513,34 @@ private fun PerformanceSongScreen(
                     fontSize = 12.sp,
                     modifier = Modifier.weight(1f),
                 )
+                if (activeTextFormat == "drum_staff" && activeTextMaterial.isNotBlank()) {
+                    Surface(
+                        color = if (drumAuditioning) Cyan else Amber,
+                        contentColor = Ink,
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, if (drumAuditioning) Cyan else Amber),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .clickable { onAuditionDrumChart(activeTextMaterial) },
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                if (drumAuditioning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Text(
+                                if (drumAuditioning) "Stop Audition" else "Audition",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black,
+                            )
+                        }
+                    }
+                }
             }
         }
         if (layoutVisible("material") && pageCount > 1) {
@@ -7539,8 +7567,6 @@ private fun PerformanceSongScreen(
                         metronomePositionMs = timelinePositionMs,
                         metronomeTempo = metronomeState.tempo,
                         metronomeBeatsPerMeasure = metronomeState.beatsPerMeasure,
-                        auditioning = drumAuditioning,
-                        onAudition = { onAuditionDrumChart(textMaterial) },
                     )
                 }
                 textMaterial.isNotBlank() && textFormat in setOf("drum_nashville", "drum_tab") -> {
