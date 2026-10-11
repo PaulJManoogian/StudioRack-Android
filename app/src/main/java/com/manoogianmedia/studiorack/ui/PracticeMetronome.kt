@@ -94,6 +94,8 @@ internal data class PracticeMetronomeConfig(
     val silentBars: Boolean = false,
     val soundBars: Int = 2,
     val mutedBars: Int = 1,
+    val clickSound: String = "studio",
+    val clickVolume: Int = 72,
 )
 
 internal data class PracticeMetronomeState(
@@ -163,11 +165,11 @@ internal class PracticeMetronomeEngine {
                     val regularTick = if (longNoteEvery > 1) step % beatEvery == 0 && beat % longNoteEvery == 0 else step % normalEvery == 0
                     if (!silent && regularTick) {
                         val level = if (subBeat == 0) current.accents.getOrElse(beat) { 1 } else 1
-                        if (level > 0) clickPlayer.play(if (level == 2) ClickVoice.ACCENT else ClickVoice.NORMAL)
+                        if (level > 0) clickPlayer.play(if (level == 2) ClickVoice.ACCENT else ClickVoice.NORMAL, current.clickSound, current.clickVolume)
                     }
                     if (!silent && current.polyrhythm) {
-                        if (polyA >= 0) clickPlayer.play(ClickVoice.POLY_A)
-                        if (polyB >= 0) clickPlayer.play(ClickVoice.POLY_B)
+                        if (polyA >= 0) clickPlayer.play(ClickVoice.POLY_A, current.clickSound, current.clickVolume)
+                        if (polyB >= 0) clickPlayer.play(ClickVoice.POLY_B, current.clickSound, current.clickVolume)
                     }
                     mutableState.value = PracticeMetronomeState(
                         running = true, effectiveTempo = current.tempo, beat = beat, subBeat = subBeat,
@@ -215,7 +217,10 @@ private class PracticeMetronomeUiState {
     val silent = mutableStateOf(false)
     val soundBars = mutableIntStateOf(2)
     val mutedBars = mutableIntStateOf(1)
+    val clickSound = mutableStateOf("studio")
+    val clickVolume = mutableIntStateOf(72)
     val mode = mutableStateOf("Beat")
+    val liveBpmExpanded = mutableStateOf(true)
     val lastTap = mutableLongStateOf(0L)
     val taps = mutableStateListOf<Long>()
 }
@@ -223,18 +228,38 @@ private class PracticeMetronomeUiState {
 private enum class ClickVoice { NORMAL, ACCENT, POLY_A, POLY_B }
 
 private class PracticeClickPlayer {
-    private val tracks = mapOf(
-        ClickVoice.NORMAL to trackFor(920.0, .045, .55), ClickVoice.ACCENT to trackFor(1480.0, .065, .82),
-        ClickVoice.POLY_A to trackFor(1850.0, .035, .42), ClickVoice.POLY_B to trackFor(520.0, .055, .48),
+    private val sounds = listOf("studio", "wood", "clave", "cowbell")
+    private val voices = mapOf(
+        ClickVoice.NORMAL to Triple(920.0, .045, .55), ClickVoice.ACCENT to Triple(1480.0, .065, .82),
+        ClickVoice.POLY_A to Triple(1850.0, .035, .42), ClickVoice.POLY_B to Triple(520.0, .055, .48),
     )
-    fun play(voice: ClickVoice) { tracks[voice]?.let { runCatching { if (it.playState == AudioTrack.PLAYSTATE_PLAYING) it.pause(); it.setPlaybackHeadPosition(0); it.play() } } }
+    private val tracks = sounds.flatMap { sound ->
+        voices.map { (voice, recipe) -> (sound to voice) to trackFor(sound, recipe.first, recipe.second, recipe.third) }
+    }.toMap()
+    fun play(voice: ClickVoice, sound: String, volume: Int) {
+        (tracks[sound to voice] ?: tracks["studio" to voice])?.let { track ->
+            runCatching {
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause()
+                track.setPlaybackHeadPosition(0)
+                track.setVolume(volume.coerceIn(0, 100) / 100f)
+                track.play()
+            }
+        }
+    }
     fun stop() { tracks.values.forEach { runCatching { it.pause(); it.setPlaybackHeadPosition(0) } } }
     fun close() { stop(); tracks.values.forEach(AudioTrack::release) }
-    private fun trackFor(frequency: Double, duration: Double, strength: Double): AudioTrack {
+    private fun trackFor(sound: String, frequency: Double, duration: Double, strength: Double): AudioTrack {
         val count = (44_100 * duration).toInt()
         val samples = ShortArray(count) { index ->
             val decay = 1.0 - index.toDouble() / count
-            (sin(2.0 * PI * frequency * index / 44_100) * decay * 22_000 * strength).toInt().toShort()
+            val phase = 2.0 * PI * frequency * index / 44_100
+            val wave = when (sound) {
+                "wood" -> sin(phase) + .42 * sin(phase * 2.08)
+                "clave" -> sin(phase * 1.28) + .34 * sin(phase * 2.74)
+                "cowbell" -> sin(phase * .72) + .56 * sin(phase * .96)
+                else -> sin(phase)
+            }
+            (wave * decay * 18_000 * strength).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
         }
         return AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
             .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(44_100).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
@@ -263,7 +288,8 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
     var poly by session.poly; var pulseA by session.pulseA; var pulseB by session.pulseB
     var trainer by session.trainer; var goal by session.goal; var step by session.step; var every by session.every
     var silent by session.silent; var soundBars by session.soundBars; var mutedBars by session.mutedBars
-    var mode by session.mode; var lastTap by session.lastTap; val taps = session.taps
+    var clickSound by session.clickSound; var clickVolume by session.clickVolume
+    var mode by session.mode; var liveBpmExpanded by session.liveBpmExpanded; var lastTap by session.lastTap; val taps = session.taps
     LaunchedEffect(meter) {
         val normalized = normalizePracticeAccents(accents, meter)
         if (normalized != accents.toList()) { accents.clear(); accents.addAll(normalized) }
@@ -273,6 +299,7 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
         accents = accents.toList(), polyrhythm = poly, pulseA = pulseA, pulseB = pulseB,
         trainer = trainer, trainerGoal = goal, trainerStep = step, trainerBars = every,
         silentBars = silent, soundBars = soundBars, mutedBars = mutedBars,
+        clickSound = clickSound, clickVolume = clickVolume,
     )
     engine.configure(configuration())
     val contentModifier = if (fullScreen) {
@@ -293,6 +320,21 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
                     TempoButton("+") { tempo = (tempo + 1).coerceAtMost(300) }; TempoButton("+5") { tempo = (tempo + 5).coerceAtMost(300) }
                 }
                 Slider(tempo.toFloat(), { tempo = it.toInt() }, valueRange = 30f..300f)
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable { liveBpmExpanded = !liveBpmExpanded },
+                    color = Color(0xFF101725),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = .55f)),
+                    shape = RoundedCornerShape(7.dp),
+                ) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("TIME CHECK", color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                            Text("Live BPM", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        }
+                        Text(if (liveBpmExpanded) "Collapse" else "Expand", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (liveBpmExpanded) TempoPanel(compact = true, initialTargetBpm = tempo)
                 BeatDisplay(state, meter, beatUnit, subdivision, poly, pulseA, pulseB)
                 Text(if (state.silent) "SILENT BAR - HOLD THE PULSE" else if (state.running) "${state.effectiveTempo} BPM  •  BAR ${state.bar + 1}  •  BEAT ${state.beat + 1}" else "READY", color = if (state.silent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             }
@@ -308,6 +350,7 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("Beat", "Poly", "Practice").forEach { choice ->
             if (choice == mode) Button({ mode = choice }, Modifier.weight(1f)) { Text(choice) } else OutlinedButton({ mode = choice }, Modifier.weight(1f)) { Text(choice) }
         } }
+        ClickOutputControls(clickSound, { clickSound = it }, clickVolume, { clickVolume = it })
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("QUICK STARTS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.CenterVertically))
             OutlinedButton({ tempo = 120; meter = 4; beatUnit = 4; subdivision = 8; poly = false }) { Text("Straight 4") }
@@ -319,8 +362,6 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
             "Poly" -> PolyControls(poly, { poly = it }, pulseA, { pulseA = it }, pulseB, { pulseB = it }, state)
             else -> PracticeControls(trainer, { trainer = it }, goal, { goal = it }, step, { step = it }, every, { every = it }, silent, { silent = it }, soundBars, { soundBars = it }, mutedBars, { mutedBars = it }, tempo)
         }
-        Text("LIVE BPM", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp, fontWeight = FontWeight.Black)
-        TempoPanel(compact = true, initialTargetBpm = tempo)
     }
 }
 
@@ -395,7 +436,7 @@ private fun BeatControls(meter: Int, setMeter: (Int) -> Unit, beatUnit: Int, set
     Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .3f), shape = RoundedCornerShape(8.dp)) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Stepper("Meter", meter, { setMeter((meter - 1).coerceAtLeast(1)) }, { setMeter((meter + 1).coerceAtMost(12)) })
         Text("BEAT UNIT", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Black)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf(2, 4, 8, 16).forEach { value -> RhythmChoice(value, value == beatUnit, "${noteName(value)} beat") { setBeatUnit(value) } } }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { listOf(2, 4, 8, 16, 32, 64).forEach { value -> RhythmChoice(value, value == beatUnit, "${noteName(value)} beat") { setBeatUnit(value) } } }
         Text("SUBDIVISION", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Black)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(2, 4, 8, 3, 16, 32, 64).forEach { value ->
@@ -414,6 +455,27 @@ private fun BeatControls(meter: Int, setMeter: (Int) -> Unit, beatUnit: Int, set
             }
         } }
     } }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun ClickOutputControls(sound: String, setSound: (String) -> Unit, volume: Int, setVolume: (Int) -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .3f), shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text("CLICK SOUND", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("studio" to "Studio", "wood" to "Wood", "clave" to "Clave", "cowbell" to "Cowbell").forEach { (value, label) ->
+                    if (sound == value) Button({ setSound(value) }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) { Text(label) }
+                    else OutlinedButton({ setSound(value) }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) { Text(label) }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("VOLUME", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                Slider(volume.toFloat(), { setVolume(it.toInt()) }, valueRange = 0f..100f, modifier = Modifier.weight(1f))
+                Text("$volume%", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
 }
 
 private fun noteName(value: Int): String = when (value) { 2 -> "Half note"; 4 -> "Quarter note"; 8 -> "Eighth note"; 16 -> "Sixteenth note"; 32 -> "Thirty-second note"; else -> "Sixty-fourth note" }

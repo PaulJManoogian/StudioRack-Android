@@ -21,6 +21,11 @@ class PracticeMetronomeTest {
     }
 
     @Test
+    fun sixtyFourthNoteCanBeTheBeatUnit() {
+        assertEquals(5, practiceGrid(PracticeMetronomeConfig(meter = 5, beatUnit = 64, subdivision = 64)))
+    }
+
+    @Test
     fun accentListAlwaysMatchesChangedMeter() {
         assertEquals(listOf(2, 1, 0, 1), normalizePracticeAccents(listOf(2, 1, 0, 1, 1, 1), 4))
         assertEquals(listOf(2, 1, 0, 1, 1, 1), normalizePracticeAccents(listOf(2, 1, 0, 1), 6))

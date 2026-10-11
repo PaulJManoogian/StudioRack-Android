@@ -253,7 +253,7 @@ internal fun TempoPanel(compact: Boolean = false, initialTargetBpm: Int = 120) {
             TempoDriftMeter(delta, stateColor)
             LinearProgressIndicator(progress = { reading.confidence }, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondary, trackColor = MaterialTheme.colorScheme.outline.copy(alpha = .22f))
             TempoActions(
-                compactRow = narrowPractice,
+                compactRow = compact || narrowPractice,
                 listening = listening,
                 clickRunning = clickState.running,
                 showClick = !compact,
