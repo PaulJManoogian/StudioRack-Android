@@ -27,9 +27,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -346,13 +346,23 @@ private class PracticeClickPlayer {
 internal fun PracticeMetronomePanel() {
     val context = LocalContext.current
     var fullScreen by remember { mutableStateOf(false) }
+    var restoreLiveBpm by remember { mutableStateOf(true) }
     val engine = remember { PracticeMetronomeEngine() }
     val session = remember { PracticeMetronomeUiState() }
     val savedPresets = remember(context) { mutableStateListOf<PracticeMetronomePreset>().apply { addAll(readPracticePresets(context)) } }
     DisposableEffect(engine) { onDispose { engine.close() } }
-    MetronomeSurface(engine, session, context, savedPresets, fullScreen = false, openFullScreen = { fullScreen = true })
-    if (fullScreen) Dialog(onDismissRequest = { fullScreen = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MetronomeSurface(engine, session, context, savedPresets, fullScreen = true, openFullScreen = { fullScreen = false }) }
+    fun enterFullScreen() {
+        restoreLiveBpm = session.liveBpmExpanded.value
+        session.liveBpmExpanded.value = false
+        fullScreen = true
+    }
+    fun exitFullScreen() {
+        fullScreen = false
+        session.liveBpmExpanded.value = restoreLiveBpm
+    }
+    MetronomeSurface(engine, session, context, savedPresets, fullScreen = false, openFullScreen = ::enterFullScreen)
+    if (fullScreen) Dialog(onDismissRequest = ::exitFullScreen, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MetronomeSurface(engine, session, context, savedPresets, fullScreen = true, openFullScreen = ::exitFullScreen) }
     }
 }
 
@@ -394,25 +404,21 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
     }
     engine.configure(configuration())
     val contentModifier = if (fullScreen) {
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)
+        Modifier.fillMaxSize().padding(10.dp)
     } else {
         Modifier.fillMaxWidth().padding(2.dp)
     }
     Column(contentModifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Column { Text("PRACTICE TOOL", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black); Text("Metronome", fontSize = 24.sp, fontWeight = FontWeight.Black) }
-            OutlinedButton(onClick = openFullScreen) { Text(if (fullScreen) "Close Full Screen" else "Full Screen") }
+        if (fullScreen) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = openFullScreen) { Icon(Icons.Rounded.Close, contentDescription = "Exit full screen") }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column { Text("PRACTICE TOOL", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black); Text("Metronome", fontSize = 24.sp, fontWeight = FontWeight.Black) }
+                OutlinedButton(onClick = openFullScreen) { Text("Full Screen") }
+            }
         }
-        SavedRhythmControls(
-            presets = savedPresets,
-            selectedId = selectedPresetId,
-            select = { selectedPresetId = it },
-            save = {
-                presetName = savedPresets.firstOrNull { it.id == selectedPresetId }?.name ?: "Rhythm ${savedPresets.size + 1}"
-                saveDialogOpen = true
-            },
-            load = { savedPresets.firstOrNull { it.id == selectedPresetId }?.let(::loadPreset) },
-        )
         Surface(color = Color(0xFF080D16), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .55f)), shape = RoundedCornerShape(8.dp)) {
             Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -453,16 +459,28 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
             else OutlinedButton({ mode = choice }, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)) { Text(choice, fontSize = 13.sp, maxLines = 1, softWrap = false) }
         } }
         ClickOutputControls(clickSound, { clickSound = it }, clickVolume, { clickVolume = it })
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("QUICK STARTS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.CenterVertically))
-            OutlinedButton({ tempo = 120; meter = 4; beatUnit = 4; subdivision = 8; poly = false }) { Text("Straight 4") }
-            OutlinedButton({ tempo = 88; meter = 6; beatUnit = 8; subdivision = 3; poly = false; accents.clear(); repeat(6) { accents.add(if (it == 0 || it == 3) 2 else 1) } }) { Text("Triplet 6/8") }
-            OutlinedButton({ tempo = 72; meter = 4; beatUnit = 4; subdivision = 4; poly = true; pulseA = 3; pulseB = 2; mode = "Poly" }) { Text("3 : 2") }
-        }
-        when (mode) {
-            "Beat" -> BeatControls(meter, { meter = it }, beatUnit, { beatUnit = it }, subdivision, { subdivision = it }, accents)
-            "Poly" -> PolyControls(poly, { poly = it }, pulseA, { pulseA = it }, pulseB, { pulseB = it }, state)
-            else -> PracticeControls(trainer, { trainer = it }, goal, { goal = it }, step, { step = it }, every, { every = it }, silent, { silent = it }, soundBars, { soundBars = it }, mutedBars, { mutedBars = it }, tempo)
+        if (!fullScreen) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("QUICK STARTS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.CenterVertically))
+                OutlinedButton({ tempo = 120; meter = 4; beatUnit = 4; subdivision = 8; poly = false }) { Text("Straight 4") }
+                OutlinedButton({ tempo = 88; meter = 6; beatUnit = 8; subdivision = 3; poly = false; accents.clear(); repeat(6) { accents.add(if (it == 0 || it == 3) 2 else 1) } }) { Text("Triplet 6/8") }
+                OutlinedButton({ tempo = 72; meter = 4; beatUnit = 4; subdivision = 4; poly = true; pulseA = 3; pulseB = 2; mode = "Poly" }) { Text("3 : 2") }
+            }
+            when (mode) {
+                "Beat" -> BeatControls(meter, { meter = it }, beatUnit, { beatUnit = it }, subdivision, { subdivision = it }, accents)
+                "Poly" -> PolyControls(poly, { poly = it }, pulseA, { pulseA = it }, pulseB, { pulseB = it }, state)
+                else -> PracticeControls(trainer, { trainer = it }, goal, { goal = it }, step, { step = it }, every, { every = it }, silent, { silent = it }, soundBars, { soundBars = it }, mutedBars, { mutedBars = it }, tempo)
+            }
+            SavedRhythmControls(
+                presets = savedPresets,
+                selectedId = selectedPresetId,
+                select = { selectedPresetId = it },
+                save = {
+                    presetName = savedPresets.firstOrNull { it.id == selectedPresetId }?.name ?: "Rhythm ${savedPresets.size + 1}"
+                    saveDialogOpen = true
+                },
+                load = { savedPresets.firstOrNull { it.id == selectedPresetId }?.let(::loadPreset) },
+            )
         }
     }
     if (saveDialogOpen) {

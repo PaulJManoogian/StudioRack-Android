@@ -233,19 +233,49 @@ class StudioRackViewModel(
     fun signIn(email: String, accessCode: String, mfaCode: String) {
         _uiState.value = _uiState.value.copy(busy = true, message = "")
         viewModelScope.launch {
-            runCatching { repository.signIn(email, accessCode, mfaCode) }
-                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "This device is ready offline.", syncError = false, testerPhase = repository.testerPhase()) }
-                .onFailure { _uiState.value = StudioRackUiState(signedIn = false, message = it.message ?: "Sign-in failed.") }
+            val authentication = runCatching { repository.signIn(email, accessCode, mfaCode) }
+            if (authentication.isFailure) {
+                _uiState.value = StudioRackUiState(signedIn = false, message = authentication.exceptionOrNull()?.message ?: "Sign-in failed.")
+                return@launch
+            }
+            finishSignedInStartup()
         }
     }
 
     fun signInWithPasskey(activity: Activity) {
         _uiState.value = _uiState.value.copy(busy = true, message = "")
         viewModelScope.launch {
-            runCatching { repository.signInWithPasskey(activity) }
-                .onSuccess { _uiState.value = StudioRackUiState(signedIn = true, message = "Signed in with your passkey.", syncError = false, testerPhase = repository.testerPhase()) }
-                .onFailure { _uiState.value = StudioRackUiState(signedIn = false, message = it.passkeyMessage("Passkey sign-in failed."), syncError = true) }
+            val authentication = runCatching { repository.signInWithPasskey(activity) }
+            if (authentication.isFailure) {
+                val error = authentication.exceptionOrNull()
+                _uiState.value = StudioRackUiState(signedIn = false, message = error?.passkeyMessage("Passkey sign-in failed.") ?: "Passkey sign-in failed.", syncError = true)
+                return@launch
+            }
+            finishSignedInStartup()
         }
+    }
+
+    private suspend fun finishSignedInStartup() {
+        _uiState.value = StudioRackUiState(
+            signedIn = true,
+            starting = true,
+            testerPhase = repository.testerPhase(),
+        )
+        val synchronization = runCatching { repository.sync() }
+        repository.scheduleAutomaticSync()
+        synchronization
+            .onSuccess {
+                val testerPhase = runCatching { repository.refreshTesterStatus() }.getOrDefault(repository.testerPhase())
+                _uiState.value = StudioRackUiState(signedIn = true, message = "This device is ready offline.", testerPhase = testerPhase)
+            }
+            .onFailure {
+                _uiState.value = StudioRackUiState(
+                    signedIn = true,
+                    message = "Signed in, but the initial download did not finish. Use Sync to try again.",
+                    syncError = true,
+                    testerPhase = repository.testerPhase(),
+                )
+            }
     }
 
     fun signOut() {

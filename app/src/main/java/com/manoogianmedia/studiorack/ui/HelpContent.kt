@@ -105,7 +105,7 @@ internal fun studioLeviathanHelpSections(
                 "The collapsible Live BPM panel sits inside the main metronome display above the animated beat cues. Keep it open to compare the graph and rushing-or-dragging meter with the click, or collapse it to reclaim space and release the microphone. Audio is not recorded or synchronized.",
                 "Poly overlays two independently voiced pulse counts in one cycle. Begin with 3:2 and follow the two colored pulse rows.",
                 "Practice mode can move toward a goal tempo after a chosen number of bars and can alternate audible bars with silent bars to test internal time.",
-                "Full Screen keeps the animated pulse and controls visible from a music stand. The practice metronome is local and does not change songs, set lists, or Leviathan Live playback.",
+                "Full Screen removes the page heading and setup panels so the tempo display, pulse, transport, mode, click sound, and volume remain together like a stand-alone metronome. Exit full screen to edit or recall saved rhythms. The practice metronome is local and does not change songs, set lists, or Leviathan Live playback.",
             )),
             HelpTopic(liveName, points = listOf(
                 "List mode provides a large, scannable running order.",

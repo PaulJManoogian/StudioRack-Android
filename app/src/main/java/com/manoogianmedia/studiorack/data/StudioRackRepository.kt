@@ -592,8 +592,6 @@ class StudioRackRepository(
             response.getString("account_id"),
             response.optString("tester_phase"),
         )
-        sync()
-        scheduleAutomaticSync()
     }
 
     suspend fun signInWithPasskey(activity: Activity) {
@@ -619,8 +617,6 @@ class StudioRackRepository(
             response.getString("account_id"),
             response.optString("tester_phase"),
         )
-        sync()
-        scheduleAutomaticSync()
     }
 
     suspend fun createPasskey(activity: Activity) {
