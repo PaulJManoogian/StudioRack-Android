@@ -98,6 +98,7 @@ internal fun studioLeviathanHelpSections(
             )),
             HelpTopic("Practice Metronome", points = listOf(
                 "Open Music & Live > Metronome. Set tempo with the slider, exact number, step buttons, or Tap Tempo, then choose Start.",
+                "Use Saved Rhythms to recall a complete setup. The floppy-disk icon names and saves tempo, meter, beat unit, subdivision, accents and rests, cross rhythm, trainer, silent bars, click sound, and volume on this device. Select a saved rhythm and choose the upward-arrow icon to load it.",
                 "Beat controls provide meters from 1 through 12 with half-, quarter-, eighth-, sixteenth-, thirty-second-, or sixty-fourth-note beat units. The stacked meter uses a proper fraction bar, and changing meter immediately removes or adds beat controls to match.",
                 "Compact notation buttons select half, quarter, eighth, triplet, sixteenth, thirty-second, or sixty-fourth notes. Every beat cycles through Accent, Note, and Rest.",
                 "Choose Studio, Wood, Clave, or Cowbell for the click sound and set its output volume without changing the visual pulse.",

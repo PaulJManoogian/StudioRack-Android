@@ -1,5 +1,6 @@
 package com.manoogianmedia.studiorack.ui
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -27,8 +28,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -37,6 +46,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.contentDescription
@@ -75,6 +86,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -97,6 +111,67 @@ internal data class PracticeMetronomeConfig(
     val clickSound: String = "studio",
     val clickVolume: Int = 72,
 )
+
+private data class PracticeMetronomePreset(
+    val id: String,
+    val name: String,
+    val mode: String,
+    val config: PracticeMetronomeConfig,
+)
+
+private const val PRACTICE_PRESET_PREFERENCES = "practice_metronome"
+private const val PRACTICE_PRESET_KEY = "saved_rhythms"
+
+private fun PracticeMetronomePreset.toJson() = JSONObject()
+    .put("id", id).put("name", name).put("mode", mode)
+    .put("tempo", config.tempo).put("meter", config.meter).put("beat_unit", config.beatUnit)
+    .put("subdivision", config.subdivision).put("accents", JSONArray(config.accents))
+    .put("polyrhythm", config.polyrhythm).put("pulse_a", config.pulseA).put("pulse_b", config.pulseB)
+    .put("trainer", config.trainer).put("trainer_goal", config.trainerGoal)
+    .put("trainer_step", config.trainerStep).put("trainer_bars", config.trainerBars)
+    .put("silent_bars", config.silentBars).put("sound_bars", config.soundBars).put("muted_bars", config.mutedBars)
+    .put("click_sound", config.clickSound).put("click_volume", config.clickVolume)
+
+private fun practicePresetFromJson(value: JSONObject): PracticeMetronomePreset? {
+    val name = value.optString("name").trim()
+    if (name.isBlank()) return null
+    val meter = value.optInt("meter", 4).coerceIn(1, 12)
+    val accentValues = value.optJSONArray("accents")
+    val accents = normalizePracticeAccents(
+        List(accentValues?.length() ?: 0) { index -> accentValues?.optInt(index, 1) ?: 1 },
+        meter,
+    )
+    return PracticeMetronomePreset(
+        id = value.optString("id").ifBlank { UUID.randomUUID().toString() },
+        name = name,
+        mode = value.optString("mode", "Beat").takeIf { it in setOf("Beat", "Poly", "Practice") } ?: "Beat",
+        config = PracticeMetronomeConfig(
+            tempo = value.optInt("tempo", 120).coerceIn(30, 300), meter = meter,
+            beatUnit = value.optInt("beat_unit", 4).takeIf { it in setOf(2, 4, 8, 16, 32, 64) } ?: 4,
+            subdivision = value.optInt("subdivision", 4).takeIf { it in setOf(2, 3, 4, 8, 16, 32, 64) } ?: 4,
+            accents = accents, polyrhythm = value.optBoolean("polyrhythm"),
+            pulseA = value.optInt("pulse_a", 3).coerceIn(2, 12), pulseB = value.optInt("pulse_b", 2).coerceIn(2, 12),
+            trainer = value.optBoolean("trainer"), trainerGoal = value.optInt("trainer_goal", 140).coerceIn(30, 300),
+            trainerStep = value.optInt("trainer_step", 2).coerceIn(1, 20), trainerBars = value.optInt("trainer_bars", 4).coerceIn(1, 32),
+            silentBars = value.optBoolean("silent_bars"), soundBars = value.optInt("sound_bars", 2).coerceIn(1, 16),
+            mutedBars = value.optInt("muted_bars", 1).coerceIn(1, 16), clickSound = value.optString("click_sound", "studio"),
+            clickVolume = value.optInt("click_volume", 72).coerceIn(0, 100),
+        ),
+    )
+}
+
+private fun readPracticePresets(context: Context): List<PracticeMetronomePreset> = runCatching {
+    val source = context.getSharedPreferences(PRACTICE_PRESET_PREFERENCES, Context.MODE_PRIVATE)
+        .getString(PRACTICE_PRESET_KEY, "[]") ?: "[]"
+    val values = JSONArray(source)
+    List(values.length()) { index -> values.optJSONObject(index)?.let(::practicePresetFromJson) }.filterNotNull()
+}.getOrDefault(emptyList())
+
+private fun writePracticePresets(context: Context, presets: List<PracticeMetronomePreset>) {
+    val values = JSONArray().apply { presets.forEach { put(it.toJson()) } }
+    context.getSharedPreferences(PRACTICE_PRESET_PREFERENCES, Context.MODE_PRIVATE).edit()
+        .putString(PRACTICE_PRESET_KEY, values.toString()).apply()
+}
 
 internal data class PracticeMetronomeState(
     val running: Boolean = false,
@@ -269,19 +344,21 @@ private class PracticeClickPlayer {
 
 @Composable
 internal fun PracticeMetronomePanel() {
+    val context = LocalContext.current
     var fullScreen by remember { mutableStateOf(false) }
     val engine = remember { PracticeMetronomeEngine() }
     val session = remember { PracticeMetronomeUiState() }
+    val savedPresets = remember(context) { mutableStateListOf<PracticeMetronomePreset>().apply { addAll(readPracticePresets(context)) } }
     DisposableEffect(engine) { onDispose { engine.close() } }
-    MetronomeSurface(engine, session, fullScreen = false, openFullScreen = { fullScreen = true })
+    MetronomeSurface(engine, session, context, savedPresets, fullScreen = false, openFullScreen = { fullScreen = true })
     if (fullScreen) Dialog(onDismissRequest = { fullScreen = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MetronomeSurface(engine, session, fullScreen = true, openFullScreen = { fullScreen = false }) }
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MetronomeSurface(engine, session, context, savedPresets, fullScreen = true, openFullScreen = { fullScreen = false }) }
     }
 }
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeMetronomeUiState, fullScreen: Boolean, openFullScreen: () -> Unit) {
+private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeMetronomeUiState, context: Context, savedPresets: MutableList<PracticeMetronomePreset>, fullScreen: Boolean, openFullScreen: () -> Unit) {
     val state by engine.state.collectAsState()
     var tempo by session.tempo; var meter by session.meter; var beatUnit by session.beatUnit; var subdivision by session.subdivision
     val accents = session.accents
@@ -290,6 +367,9 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
     var silent by session.silent; var soundBars by session.soundBars; var mutedBars by session.mutedBars
     var clickSound by session.clickSound; var clickVolume by session.clickVolume
     var mode by session.mode; var liveBpmExpanded by session.liveBpmExpanded; var lastTap by session.lastTap; val taps = session.taps
+    var selectedPresetId by remember { mutableStateOf("") }
+    var saveDialogOpen by remember { mutableStateOf(false) }
+    var presetName by remember { mutableStateOf("") }
     LaunchedEffect(meter) {
         val normalized = normalizePracticeAccents(accents, meter)
         if (normalized != accents.toList()) { accents.clear(); accents.addAll(normalized) }
@@ -301,6 +381,17 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
         silentBars = silent, soundBars = soundBars, mutedBars = mutedBars,
         clickSound = clickSound, clickVolume = clickVolume,
     )
+    fun loadPreset(preset: PracticeMetronomePreset) {
+        engine.stop()
+        val saved = preset.config
+        tempo = saved.tempo; meter = saved.meter; beatUnit = saved.beatUnit; subdivision = saved.subdivision
+        accents.clear(); accents.addAll(normalizePracticeAccents(saved.accents, saved.meter))
+        poly = saved.polyrhythm; pulseA = saved.pulseA; pulseB = saved.pulseB
+        trainer = saved.trainer; goal = saved.trainerGoal; step = saved.trainerStep; every = saved.trainerBars
+        silent = saved.silentBars; soundBars = saved.soundBars; mutedBars = saved.mutedBars
+        clickSound = saved.clickSound; clickVolume = saved.clickVolume; mode = preset.mode
+        engine.configure(saved)
+    }
     engine.configure(configuration())
     val contentModifier = if (fullScreen) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)
@@ -312,6 +403,16 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
             Column { Text("PRACTICE TOOL", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black); Text("Metronome", fontSize = 24.sp, fontWeight = FontWeight.Black) }
             OutlinedButton(onClick = openFullScreen) { Text(if (fullScreen) "Close Full Screen" else "Full Screen") }
         }
+        SavedRhythmControls(
+            presets = savedPresets,
+            selectedId = selectedPresetId,
+            select = { selectedPresetId = it },
+            save = {
+                presetName = savedPresets.firstOrNull { it.id == selectedPresetId }?.name ?: "Rhythm ${savedPresets.size + 1}"
+                saveDialogOpen = true
+            },
+            load = { savedPresets.firstOrNull { it.id == selectedPresetId }?.let(::loadPreset) },
+        )
         Surface(color = Color(0xFF080D16), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .55f)), shape = RoundedCornerShape(8.dp)) {
             Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -362,6 +463,72 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
             "Beat" -> BeatControls(meter, { meter = it }, beatUnit, { beatUnit = it }, subdivision, { subdivision = it }, accents)
             "Poly" -> PolyControls(poly, { poly = it }, pulseA, { pulseA = it }, pulseB, { pulseB = it }, state)
             else -> PracticeControls(trainer, { trainer = it }, goal, { goal = it }, step, { step = it }, every, { every = it }, silent, { silent = it }, soundBars, { soundBars = it }, mutedBars, { mutedBars = it }, tempo)
+        }
+    }
+    if (saveDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { saveDialogOpen = false },
+            title = { Text("Save rhythm") },
+            text = {
+                OutlinedTextField(
+                    value = presetName,
+                    onValueChange = { presetName = it },
+                    label = { Text("Rhythm name") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                IconButton(
+                    enabled = presetName.isNotBlank(),
+                    onClick = {
+                        val name = presetName.trim()
+                        val existingIndex = savedPresets.indexOfFirst { it.name.equals(name, ignoreCase = true) }
+                        val id = savedPresets.getOrNull(existingIndex)?.id ?: UUID.randomUUID().toString()
+                        val preset = PracticeMetronomePreset(id, name, mode, configuration())
+                        if (existingIndex >= 0) savedPresets[existingIndex] = preset else savedPresets.add(preset)
+                        writePracticePresets(context, savedPresets)
+                        selectedPresetId = id
+                        saveDialogOpen = false
+                    },
+                ) { Icon(Icons.Rounded.Save, contentDescription = "Save rhythm") }
+            },
+            dismissButton = { TextButton(onClick = { saveDialogOpen = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun SavedRhythmControls(
+    presets: List<PracticeMetronomePreset>,
+    selectedId: String,
+    select: (String) -> Unit,
+    save: () -> Unit,
+    load: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedName = presets.firstOrNull { it.id == selectedId }?.name ?: "Select a saved rhythm"
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("SAVED RHYTHMS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black)
+            Box {
+                OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("$selectedName  ⌄", maxLines = 1, softWrap = false)
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    if (presets.isEmpty()) DropdownMenuItem(text = { Text("No saved rhythms") }, onClick = {}, enabled = false)
+                    presets.forEach { preset ->
+                        DropdownMenuItem(text = { Text(preset.name) }, onClick = { select(preset.id); expanded = false })
+                    }
+                }
+            }
+        }
+        Surface(border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(7.dp), color = Color.Transparent) {
+            IconButton(onClick = save) { Icon(Icons.Rounded.Save, contentDescription = "Save current rhythm", tint = MaterialTheme.colorScheme.primary) }
+        }
+        Surface(border = BorderStroke(1.dp, if (selectedId.isBlank()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(7.dp), color = Color.Transparent) {
+            IconButton(onClick = load, enabled = selectedId.isNotBlank()) {
+                Icon(Icons.Rounded.FileUpload, contentDescription = "Load selected rhythm", tint = if (selectedId.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
