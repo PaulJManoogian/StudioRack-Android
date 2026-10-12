@@ -196,6 +196,7 @@ import com.manoogianmedia.studiorack.data.SongAttachmentInput
 import com.manoogianmedia.studiorack.data.NotificationRoute
 import com.manoogianmedia.studiorack.data.NotificationReceipt
 import com.manoogianmedia.studiorack.data.RepositorySyncHealth
+import com.manoogianmedia.studiorack.data.SyncConflict
 import com.manoogianmedia.studiorack.data.LocalLivePeer
 import com.manoogianmedia.studiorack.data.LocalLiveRole
 import com.manoogianmedia.studiorack.data.cacheImageFile
@@ -409,8 +410,25 @@ private fun MainShell(
                         Text(productName, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Black)
                         Text(connection.label, color = when (connection.kind) { ConnectionKind.ONLINE -> Color(0xFF63E6A4); ConnectionKind.OFFLINE -> Cyan; ConnectionKind.WARNING -> Amber; ConnectionKind.ERROR -> Color(0xFFFF6B6B) }, fontSize = 9.sp, fontWeight = FontWeight.Black)
                     }
-                    if (conflicts.isNotEmpty()) Surface(color = Color(0xFF8B2F3A), shape = RoundedCornerShape(8.dp)) {
-                        Text("${conflicts.size} CONFLICT${if (conflicts.size == 1) "" else "S"}", color = MaterialTheme.colorScheme.onSurface, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+                    if (conflicts.isNotEmpty()) {
+                        val conflictBadge = conflictBadgePresentation(conflicts.size)
+                        Surface(
+                            modifier = Modifier.padding(start = 7.dp).clickable {
+                                showingAlerts = false
+                                showingFeedback = false
+                                route = AppRoute(AppSection.MORE, PrimarySection.MORE, conflictBadge.destinationTab)
+                            },
+                            color = Color(0xFF8B2F3A),
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Text(
+                                conflictBadge.label,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            )
+                        }
                     }
                     if (uiState.testerPhase in setOf("alpha", "beta")) TesterFeedbackButton {
                         showingFeedback = true
@@ -914,6 +932,43 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
 }
 
 internal data class AlertPresentation(val title: String, val body: String, val area: String)
+
+internal data class ConflictBadgePresentation(val label: String, val destinationTab: String)
+
+internal data class ConflictPresentation(
+    val recordName: String,
+    val recordType: String,
+    val changedFields: String,
+)
+
+internal fun conflictBadgePresentation(count: Int) = ConflictBadgePresentation(
+    label = "$count CONFLICT${if (count == 1) "" else "S"}",
+    destinationTab = "Sync",
+)
+
+internal fun conflictPresentation(conflict: SyncConflict, relatedNames: Map<String, String> = emptyMap()): ConflictPresentation {
+    val local = runCatching { JSONObject(conflict.localJson) }.getOrDefault(JSONObject())
+    val server = conflict.serverJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+    val directName = listOf("title", "name", "display_name", "subject")
+        .firstNotNullOfOrNull { key -> local.optString(key).takeIf(String::isNotBlank) ?: server?.optString(key)?.takeIf(String::isNotBlank) }
+    val linkedName = listOf("song_id", "set_list_id", "section_id", "item_id", "event_id", "contact_id", "venue_id")
+        .firstNotNullOfOrNull { key -> relatedNames[local.optString(key)] ?: server?.optString(key)?.let(relatedNames::get) }
+    val ignoredFields = setOf("id", "account_id", "created_utc", "updated_utc")
+    val keys = buildSet {
+        local.keys().forEachRemaining(::add)
+        server?.keys()?.forEachRemaining(::add)
+    }
+    val changed = keys.filterNot(ignoredFields::contains).filter { key ->
+        val localValue = if (local.has(key)) local.opt(key)?.toString().orEmpty() else "<missing>"
+        val serverValue = if (server?.has(key) == true) server.opt(key)?.toString().orEmpty() else "<missing>"
+        localValue != serverValue
+    }.map(String::humanize).sorted().take(5)
+    return ConflictPresentation(
+        recordName = directName ?: linkedName ?: conflict.entityId,
+        recordType = conflict.entityType.humanize(),
+        changedFields = if (changed.isEmpty()) "The record revision changed." else "Different fields: ${changed.joinToString(", ")}",
+    )
+}
 
 @Composable
 private fun AlertsScreen(model: StudioRackViewModel, openDestination: (String, String) -> Unit) {
@@ -3050,18 +3105,36 @@ private fun androidx.compose.foundation.lazy.LazyListScope.syncContent(model: St
     item {
         val pending by model.pendingCount.collectAsState()
         val conflicts by model.conflicts.collectAsState()
+        val songs by model.songs.collectAsState()
+        val setLists by model.setLists.collectAsState()
+        val sections by model.sections.collectAsState()
+        val events by model.events.collectAsState()
+        val contacts by model.contacts.collectAsState()
+        val venues by model.venues.collectAsState()
+        val relatedNames = remember(songs, setLists, sections, events, contacts, venues) {
+            (songs + setLists + sections + events + contacts + venues).associate { record ->
+                val data = recordJson(record)
+                record.entityId to listOf("title", "name", "display_name", "item_name")
+                    .firstNotNullOfOrNull { key -> data.optString(key).takeIf(String::isNotBlank) }
+                    .orEmpty()
+            }.filterValues(String::isNotBlank)
+        }
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Offline Changes", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Offline Changes & Conflicts", color = MaterialTheme.colorScheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MetricCard("Queued", pending.toString(), Modifier.weight(1f)); MetricCard("Conflicts", conflicts.size.toString(), Modifier.weight(1f))
             }
             StudioButton(onClick = model::sync, enabled = !uiState.busy, modifier = Modifier.fillMaxWidth()) { Text("Sync Now", color = Ink, fontWeight = FontWeight.Black) }
             if (conflicts.isEmpty()) Text("No synchronization conflicts.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             conflicts.forEach { conflict ->
+                val presentation = conflictPresentation(conflict, relatedNames)
                 InfoCard {
-                    Text(conflict.entityType.humanize(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                    Text(conflict.entityId, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                    Text("This record changed both here and on the server.", color = MaterialTheme.colorScheme.onSurface)
+                    Text(presentation.recordName, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(presentation.recordType, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("This record changed on both this device and the server.", color = MaterialTheme.colorScheme.onSurface)
+                    Text(presentation.changedFields, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text("Use Server discards this device's queued version and keeps the current server version.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text("Keep Device retries this device's queued change using the latest server revision.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StudioButton(onClick = { model.resolveConflict(conflict, false) }, kind = StudioButtonKind.Secondary) { Text("Use Server", color = MaterialTheme.colorScheme.onSurface) }
                         StudioButton(onClick = { model.resolveConflict(conflict, true) }) { Text("Keep Device", color = Ink, fontWeight = FontWeight.Black) }
