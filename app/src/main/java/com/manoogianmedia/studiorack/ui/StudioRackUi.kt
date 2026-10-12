@@ -687,6 +687,12 @@ private fun StudioRackSplash(syncHealth: RepositorySyncHealth) {
             }
             Spacer(Modifier.height(22.dp))
             Text(productName, color = MaterialTheme.colorScheme.onSurface, fontSize = 34.sp, fontWeight = FontWeight.Black)
+            Text(
+                installedApplicationVersionLabel(LocalContext.current),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
             Text("SYNCING YOUR LIBRARY", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(22.dp))
             if (itemProgress != null) {
@@ -723,6 +729,18 @@ private fun formatFileSize(bytes: Long): String = when {
     bytes >= 1_048_576L -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1_048_576.0)
     bytes >= 1_024L -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1_024.0)
     else -> "$bytes B"
+}
+
+internal fun applicationVersionLabel(versionName: String, versionCode: Long): String =
+    "Version $versionName ($versionCode)"
+
+internal fun installedApplicationVersionLabel(context: Context): String {
+    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+    val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) packageInfo.longVersionCode else {
+        @Suppress("DEPRECATION")
+        packageInfo.versionCode.toLong()
+    }
+    return applicationVersionLabel(packageInfo.versionName.orEmpty(), versionCode)
 }
 
 @Composable
@@ -1900,6 +1918,12 @@ private fun HelpPanel() {
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeading("DOCUMENTATION", "$productName Help")
+        Text(
+            installedApplicationVersionLabel(LocalContext.current),
+            color = MaterialTheme.colorScheme.secondary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+        )
         Text(
             "Manage equipment, prepare performances, work offline, share safely, and use $agentName across the studio.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,

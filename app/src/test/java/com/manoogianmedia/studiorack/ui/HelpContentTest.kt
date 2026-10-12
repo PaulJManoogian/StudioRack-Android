@@ -6,6 +6,11 @@ import org.junit.Test
 
 class HelpContentTest {
     @Test
+    fun formatsInstalledApplicationVersionForSupport() {
+        assertEquals("Version 0.33.12 (138)", applicationVersionLabel("0.33.12", 138L))
+    }
+
+    @Test
     fun includesEveryWebHelpAreaAndOfflinePerformanceGuidance() {
         val sections = studioLeviathanHelpSections("Studio Leviathan", "Crew", "Leviathan Live")
 
