@@ -254,9 +254,6 @@ internal fun TunerPanel(model: StudioRackViewModel) {
     val existing = selectedItem?.let { item -> tunings.firstOrNull { it.entityId == item.entityId } }?.let { JSONObject(it.json) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("TUNERS", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Black)
-        Text("Tune on this device", color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text("Pitch analysis stays on the device. Choose a standard, tune, then save the result with an existing gear item.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         TunerChoices(listOf("Tuned", "Percussion"), mode) {
             engine.stop(); listening = false; reading = PitchReading(); selectedItem = null; recentReadings.clear(); mode = it
         }
