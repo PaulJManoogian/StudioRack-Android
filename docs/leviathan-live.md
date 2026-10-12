@@ -59,6 +59,10 @@ The displayed position reflects the complete performance order. Songs inside a n
 
 ## Performance material
 
+MusicXML and compressed MusicXML (`.mxl`) scores synchronize as first-class performance material. Studio Leviathan keeps the original score as the canonical attachment and downloads generated notation pages for fast, offline viewing. Multi-page scores include page controls in preview and Leviathan Live. Choose **Audition** to hear the score through the device audio output; the audition file is also cached for offline use.
+
+MusicXML can be selected as a song's preferred chart type just like PDF, ChordPro, Drum Chart, lyrics, or tablature. A set-list entry can still override the song default when a particular performance needs different material.
+
 Chart view can display locally available:
 
 - rendered lyrics and ChordPro;

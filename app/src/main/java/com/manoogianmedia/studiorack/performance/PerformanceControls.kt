@@ -39,7 +39,7 @@ data class PerformanceSettings(
     val showClock: Boolean = true,
     val showElapsed: Boolean = true,
     val showSetRemaining: Boolean = true,
-    val attachmentPreferences: List<String> = listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
+    val attachmentPreferences: List<String> = listOf("drum_chart", "musicxml", "chart", "sheet_music", "lyrics", "tab"),
     val performanceLayout: PerformanceLayout = PerformanceLayout.studioDefault(),
     val performanceLayoutCatalog: PerformanceLayoutCatalog = PerformanceLayoutCatalog.studioDefault(),
 ) {
@@ -100,7 +100,7 @@ data class PerformanceSettings(
                 showSetRemaining = json.optInt("gig_show_set_remaining", 1) == 1,
                 attachmentPreferences = json.optJSONArray("gig_attachment_preferences")?.let { values ->
                     (0 until values.length()).mapNotNull { index -> values.optString(index).takeIf(String::isNotBlank) }
-                }?.takeIf(List<String>::isNotEmpty) ?: listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
+                }?.takeIf(List<String>::isNotEmpty) ?: listOf("drum_chart", "musicxml", "chart", "sheet_music", "lyrics", "tab"),
                 performanceLayout = layoutCatalog.active,
                 performanceLayoutCatalog = layoutCatalog,
             )

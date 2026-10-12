@@ -882,6 +882,10 @@ class StudioRackRepository(
 
         existing.values.filter { it.attachmentId !in activeIds }.forEach { stale ->
             stale.localPath?.let { runCatching { File(it).delete() } }
+            runCatching { File(attachmentDirectory(), "${stale.attachmentId}-audition.mid").delete() }
+            attachmentDirectory().listFiles { _, name ->
+                name.startsWith("${stale.attachmentId}-page-") && name.endsWith(".svg", true)
+            }?.forEach { page -> runCatching { page.delete() } }
             dao.deleteCachedAttachment(stale.attachmentId)
         }
 
@@ -912,14 +916,28 @@ class StudioRackRepository(
                 return@forEachIndexed
             }
             val currentFile = current?.localPath?.let(::File)
+            val notationPageCount = data.optInt("notation_page_count").coerceAtLeast(0)
+            val cachedNotationPagesReady = notationPageCount <= 1 || (1..notationPageCount).all { page ->
+                File(attachmentDirectory(), "${record.entityId}-page-$page.svg").isFile
+            }
             if (current?.status == "ready" && current.revision == record.revision && current.fileRef == fileRef &&
-                currentFile?.isFile == true && current.sha256 != null && current.sha256 == sha256(currentFile)
+                currentFile?.isFile == true && current.sha256 != null && current.sha256 == sha256(currentFile) && cachedNotationPagesReady
             ) {
                 updateSyncProgress("Updating offline library", displayName, index + 1, records.size)
                 return@forEachIndexed
             }
 
-            val destination = File(attachmentDirectory(), record.entityId + attachmentExtension(fileRef))
+            val renderRef = data.optString("render_file_ref").ifBlank { fileRef }
+            val isRenderedNotation = data.optString("notation_status") == "ready" && notationPageCount > 0
+            val destination = File(
+                attachmentDirectory(),
+                if (isRenderedNotation) "${record.entityId}-page-1.svg" else record.entityId + attachmentExtension(renderRef),
+            )
+            if (isRenderedNotation) {
+                attachmentDirectory().listFiles { _, name ->
+                    name.startsWith("${record.entityId}-page-") && name.endsWith(".svg", true)
+                }?.forEach { page -> runCatching { page.delete() } }
+            }
             runCatching {
                 client.downloadAttachment(data.getString("download_path"), destination) { bytes, totalBytes ->
                     updateSyncProgress("Downloading performance files", displayName, index, records.size, bytes, totalBytes)
@@ -927,6 +945,19 @@ class StudioRackRepository(
             }
                 .onSuccess { download ->
                     if (download.localFile != null) {
+                        if (isRenderedNotation && notationPageCount > 1) {
+                            (2..notationPageCount).forEach { page ->
+                                client.downloadAttachment(
+                                    "/api/v1/attachments/${record.entityId}/notation/$page",
+                                    File(attachmentDirectory(), "${record.entityId}-page-$page.svg"),
+                                ) { _, _ -> }
+                            }
+                        }
+                        data.optString("audition_path").takeIf(String::isNotBlank)?.let { auditionPath ->
+                            runCatching {
+                                client.downloadAttachment(auditionPath, File(attachmentDirectory(), "${record.entityId}-audition.mid")) { _, _ -> }
+                            }
+                        }
                         dao.putCachedAttachment(
                             record.toManifest(
                                 data,
@@ -1060,7 +1091,7 @@ private fun CachedRecord.toManifest(
 internal fun attachmentExtension(fileRef: String): String {
     val suffix = fileRef.substringBefore('?').substringAfterLast('.', "").lowercase()
     return when (suffix) {
-        "pdf", "png", "jpg", "jpeg", "gif", "webp", "txt", "doc", "docx", "mid", "midi", "mp3", "m4a", "aac", "wav", "flac", "ogg" -> ".$suffix"
+        "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "txt", "doc", "docx", "mid", "midi", "musicxml", "mxl", "mp3", "m4a", "aac", "wav", "flac", "ogg" -> ".$suffix"
         else -> ".bin"
     }
 }
@@ -1071,10 +1102,13 @@ internal fun attachmentMime(fileRef: String): String? = when (attachmentExtensio
     ".jpg", ".jpeg" -> "image/jpeg"
     ".webp" -> "image/webp"
     ".gif" -> "image/gif"
+    ".svg" -> "image/svg+xml"
     ".txt" -> "text/plain"
     ".doc" -> "application/msword"
     ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ".mid", ".midi" -> "audio/midi"
+    ".musicxml" -> "application/vnd.recordare.musicxml+xml"
+    ".mxl" -> "application/vnd.recordare.musicxml"
     ".mp3" -> "audio/mpeg"
     ".m4a" -> "audio/mp4"
     ".aac" -> "audio/aac"

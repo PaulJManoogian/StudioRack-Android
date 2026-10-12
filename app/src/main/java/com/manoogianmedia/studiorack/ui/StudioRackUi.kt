@@ -4,7 +4,9 @@ import android.Manifest
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas as AndroidCanvas
 import android.graphics.pdf.PdfRenderer
+import android.media.MediaPlayer
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -44,6 +46,7 @@ import androidx.core.content.FileProvider
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.caverock.androidsvg.SVG
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -4001,7 +4004,7 @@ private fun WearCompanionPanel(compact: Boolean = false) {
 @Composable
 private fun AttachmentPreferenceChoice(priority: Int, selected: String, choose: (String) -> Unit) {
     val options = linkedMapOf(
-        "chart" to "Chart", "drum_chart" to "Drum Chart", "sheet_music" to "Sheet Music",
+        "chart" to "Chart", "drum_chart" to "Drum Chart", "sheet_music" to "Sheet Music", "musicxml" to "MusicXML Score",
         "lyrics" to "Lyrics", "tab" to "Tab", "guitar_tab" to "Guitar Tab", "bass_tab" to "Bass Tab",
         "keyboard_part" to "Keyboard Part", "reference" to "Reference", "other" to "Other",
     )
@@ -4769,7 +4772,7 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
         StudioField("Notes", notes, singleLine = false) { notes = it }
         SettingToggle("Favorite", favorite) { favorite = it }
         Text("Attachments", color = MaterialTheme.colorScheme.onSurface, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-        Text("Add charts, lyrics, tablature, sheet music, MIDI, or DMX-MIDI control files now. Files are copied to this device immediately and uploaded on the next sync.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+        Text("Add charts, lyrics, tablature, sheet music, MusicXML scores, MIDI, or DMX-MIDI control files now. MusicXML scores render for offline use and can be auditioned after synchronization.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
         Surface(color = MaterialTheme.colorScheme.secondary.copy(alpha = .045f), border = BorderStroke(1.dp, Cyan.copy(alpha = .3f)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Find Lyrics", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
@@ -4842,9 +4845,9 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
                 }
             }
         }
-        ChoiceStrip(listOf("Chart", "Drum Chart", "Lyrics", "Tab", "Sheet Music", "MIDI", "DMX-MIDI", "Other"), attachmentType) { attachmentType = it }
+        ChoiceStrip(listOf("Chart", "Drum Chart", "Lyrics", "Tab", "Sheet Music", "MusicXML", "MIDI", "DMX-MIDI", "Other"), attachmentType) { attachmentType = it }
         StudioButton(
-            onClick = { attachmentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "audio/midi", "audio/x-midi", "application/x-midi")) },
+            onClick = { attachmentPicker.launch(arrayOf("application/pdf", "image/*", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.recordare.musicxml+xml", "application/vnd.recordare.musicxml", "application/xml", "audio/midi", "audio/x-midi", "application/x-midi")) },
             modifier = Modifier.fillMaxWidth(),
             kind = StudioButtonKind.Secondary,
         ) { Text("Add $attachmentType File", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) }
@@ -4889,8 +4892,10 @@ private fun SongEditor(target: EditorTarget, model: StudioRackViewModel, close: 
             } else {
                 AttachmentEditorRow(
                     label = attachmentLabel(attachment),
-                    detail = if (cached?.status == "ready") "Available offline" else "Will download when connected",
+                    detail = if (cached?.status == "ready") "Available offline" else if (attachment.optString("notation_status") == "failed") "Score source saved; preview unavailable" else "Will download when connected",
                     view = cached?.takeIf { it.status == "ready" && !it.localPath.isNullOrBlank() }?.let { { preview = it } },
+                    audition = cached?.takeIf { attachment.optString("attachment_type") == "musicxml" || attachment.optString("content_format") in setOf("musicxml", "mxl") }
+                        ?.let(::musicXmlAuditionFile)?.takeIf(File::isFile)?.let { file -> { MusicXmlAuditionPlayer.toggle(context, file) } },
                 )
             }
         }
@@ -5004,7 +5009,7 @@ private fun TextMaterialEditor(record: CachedRecord, model: StudioRackViewModel)
 }
 
 @Composable
-private fun AttachmentEditorRow(label: String, detail: String, view: (() -> Unit)? = null, remove: (() -> Unit)? = null) {
+private fun AttachmentEditorRow(label: String, detail: String, view: (() -> Unit)? = null, audition: (() -> Unit)? = null, remove: (() -> Unit)? = null) {
     Surface(color = Panel, border = BorderStroke(1.dp, Color(0x33FFFFFF)), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -5012,6 +5017,7 @@ private fun AttachmentEditorRow(label: String, detail: String, view: (() -> Unit
                 Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
             view?.let { TextButton(onClick = it) { Text("View", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold) } }
+            audition?.let { TextButton(onClick = it) { Text("Audition", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold) } }
             remove?.let { TextButton(onClick = it) { Text("Remove", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) } }
         }
     }
@@ -5023,10 +5029,13 @@ private fun AttachmentPreviewDialog(attachment: CachedAttachment, close: () -> U
     val nightMode = rememberDocumentNightMode()
     val path = attachment.localPath.orEmpty()
     val isPdf = attachment.mimeType == "application/pdf" || path.endsWith(".pdf", true)
-    val pageCount = remember(path) { if (isPdf) pdfPageCount(path) else 1 }
+    val isMusicXmlScore = path.endsWith("-page-1.svg", true)
+    val pageCount = remember(path) { if (isPdf) pdfPageCount(path) else if (isMusicXmlScore) musicXmlPageCount(path) else 1 }
     var page by remember(path) { mutableIntStateOf(0) }
     val bitmap by produceState<Bitmap?>(initialValue = null, path, page) {
-        value = withContext(Dispatchers.IO) { if (isPdf) renderPdfPage(path, page) else decodeAttachmentImage(path) }
+        value = withContext(Dispatchers.IO) {
+            if (isPdf) renderPdfPage(path, page) else decodeAttachmentImage(musicXmlPagePath(path, page))
+        }
     }
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Ink) {
@@ -5082,7 +5091,38 @@ private fun TextAttachmentPreviewDialog(name: String, content: String, format: S
 private fun cachedAttachmentCanPreview(attachment: CachedAttachment): Boolean {
     val mime = attachment.mimeType.orEmpty().lowercase()
     val path = attachment.localPath.orEmpty().lowercase()
-    return mime == "application/pdf" || mime.startsWith("image/") || path.endsWith(".pdf") || path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".webp")
+    return mime == "application/pdf" || mime.startsWith("image/") || path.endsWith(".pdf") || path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".webp") || path.endsWith(".svg")
+}
+
+private fun musicXmlAuditionFile(attachment: CachedAttachment): File {
+    val parent = attachment.localPath?.let(::File)?.parentFile ?: File(".")
+    return File(parent, "${attachment.attachmentId}-audition.mid")
+}
+
+private object MusicXmlAuditionPlayer {
+    private var player: MediaPlayer? = null
+
+    fun toggle(context: Context, file: File) {
+        if (player?.isPlaying == true) {
+            player?.stop()
+            player?.release()
+            player = null
+            Toast.makeText(context, "Audition stopped.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        player?.release()
+        player = runCatching {
+            MediaPlayer().apply {
+                setDataSource(file.absolutePath)
+                setOnCompletionListener { completed -> completed.release(); if (player === completed) player = null }
+                prepare()
+                start()
+            }
+        }.getOrElse {
+            Toast.makeText(context, "This device could not play the score audition.", Toast.LENGTH_LONG).show()
+            null
+        }
+    }
 }
 
 private fun openCachedAttachment(context: Context, attachment: CachedAttachment) {
@@ -7547,6 +7587,27 @@ private fun PerformanceSongScreen(
                         }
                     }
                 }
+                val scoreAudition = item.cache?.takeIf {
+                    item.attachment.optString("attachment_type") == "musicxml" || item.attachment.optString("content_format") in setOf("musicxml", "mxl")
+                }?.let(::musicXmlAuditionFile)
+                if (scoreAudition?.isFile == true) {
+                    Surface(
+                        color = Amber,
+                        contentColor = Ink,
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, Amber),
+                        modifier = Modifier.heightIn(min = 48.dp).clickable { MusicXmlAuditionPlayer.toggle(context, scoreAudition) },
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Text("Audition", fontSize = 13.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
             }
         }
         if (layoutVisible("material") && pageCount > 1) {
@@ -9314,7 +9375,15 @@ private fun loadPerformanceAttachment(path: String, version: String, isPdf: Bool
     val renderLock = performanceAttachmentRenderLocks.getOrPut(key) { Any() }
     return synchronized(renderLock) {
         performanceAttachmentCache.get(key) ?: run {
-            val rendered = if (isPdf) renderPdfAttachment(path, page) else AttachmentRender(decodeAttachmentImage(path), complete = true)
+            val rendered = if (isPdf) {
+                renderPdfAttachment(path, page)
+            } else {
+                AttachmentRender(
+                    decodeAttachmentImage(musicXmlPagePath(path, page)),
+                    complete = true,
+                    pageCount = musicXmlPageCount(path),
+                )
+            }
             if (rendered.bitmap != null) performanceAttachmentCache.put(key, rendered)
             rendered
         }
@@ -9369,7 +9438,7 @@ private fun eventPacketReadiness(
 private fun selectPerformanceAttachment(
     entry: JSONObject,
     attachments: List<JSONObject>,
-    preferences: List<String> = listOf("drum_chart", "chart", "sheet_music", "lyrics", "tab"),
+    preferences: List<String> = listOf("drum_chart", "musicxml", "chart", "sheet_music", "lyrics", "tab"),
 ): JSONObject? {
     val materials = attachments.filterNot(::isPerformanceControlAttachment)
     if (materials.isEmpty()) return null
@@ -9400,6 +9469,16 @@ private fun pdfPageCount(path: String): Int = runCatching {
     }
 }.getOrDefault(0)
 
+private fun musicXmlPagePath(path: String, pageIndex: Int): String =
+    if (path.endsWith("-page-1.svg", true)) path.replace(Regex("-page-1\\.svg$", RegexOption.IGNORE_CASE), "-page-${pageIndex + 1}.svg") else path
+
+private fun musicXmlPageCount(path: String): Int {
+    if (!path.endsWith("-page-1.svg", true)) return 1
+    var count = 1
+    while (File(musicXmlPagePath(path, count)).isFile) count += 1
+    return count
+}
+
 private fun renderPdfPage(path: String, pageIndex: Int): Bitmap? = runCatching {
     ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
         PdfRenderer(descriptor).use { renderer ->
@@ -9416,12 +9495,24 @@ private fun renderPdfPage(path: String, pageIndex: Int): Bitmap? = runCatching {
 }.getOrNull()
 
 private fun decodeAttachmentImage(path: String): Bitmap? {
+    if (path.endsWith(".svg", true)) return decodeSvgAttachment(path)
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(path, bounds)
     val width = performanceAttachmentRenderWidth(Runtime.getRuntime().maxMemory())
     val sample = performanceAttachmentSampleSize(bounds.outWidth, bounds.outHeight, width, width * 2)
     return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
 }
+
+private fun decodeSvgAttachment(path: String): Bitmap? = runCatching {
+    val svg = File(path).inputStream().use(SVG::getFromInputStream)
+    val targetWidth = performanceAttachmentRenderWidth(Runtime.getRuntime().maxMemory())
+    val ratio = if (svg.documentWidth > 0f && svg.documentHeight > 0f) svg.documentHeight / svg.documentWidth else 1.414f
+    val bitmap = Bitmap.createBitmap(targetWidth, (targetWidth * ratio).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+    bitmap.eraseColor(android.graphics.Color.WHITE)
+    svg.setDocumentWidth(targetWidth.toFloat())
+    svg.renderToCanvas(AndroidCanvas(bitmap))
+    bitmap
+}.getOrNull()
 
 internal fun performanceAttachmentRenderWidth(maxMemoryBytes: Long): Int = when {
     maxMemoryBytes <= 256L * 1024 * 1024 -> 1080

@@ -108,7 +108,7 @@ Files selected on Android are copied into app-controlled storage immediately and
 
 ### Add lyrics and performance material
 
-Material types include Chart, Lyrics, Tab, Sheet Music, MIDI, DMX-MIDI, and Other.
+Material types include Chart, Lyrics, Tab, Sheet Music, MusicXML, MIDI, DMX-MIDI, and Other. MusicXML and compressed MusicXML (`.mxl`) synchronize as rendered notation pages while preserving the original score. Multi-page scores include page controls, and **Audition** plays the score through the current Android audio output. The rendered pages and audition are cached for offline rehearsal and performance use.
 
 Available paths include:
 
