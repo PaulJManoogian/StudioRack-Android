@@ -1627,7 +1627,7 @@ private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Song
         } else if (tab == "Live BPM") {
             item { TempoPanel() }
         } else {
-            item { PracticeMetronomePanel() }
+            item { PracticeMetronomePanel(model) }
         }
     }
     editingSong?.let { target ->

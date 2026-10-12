@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -117,10 +120,18 @@ private data class PracticeMetronomePreset(
     val name: String,
     val mode: String,
     val config: PracticeMetronomeConfig,
+    val isFavorite: Boolean = false,
 )
 
 private const val PRACTICE_PRESET_PREFERENCES = "practice_metronome"
 private const val PRACTICE_PRESET_KEY = "saved_rhythms"
+
+private fun JSONObject.optFlag(key: String): Boolean = when (val value = opt(key)) {
+    is Boolean -> value
+    is Number -> value.toInt() != 0
+    is String -> value.equals("true", ignoreCase = true) || value == "1"
+    else -> false
+}
 
 private fun PracticeMetronomePreset.toJson() = JSONObject()
     .put("id", id).put("name", name).put("mode", mode)
@@ -131,12 +142,25 @@ private fun PracticeMetronomePreset.toJson() = JSONObject()
     .put("trainer_step", config.trainerStep).put("trainer_bars", config.trainerBars)
     .put("silent_bars", config.silentBars).put("sound_bars", config.soundBars).put("muted_bars", config.mutedBars)
     .put("click_sound", config.clickSound).put("click_volume", config.clickVolume)
+    .put("is_favorite", isFavorite)
+
+private fun PracticeMetronomePreset.toRecordJson() = JSONObject()
+    .put("name", name)
+    .put("mode", mode.lowercase())
+    .put("is_favorite", if (isFavorite) 1 else 0)
+    .put("configuration_json", toJson().apply {
+        remove("id"); remove("name"); remove("mode"); remove("is_favorite")
+    }.toString())
 
 private fun practicePresetFromJson(value: JSONObject): PracticeMetronomePreset? {
+    val source = value.optString("configuration_json").takeIf { it.isNotBlank() }
+        ?.let { runCatching { JSONObject(it) }.getOrNull() }
+        ?: value.optJSONObject("configuration")
+        ?: value
     val name = value.optString("name").trim()
     if (name.isBlank()) return null
-    val meter = value.optInt("meter", 4).coerceIn(1, 12)
-    val accentValues = value.optJSONArray("accents")
+    val meter = source.optInt("meter", 4).coerceIn(1, 12)
+    val accentValues = source.optJSONArray("accents")
     val accents = normalizePracticeAccents(
         List(accentValues?.length() ?: 0) { index -> accentValues?.optInt(index, 1) ?: 1 },
         meter,
@@ -144,19 +168,20 @@ private fun practicePresetFromJson(value: JSONObject): PracticeMetronomePreset? 
     return PracticeMetronomePreset(
         id = value.optString("id").ifBlank { UUID.randomUUID().toString() },
         name = name,
-        mode = value.optString("mode", "Beat").takeIf { it in setOf("Beat", "Poly", "Practice") } ?: "Beat",
+        mode = value.optString("mode", "Beat").lowercase().replaceFirstChar { it.uppercase() }.takeIf { it in setOf("Beat", "Poly", "Practice") } ?: "Beat",
         config = PracticeMetronomeConfig(
-            tempo = value.optInt("tempo", 120).coerceIn(30, 300), meter = meter,
-            beatUnit = value.optInt("beat_unit", 4).takeIf { it in setOf(2, 4, 8, 16, 32, 64) } ?: 4,
-            subdivision = value.optInt("subdivision", 4).takeIf { it in setOf(2, 3, 4, 8, 16, 32, 64) } ?: 4,
-            accents = accents, polyrhythm = value.optBoolean("polyrhythm"),
-            pulseA = value.optInt("pulse_a", 3).coerceIn(2, 12), pulseB = value.optInt("pulse_b", 2).coerceIn(2, 12),
-            trainer = value.optBoolean("trainer"), trainerGoal = value.optInt("trainer_goal", 140).coerceIn(30, 300),
-            trainerStep = value.optInt("trainer_step", 2).coerceIn(1, 20), trainerBars = value.optInt("trainer_bars", 4).coerceIn(1, 32),
-            silentBars = value.optBoolean("silent_bars"), soundBars = value.optInt("sound_bars", 2).coerceIn(1, 16),
-            mutedBars = value.optInt("muted_bars", 1).coerceIn(1, 16), clickSound = value.optString("click_sound", "studio"),
-            clickVolume = value.optInt("click_volume", 72).coerceIn(0, 100),
+            tempo = source.optInt("tempo", 120).coerceIn(30, 300), meter = meter,
+            beatUnit = source.optInt("beat_unit", source.optInt("unit", 4)).takeIf { it in setOf(2, 4, 8, 16, 32, 64) } ?: 4,
+            subdivision = source.optString("subdivision", "4").let { if (it == "triplet" || it == "shuffle") 3 else it.toIntOrNull() ?: 4 }.takeIf { it in setOf(2, 3, 4, 8, 16, 32, 64) } ?: 4,
+            accents = accents, polyrhythm = source.optBoolean("polyrhythm", source.optBoolean("poly")),
+            pulseA = source.optInt("pulse_a", source.optInt("polyA", 3)).coerceIn(2, 12), pulseB = source.optInt("pulse_b", source.optInt("polyB", 2)).coerceIn(2, 12),
+            trainer = source.optBoolean("trainer"), trainerGoal = source.optInt("trainer_goal", source.optInt("trainerGoal", 140)).coerceIn(30, 300),
+            trainerStep = source.optInt("trainer_step", source.optInt("trainerStep", 2)).coerceIn(1, 20), trainerBars = source.optInt("trainer_bars", source.optInt("trainerBars", 4)).coerceIn(1, 32),
+            silentBars = source.optBoolean("silent_bars", source.optBoolean("silent")), soundBars = source.optInt("sound_bars", source.optInt("soundBars", 2)).coerceIn(1, 16),
+            mutedBars = source.optInt("muted_bars", source.optInt("mutedBars", 1)).coerceIn(1, 16), clickSound = source.optString("click_sound", source.optString("clickSound", "studio")),
+            clickVolume = source.optInt("click_volume", source.optInt("clickVolume", 72)).coerceIn(0, 100),
         ),
+        isFavorite = value.optFlag("is_favorite"),
     )
 }
 
@@ -166,12 +191,6 @@ private fun readPracticePresets(context: Context): List<PracticeMetronomePreset>
     val values = JSONArray(source)
     List(values.length()) { index -> values.optJSONObject(index)?.let(::practicePresetFromJson) }.filterNotNull()
 }.getOrDefault(emptyList())
-
-private fun writePracticePresets(context: Context, presets: List<PracticeMetronomePreset>) {
-    val values = JSONArray().apply { presets.forEach { put(it.toJson()) } }
-    context.getSharedPreferences(PRACTICE_PRESET_PREFERENCES, Context.MODE_PRIVATE).edit()
-        .putString(PRACTICE_PRESET_KEY, values.toString()).apply()
-}
 
 internal data class PracticeMetronomeState(
     val running: Boolean = false,
@@ -343,32 +362,40 @@ private class PracticeClickPlayer {
 }
 
 @Composable
-internal fun PracticeMetronomePanel() {
+internal fun PracticeMetronomePanel(model: StudioRackViewModel) {
     val context = LocalContext.current
     var fullScreen by remember { mutableStateOf(false) }
-    var restoreLiveBpm by remember { mutableStateOf(true) }
     val engine = remember { PracticeMetronomeEngine() }
     val session = remember { PracticeMetronomeUiState() }
-    val savedPresets = remember(context) { mutableStateListOf<PracticeMetronomePreset>().apply { addAll(readPracticePresets(context)) } }
+    val presetRecords by model.practiceMetronomePresets.collectAsState()
+    val savedPresets = remember(presetRecords) {
+        presetRecords.mapNotNull { record ->
+            runCatching { practicePresetFromJson(JSONObject(record.json).put("id", record.entityId)) }.getOrNull()
+        }.sortedWith(compareByDescending<PracticeMetronomePreset> { it.isFavorite }.thenBy { it.name.lowercase() })
+    }
+    LaunchedEffect(Unit) {
+        val legacy = readPracticePresets(context)
+        var migrated = 0
+        legacy.forEach { preset ->
+            model.savePracticeMetronomePreset(preset.id, preset.toRecordJson()) {
+                migrated += 1
+                if (migrated == legacy.size) context.getSharedPreferences(PRACTICE_PRESET_PREFERENCES, Context.MODE_PRIVATE)
+                    .edit().remove(PRACTICE_PRESET_KEY).apply()
+            }
+        }
+    }
     DisposableEffect(engine) { onDispose { engine.close() } }
-    fun enterFullScreen() {
-        restoreLiveBpm = session.liveBpmExpanded.value
-        session.liveBpmExpanded.value = false
-        fullScreen = true
-    }
-    fun exitFullScreen() {
-        fullScreen = false
-        session.liveBpmExpanded.value = restoreLiveBpm
-    }
-    MetronomeSurface(engine, session, context, savedPresets, fullScreen = false, openFullScreen = ::enterFullScreen)
-    if (fullScreen) Dialog(onDismissRequest = ::exitFullScreen, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MetronomeSurface(engine, session, context, savedPresets, fullScreen = true, openFullScreen = ::exitFullScreen) }
+    MetronomeSurface(engine, session, savedPresets, model::savePracticeMetronomePreset, fullScreen = false, openFullScreen = { fullScreen = true })
+    if (fullScreen) Dialog(onDismissRequest = { fullScreen = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            MetronomeSurface(engine, session, savedPresets, model::savePracticeMetronomePreset, fullScreen = true, openFullScreen = { fullScreen = false })
+        }
     }
 }
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeMetronomeUiState, context: Context, savedPresets: MutableList<PracticeMetronomePreset>, fullScreen: Boolean, openFullScreen: () -> Unit) {
+private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeMetronomeUiState, savedPresets: List<PracticeMetronomePreset>, savePresetRecord: (String, JSONObject, () -> Unit) -> Unit, fullScreen: Boolean, openFullScreen: () -> Unit) {
     val state by engine.state.collectAsState()
     var tempo by session.tempo; var meter by session.meter; var beatUnit by session.beatUnit; var subdivision by session.subdivision
     val accents = session.accents
@@ -404,7 +431,7 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
     }
     engine.configure(configuration())
     val contentModifier = if (fullScreen) {
-        Modifier.fillMaxSize().padding(10.dp)
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(10.dp)
     } else {
         Modifier.fillMaxWidth().padding(2.dp)
     }
@@ -459,29 +486,32 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
             else OutlinedButton({ mode = choice }, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)) { Text(choice, fontSize = 13.sp, maxLines = 1, softWrap = false) }
         } }
         ClickOutputControls(clickSound, { clickSound = it }, clickVolume, { clickVolume = it })
-        if (!fullScreen) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("QUICK STARTS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.CenterVertically))
-                OutlinedButton({ tempo = 120; meter = 4; beatUnit = 4; subdivision = 8; poly = false }) { Text("Straight 4") }
-                OutlinedButton({ tempo = 88; meter = 6; beatUnit = 8; subdivision = 3; poly = false; accents.clear(); repeat(6) { accents.add(if (it == 0 || it == 3) 2 else 1) } }) { Text("Triplet 6/8") }
-                OutlinedButton({ tempo = 72; meter = 4; beatUnit = 4; subdivision = 4; poly = true; pulseA = 3; pulseB = 2; mode = "Poly" }) { Text("3 : 2") }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("QUICK STARTS", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.CenterVertically))
+            savedPresets.filter { it.isFavorite }.forEach { preset ->
+                OutlinedButton({ loadPreset(preset) }) { Text(preset.name) }
             }
-            when (mode) {
-                "Beat" -> BeatControls(meter, { meter = it }, beatUnit, { beatUnit = it }, subdivision, { subdivision = it }, accents)
-                "Poly" -> PolyControls(poly, { poly = it }, pulseA, { pulseA = it }, pulseB, { pulseB = it }, state)
-                else -> PracticeControls(trainer, { trainer = it }, goal, { goal = it }, step, { step = it }, every, { every = it }, silent, { silent = it }, soundBars, { soundBars = it }, mutedBars, { mutedBars = it }, tempo)
-            }
-            SavedRhythmControls(
-                presets = savedPresets,
-                selectedId = selectedPresetId,
-                select = { selectedPresetId = it },
-                save = {
-                    presetName = savedPresets.firstOrNull { it.id == selectedPresetId }?.name ?: "Rhythm ${savedPresets.size + 1}"
-                    saveDialogOpen = true
-                },
-                load = { savedPresets.firstOrNull { it.id == selectedPresetId }?.let(::loadPreset) },
-            )
         }
+        when (mode) {
+            "Beat" -> BeatControls(meter, { meter = it }, beatUnit, { beatUnit = it }, subdivision, { subdivision = it }, accents)
+            "Poly" -> PolyControls(poly, { poly = it }, pulseA, { pulseA = it }, pulseB, { pulseB = it }, state)
+            else -> PracticeControls(trainer, { trainer = it }, goal, { goal = it }, step, { step = it }, every, { every = it }, silent, { silent = it }, soundBars, { soundBars = it }, mutedBars, { mutedBars = it }, tempo)
+        }
+        SavedRhythmControls(
+            presets = savedPresets,
+            selectedId = selectedPresetId,
+            select = { selectedPresetId = it },
+            save = {
+                presetName = savedPresets.firstOrNull { it.id == selectedPresetId }?.name ?: "Rhythm ${savedPresets.size + 1}"
+                saveDialogOpen = true
+            },
+            load = { savedPresets.firstOrNull { it.id == selectedPresetId }?.let(::loadPreset) },
+            favorite = {
+                savedPresets.firstOrNull { it.id == selectedPresetId }?.let { preset ->
+                    savePresetRecord(preset.id, preset.copy(isFavorite = !preset.isFavorite).toRecordJson()) {}
+                }
+            },
+        )
     }
     if (saveDialogOpen) {
         AlertDialog(
@@ -500,13 +530,13 @@ private fun MetronomeSurface(engine: PracticeMetronomeEngine, session: PracticeM
                     enabled = presetName.isNotBlank(),
                     onClick = {
                         val name = presetName.trim()
-                        val existingIndex = savedPresets.indexOfFirst { it.name.equals(name, ignoreCase = true) }
-                        val id = savedPresets.getOrNull(existingIndex)?.id ?: UUID.randomUUID().toString()
-                        val preset = PracticeMetronomePreset(id, name, mode, configuration())
-                        if (existingIndex >= 0) savedPresets[existingIndex] = preset else savedPresets.add(preset)
-                        writePracticePresets(context, savedPresets)
-                        selectedPresetId = id
-                        saveDialogOpen = false
+                        val existing = savedPresets.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                        val id = existing?.id ?: UUID.randomUUID().toString()
+                        val preset = PracticeMetronomePreset(id, name, mode, configuration(), existing?.isFavorite ?: false)
+                        savePresetRecord(id, preset.toRecordJson()) {
+                            selectedPresetId = id
+                            saveDialogOpen = false
+                        }
                     },
                 ) { Icon(Icons.Rounded.Save, contentDescription = "Save rhythm") }
             },
@@ -522,6 +552,7 @@ private fun SavedRhythmControls(
     select: (String) -> Unit,
     save: () -> Unit,
     load: () -> Unit,
+    favorite: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selectedName = presets.firstOrNull { it.id == selectedId }?.name ?: "Select a saved rhythm"
@@ -546,6 +577,12 @@ private fun SavedRhythmControls(
         Surface(border = BorderStroke(1.dp, if (selectedId.isBlank()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(7.dp), color = Color.Transparent) {
             IconButton(onClick = load, enabled = selectedId.isNotBlank()) {
                 Icon(Icons.Rounded.FileUpload, contentDescription = "Load selected rhythm", tint = if (selectedId.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+            }
+        }
+        val selected = presets.firstOrNull { it.id == selectedId }
+        Surface(border = BorderStroke(1.dp, if (selected == null) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(7.dp), color = Color.Transparent) {
+            IconButton(onClick = favorite, enabled = selected != null) {
+                Icon(if (selected?.isFavorite == true) Icons.Rounded.Star else Icons.Rounded.StarBorder, contentDescription = if (selected?.isFavorite == true) "Remove from Quick Starts" else "Add to Quick Starts", tint = if (selected == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
             }
         }
     }

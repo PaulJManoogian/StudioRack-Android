@@ -98,14 +98,14 @@ internal fun studioLeviathanHelpSections(
             )),
             HelpTopic("Practice Metronome", points = listOf(
                 "Open Music & Live > Metronome. Set tempo with the slider, exact number, step buttons, or Tap Tempo, then choose Start.",
-                "Use Saved Rhythms to recall a complete setup. The floppy-disk icon names and saves tempo, meter, beat unit, subdivision, accents and rests, cross rhythm, trainer, silent bars, click sound, and volume on this device. Select a saved rhythm and choose the upward-arrow icon to load it.",
+                "Use Saved Rhythms to recall a complete setup. The floppy-disk icon names and saves tempo, meter, beat unit, subdivision, accents and rests, cross rhythm, trainer, silent bars, click sound, and volume with your account. The same list synchronizes with the web. Select a saved rhythm and choose the upward-arrow icon to load it; use the star to make it a Quick Start.",
                 "Beat controls provide meters from 1 through 12 with half-, quarter-, eighth-, sixteenth-, thirty-second-, or sixty-fourth-note beat units. The stacked meter uses a proper fraction bar, and changing meter immediately removes or adds beat controls to match.",
                 "Compact notation buttons select half, quarter, eighth, triplet, sixteenth, thirty-second, or sixty-fourth notes. Every beat cycles through Accent, Note, and Rest.",
                 "Choose Studio, Wood, Clave, or Cowbell for the click sound and set its output volume without changing the visual pulse.",
                 "The collapsible Live BPM panel sits inside the main metronome display above the animated beat cues. Keep it open to compare the graph and rushing-or-dragging meter with the click, or collapse it to reclaim space and release the microphone. Audio is not recorded or synchronized.",
                 "Poly overlays two independently voiced pulse counts in one cycle. Begin with 3:2 and follow the two colored pulse rows.",
                 "Practice mode can move toward a goal tempo after a chosen number of bars and can alternate audible bars with silent bars to test internal time.",
-                "Full Screen removes the page heading and setup panels so the tempo display, pulse, transport, mode, click sound, and volume remain together like a stand-alone metronome. Exit full screen to edit or recall saved rhythms. The practice metronome is local and does not change songs, set lists, or Leviathan Live playback.",
+                "Full Screen removes only the Practice Tool and Metronome heading. The full metronome remains scrollable, including rhythm controls, practice settings, favorites, and saved-rhythm controls. Presets synchronize with your account but do not change songs, set lists, or Leviathan Live playback.",
             )),
             HelpTopic(liveName, points = listOf(
                 "List mode provides a large, scannable running order.",

@@ -60,6 +60,8 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val liveAudioRoutes: StateFlow<List<CachedRecord>> = repository.records("live_audio_route")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val practiceMetronomePresets: StateFlow<List<CachedRecord>> = repository.records("practice_metronome_preset")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val maintenanceNotes: StateFlow<List<CachedRecord>> = repository.records("maintenance_note")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val maintenanceHistory: StateFlow<List<CachedRecord>> = repository.records("maintenance_record")
@@ -589,6 +591,10 @@ class StudioRackViewModel(
                 .onSuccess { _uiState.value = _uiState.value.copy(message = "Audio bus saved. Synchronization is queued."); done() }
                 .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not save the audio bus.", syncError = true) }
         }
+    }
+
+    fun savePracticeMetronomePreset(id: String, data: JSONObject, done: () -> Unit = {}) {
+        saveRecord("practice_metronome_preset", id, data, done)
     }
 
     fun saveLiveAudioProfile(id: String?, data: JSONObject, routeData: List<Pair<String?, JSONObject>>, done: () -> Unit = {}) {
