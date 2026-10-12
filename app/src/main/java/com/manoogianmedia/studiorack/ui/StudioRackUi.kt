@@ -1457,7 +1457,6 @@ private fun LibraryScreen(model: StudioRackViewModel, initialTab: String = "Song
         .let { if (sort == "Z-A") it.reversed() else it }
     Box(Modifier.fillMaxSize()) {
     LazyColumn(Modifier.fillMaxSize().padding(if (compactPhone) 10.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(if (compactPhone) 8.dp else 12.dp)) {
-        if (tab !in setOf("Tuners", "Live BPM", "Metronome")) item { SectionHeading("MUSIC & LIVE", "Songs, Set Lists, Tuners, Live BPM, and Metronome") }
         if (tab !in setOf("Tuners", "Live BPM", "Metronome")) item {
             StudioButton(
                 onClick = { if (tab == "Songs") editingSong = EditorTarget(null, JSONObject()) else creatingSetList = true },
