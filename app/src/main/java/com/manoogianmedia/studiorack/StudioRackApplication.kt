@@ -7,6 +7,7 @@ import com.manoogianmedia.studiorack.data.StudioRackRepository
 import com.manoogianmedia.studiorack.data.SyncClient
 import com.manoogianmedia.studiorack.data.TokenStore
 import com.manoogianmedia.studiorack.data.LocalLiveCoordinator
+import com.manoogianmedia.studiorack.data.restoreSideloadedDatabase
 import com.manoogianmedia.studiorack.ui.clearPerformanceAttachmentMemoryCache
 
 class StudioRackApplication : Application() {
@@ -23,6 +24,9 @@ class StudioRackApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        getExternalFilesDir(null)?.resolve("database-migration")?.let { migrationDirectory ->
+            restoreSideloadedDatabase(getDatabasePath("studiorack-offline.db").parentFile, migrationDirectory)
+        }
         repository.createNotificationChannels()
         if (repository.signedIn()) repository.scheduleAutomaticSync()
     }

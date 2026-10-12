@@ -917,11 +917,14 @@ class StudioRackRepository(
             }
             val currentFile = current?.localPath?.let(::File)
             val notationPageCount = data.optInt("notation_page_count").coerceAtLeast(0)
-            val cachedNotationPagesReady = notationPageCount <= 1 || (1..notationPageCount).all { page ->
-                File(attachmentDirectory(), "${record.entityId}-page-$page.svg").isFile
-            }
+            val derivativesReady = musicXmlDerivativeCacheReady(
+                attachmentId = record.entityId,
+                data = data,
+                current = current,
+                attachmentDirectory = attachmentDirectory(),
+            )
             if (current?.status == "ready" && current.revision == record.revision && current.fileRef == fileRef &&
-                currentFile?.isFile == true && current.sha256 != null && current.sha256 == sha256(currentFile) && cachedNotationPagesReady
+                currentFile?.isFile == true && current.sha256 != null && current.sha256 == sha256(currentFile) && derivativesReady
             ) {
                 updateSyncProgress("Updating offline library", displayName, index + 1, records.size)
                 return@forEachIndexed
@@ -1094,6 +1097,24 @@ internal fun attachmentExtension(fileRef: String): String {
         "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "txt", "doc", "docx", "mid", "midi", "musicxml", "mxl", "mp3", "m4a", "aac", "wav", "flac", "ogg" -> ".$suffix"
         else -> ".bin"
     }
+}
+
+internal fun musicXmlDerivativeCacheReady(
+    attachmentId: String,
+    data: JSONObject,
+    current: CachedAttachment?,
+    attachmentDirectory: File,
+): Boolean {
+    val pageCount = data.optInt("notation_page_count").coerceAtLeast(0)
+    val renderedNotation = data.optString("notation_status") == "ready" && pageCount > 0
+    if (!renderedNotation) return true
+
+    val pageOne = File(attachmentDirectory, "$attachmentId-page-1.svg")
+    if (current?.localPath != pageOne.absolutePath) return false
+    if (!(1..pageCount).all { page -> File(attachmentDirectory, "$attachmentId-page-$page.svg").isFile }) return false
+
+    val auditionExpected = data.optString("audition_path").isNotBlank()
+    return !auditionExpected || File(attachmentDirectory, "$attachmentId-audition.mid").isFile
 }
 
 internal fun attachmentMime(fileRef: String): String? = when (attachmentExtension(fileRef)) {

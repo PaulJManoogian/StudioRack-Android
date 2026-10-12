@@ -13,6 +13,7 @@ import androidx.room.Transaction
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
+import java.io.File
 
 @Entity(tableName = "records", primaryKeys = ["entityType", "entityId"])
 data class CachedRecord(val entityType: String, val entityId: String, val revision: Int, val json: String)
@@ -296,4 +297,19 @@ abstract class StudioRackDatabase : RoomDatabase() {
             "studiorack-offline.db",
         ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
     }
+}
+
+internal fun restoreSideloadedDatabase(databaseDirectory: File?, migrationDirectory: File): Boolean {
+    if (databaseDirectory == null || !migrationDirectory.resolve("restore-ready").isFile) return false
+    val database = migrationDirectory.resolve("studiorack-offline.db")
+    if (!database.isFile || database.length() == 0L) return false
+
+    databaseDirectory.mkdirs()
+    listOf("studiorack-offline.db", "studiorack-offline.db-wal", "studiorack-offline.db-shm").forEach { name ->
+        val source = migrationDirectory.resolve(name)
+        val destination = databaseDirectory.resolve(name)
+        if (source.isFile) source.copyTo(destination, overwrite = true) else destination.delete()
+    }
+    migrationDirectory.deleteRecursively()
+    return true
 }
