@@ -390,6 +390,10 @@ private fun MainShell(
             NavigationChoice("People & Places", AppRoute(AppSection.MORE, PrimarySection.PEOPLE, "People")),
             NavigationChoice("Sharing", AppRoute(AppSection.MORE, PrimarySection.PEOPLE, "Sharing")),
         ),
+        PrimarySection.REPORTS to listOf(
+            NavigationChoice("Reports", AppRoute(AppSection.MORE, PrimarySection.REPORTS, "Reports")),
+            NavigationChoice("Finances", AppRoute(AppSection.MORE, PrimarySection.REPORTS, "Finances")),
+        ),
         PrimarySection.MORE to listOf(
             NavigationChoice("Members", AppRoute(AppSection.MORE, PrimarySection.MORE, "Members")),
             NavigationChoice(agentName, AppRoute(AppSection.MORE, PrimarySection.MORE, agentName)),
@@ -1745,6 +1749,7 @@ private fun MoreScreen(
         }
         when (tab) {
             "Reports" -> reportsContent(model, initialReportTab)
+            "Finances" -> item { FinancesPanel(model) }
             "Sharing" -> sharingContent(model)
             "People" -> directoryContent(model)
             "Members" -> workspaceMembersContent(model)
@@ -3213,7 +3218,6 @@ private fun MileageReportTab(
 ) {
     val rows = entries.map { it to recordJson(it) }.sortedByDescending { it.second.optString("trip_date") }
     val eventNames = events.associate { it.entityId to recordJson(it).optString("title", "Scheduled event") }
-    var editing by remember { mutableStateOf<Pair<CachedRecord?, JSONObject>?>(null) }
     val miles = rows.filter { it.second.optString("distance_unit", "mi") == "mi" }.sumOf { it.second.optDouble("distance_value") }
     val kilometers = rows.filter { it.second.optString("distance_unit") == "km" }.sumOf { it.second.optDouble("distance_value") }
     val reimbursement = rows.sumOf { it.second.optInt("reimbursement_cents") } / 100.0
@@ -3225,10 +3229,6 @@ private fun MileageReportTab(
             MetricCard("Kilometers", "%.1f".format(kilometers), Modifier.weight(1f))
         }
         ReportCard("Travel value", "$${"%.2f".format(reimbursement)}", "Synchronized with the web mileage report")
-        StudioButton(
-            onClick = { editing = null to JSONObject().put("trip_date", LocalDate.now().toString()).put("distance_unit", "mi") },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Record Trip", color = Ink, fontWeight = FontWeight.Black) }
         rows.forEach { (record, row) ->
             InfoCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -3238,18 +3238,11 @@ private fun MileageReportTab(
                         Text("${row.optString("start_location", "Not recorded")} to ${row.optString("end_location", "Not recorded")}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         Text("${"%.2f".format(row.optDouble("distance_value"))} ${row.optString("distance_unit", "mi")}  |  ${row.optString("purpose", "Purpose not recorded")}", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        StudioButton(onClick = { editing = record to JSONObject(record.json) }, kind = StudioButtonKind.Secondary) { Text("Edit", color = MaterialTheme.colorScheme.onSurface) }
-                        TextButton(onClick = { model.deleteMileageEntry(record.entityId) }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-                    }
                 }
             }
         }
         if (rows.isEmpty()) Text("No mileage has been recorded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-
-    editing?.let { (record, original) ->
-        MileageEntryDialog(record, original, events, model) { editing = null }
+        Text("Mileage entry and editing are available in Finances.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     }
 }
 
@@ -4409,7 +4402,7 @@ private fun MoreChoiceStrip(selected: String, agentName: String, choose: (String
         horizontalArrangement = Arrangement.spacedBy(7.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        listOf("Reports", "Sharing", "People", "Members").forEach { option ->
+        listOf("Reports", "Finances", "Sharing", "People", "Members").forEach { option ->
             StudioButton(onClick = { choose(option) }, kind = if (option == selected) StudioButtonKind.Primary else StudioButtonKind.Secondary) {
                 Text(option, color = if (option == selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             }

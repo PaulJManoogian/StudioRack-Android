@@ -42,6 +42,18 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val mileageEntries: StateFlow<List<CachedRecord>> = repository.records("mileage_entry")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val incomeEntries: StateFlow<List<CachedRecord>> = repository.records("event_income")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val expenseEntries: StateFlow<List<CachedRecord>> = repository.records("event_expense")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val contractTemplates: StateFlow<List<CachedRecord>> = repository.records("contract_template")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventContracts: StateFlow<List<CachedRecord>> = repository.records("event_contract")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventCloseouts: StateFlow<List<CachedRecord>> = repository.records("event_closeout")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventGearReturns: StateFlow<List<CachedRecord>> = repository.records("event_gear_return")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val songs: StateFlow<List<CachedRecord>> = repository.records("song")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val setLists: StateFlow<List<CachedRecord>> = repository.records("set_list")
@@ -654,6 +666,24 @@ class StudioRackViewModel(
     }
 
     fun deleteMileageEntry(id: String, done: () -> Unit = {}) = deleteRecord("mileage_entry", id, done)
+
+    fun saveFinanceRecord(entityType: String, id: String?, data: JSONObject, done: () -> Unit = {}) {
+        val prefix = when (entityType) {
+            "event_income" -> "income"
+            "event_expense" -> "expense"
+            "event_contract" -> "contract"
+            "contract_template" -> "ctpl"
+            "event_gear_return" -> "gearret"
+            else -> "finance"
+        }
+        val recordId = if (entityType == "event_closeout") {
+            data.optString("event_id").ifBlank { id.orEmpty() }
+        } else id ?: "${prefix}_${UUID.randomUUID().toString().replace("-", "").take(20)}"
+        require(recordId.isNotBlank()) { "Choose an event before saving closeout." }
+        saveRecord(entityType, recordId, data.put("id", recordId), done)
+    }
+
+    fun deleteFinanceRecord(entityType: String, id: String, done: () -> Unit = {}) = deleteRecord(entityType, id, done)
 
     fun saveDirectoryRecord(entityType: String, id: String?, data: JSONObject, imageUri: String? = null, imageName: String = "", imageMimeType: String = "", contactMethods: List<JSONObject> = emptyList(), done: () -> Unit) {
         val prefix = when (entityType) { "venue" -> "venue"; "contact" -> "contact"; else -> "ensemble" }
