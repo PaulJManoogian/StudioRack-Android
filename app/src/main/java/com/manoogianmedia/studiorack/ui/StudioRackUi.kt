@@ -1304,6 +1304,7 @@ private fun SessionsScreen(
     val events by model.events.collectAsState()
     val venues by model.venues.collectAsState()
     val contacts by model.contacts.collectAsState()
+    val gearItems by model.items.collectAsState()
     val contactMethods by model.contactMethods.collectAsState()
     val ensembles by model.ensembles.collectAsState()
     val eventEnsembles by model.eventEnsembles.collectAsState()
@@ -1312,6 +1313,15 @@ private fun SessionsScreen(
     val readinessPlans by model.eventReadinessPlans.collectAsState()
     val readinessRequirements by model.eventReadinessRequirements.collectAsState()
     val readinessSnapshots by model.eventReadinessSnapshots.collectAsState()
+    val productionAdvances by model.productionAdvances.collectAsState()
+    val technicalPlanRevisions by model.technicalPlanRevisions.collectAsState()
+    val technicalPlanElements by model.technicalPlanElements.collectAsState()
+    val technicalPlanConnections by model.technicalPlanConnections.collectAsState()
+    val technicalInputChannels by model.technicalInputChannels.collectAsState()
+    val technicalAdvanceMessages by model.technicalAdvanceMessages.collectAsState()
+    val festivalActSubmissions by model.festivalActSubmissions.collectAsState()
+    val eventHardwareConfigurations by model.eventHardwareConfigurations.collectAsState()
+    val equipmentCustody by model.equipmentCustody.collectAsState()
     val ensembleContacts by model.ensembleContacts.collectAsState()
     val venueContacts by model.venueContacts.collectAsState()
     val setLists by model.setLists.collectAsState()
@@ -1335,6 +1345,7 @@ private fun SessionsScreen(
     var peopleEvent by remember { mutableStateOf<JSONObject?>(null) }
     var viewingEvent by remember { mutableStateOf<JSONObject?>(null) }
     var readinessEvent by remember { mutableStateOf<JSONObject?>(null) }
+    var advanceEvent by remember { mutableStateOf<JSONObject?>(null) }
     val venueNames = venues.associate { it.entityId to recordJson(it).optString("name") }
     val rows = events.map(::recordJson).onEach { event ->
         val venueName = venueNames[event.optString("venue_id")].orEmpty()
@@ -1408,6 +1419,7 @@ private fun SessionsScreen(
                         peopleCount = eventPeople.size,
                         people = if (eventPeople.isNotEmpty() || eventGroupNames.isNotEmpty()) ({ peopleEvent = event }) else null,
                         openReadiness = { readinessEvent = event },
+                        openAdvance = { advanceEvent = event },
                     )
                 }
             }
@@ -1433,6 +1445,9 @@ private fun SessionsScreen(
         }, openReadiness = {
             viewingEvent = null
             readinessEvent = event
+        }, openAdvance = {
+            viewingEvent = null
+            advanceEvent = event
         }) { viewingEvent = null }
     }
     readinessEvent?.let { event ->
@@ -1446,6 +1461,21 @@ private fun SessionsScreen(
             model = model,
             online = online,
         ) { readinessEvent = null }
+    }
+    advanceEvent?.let { event ->
+        ProductionAdvanceDialog(
+            event = event,
+            advances = productionAdvances,
+            revisions = technicalPlanRevisions,
+            elements = technicalPlanElements,
+            connections = technicalPlanConnections,
+            channels = technicalInputChannels,
+            messages = technicalAdvanceMessages,
+            acts = festivalActSubmissions,
+            configurations = eventHardwareConfigurations,
+            custody = equipmentCustody,
+            items = gearItems,
+        ) { advanceEvent = null }
     }
     }
 }
@@ -5632,6 +5662,7 @@ private fun SessionDetailDialog(
     setListName: String,
     openSetList: () -> Unit,
     openReadiness: (() -> Unit)? = null,
+    openAdvance: (() -> Unit)? = null,
     close: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -5687,6 +5718,13 @@ private fun SessionDetailDialog(
                         Text("Event Readiness", color = Ink, fontWeight = FontWeight.Black)
                     }
                 }
+                if (openAdvance != null) item {
+                    StudioButton(onClick = openAdvance, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                        Icon(Icons.Rounded.SettingsInputComponent, "Open Production Advance", tint = MaterialTheme.colorScheme.onSurface)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Production Advance", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    }
+                }
                 item {
                     StudioButton(onClick = { shareEventCalendar(context, event, displayLocation) }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
                         Icon(Icons.Rounded.Share, "Share calendar file", tint = MaterialTheme.colorScheme.onSurface)
@@ -5701,6 +5739,166 @@ private fun SessionDetailDialog(
                 }
                 item { Spacer(Modifier.height(18.dp)) }
             }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun ProductionAdvanceDialog(
+    event: JSONObject,
+    advances: List<CachedRecord>,
+    revisions: List<CachedRecord>,
+    elements: List<CachedRecord>,
+    connections: List<CachedRecord>,
+    channels: List<CachedRecord>,
+    messages: List<CachedRecord>,
+    acts: List<CachedRecord>,
+    configurations: List<CachedRecord>,
+    custody: List<CachedRecord>,
+    items: List<SupportingRecord>,
+    close: () -> Unit,
+) {
+    val eventId = event.optString("id")
+    val advance = advances.firstOrNull { recordJson(it).optString("event_id") == eventId }?.let(::recordJson)
+    val revision = advance?.optString("current_revision_id")?.takeIf(String::isNotBlank)?.let { id ->
+        revisions.firstOrNull { it.entityId == id }?.let(::recordJson)
+    }
+    val revisionId = revision?.optString("id").orEmpty()
+    val eventElements = elements.filter { recordJson(it).optString("revision_id") == revisionId }.map(::recordJson)
+    val eventConnections = connections.filter { recordJson(it).optString("revision_id") == revisionId }.map(::recordJson)
+    val eventChannels = channels.filter { recordJson(it).optString("revision_id") == revisionId }.map(::recordJson).sortedBy { it.optInt("channel_number") }
+    val advanceId = advance?.optString("id").orEmpty()
+    val eventMessages = messages.filter { recordJson(it).optString("advance_id") == advanceId }.map(::recordJson).sortedByDescending { it.optString("created_utc") }
+    val eventActs = acts.filter { recordJson(it).optString("festival_event_id") == eventId }.map(::recordJson).sortedBy { it.optString("slot_start_utc") + it.optString("act_name") }
+    val eventConfigurations = configurations.filter { recordJson(it).optString("event_id") == eventId }.map(::recordJson)
+    val eventCustody = custody.filter { recordJson(it).optString("event_id") == eventId }.map(::recordJson)
+    val itemNames = remember(items) { items.associate { it.entityId to supportingJson(it).optString("display_name", it.entityId) } }
+    val tabs = listOf("Stage", "Inputs", "Advance", "Acts", "Hardware", "Custody")
+    var tab by remember(eventId) { mutableStateOf("Stage") }
+
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Ink) {
+            LazyColumn(
+                Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = close) { Icon(Icons.Rounded.ArrowBack, "Back to event", tint = Cyan); Spacer(Modifier.width(5.dp)); Text("Event", color = Cyan) }
+                        Spacer(Modifier.weight(1f))
+                        if (advance != null) Text(advance.optString("status", "draft").humanize().uppercase(), color = Amber, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                    }
+                    Text("PRODUCTION ADVANCE", color = Amber, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                    Text(event.optString("title", "Scheduled event"), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 27.sp)
+                    Text("Offline field view${revision?.let { " · Revision ${it.optInt("revision_number")}" } ?: ""}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (advance == null || revision == null) {
+                    item { EmptyCard("No Production Advance has been started for this event. Create it on the web workspace, then synchronize this device.") }
+                } else {
+                    item { ChoiceStrip(tabs, tab) { tab = it } }
+                    when (tab) {
+                        "Stage" -> item { MobileStagePlot(eventElements, eventConnections) }
+                        "Inputs" -> {
+                            if (eventChannels.isEmpty()) item { EmptyCard("No input channels are assigned to this revision.") }
+                            items(eventChannels, key = { it.optString("id") }) { row -> MobileTechnicalRow(
+                                badge = row.optInt("channel_number").toString(),
+                                title = row.optString("source_label", "Input"),
+                                detail = listOf(row.optString("microphone_di"), row.optString("stage_box"), row.optString("provider").humanize()).filter(String::isNotBlank).joinToString(" · "),
+                                accent = Cyan,
+                            ) }
+                        }
+                        "Advance" -> {
+                            if (eventMessages.isEmpty()) item { EmptyCard("No technical advance correspondence is recorded.") }
+                            items(eventMessages, key = { it.optString("id") }) { row -> MobileTechnicalCard(
+                                label = row.optString("response_status", "note").humanize(),
+                                title = row.optString("subject", "Advance note"),
+                                body = row.optString("body"),
+                                footer = listOf(row.optString("direction").humanize(), row.optString("created_utc")).filter(String::isNotBlank).joinToString(" · "),
+                            ) }
+                        }
+                        "Acts" -> {
+                            if (eventActs.isEmpty()) item { EmptyCard("No festival acts are attached to this event.") }
+                            items(eventActs, key = { it.optString("id") }) { row -> MobileTechnicalCard(
+                                label = row.optString("status", "invited").humanize(), title = row.optString("act_name", "Act"),
+                                body = listOf(row.optString("stage_name"), row.optString("slot_start_utc")).filter(String::isNotBlank).joinToString(" · "),
+                                footer = if (row.optInt("changeover_minutes") > 0) "${row.optInt("changeover_minutes")} minute changeover" else "Changeover not set",
+                            ) }
+                        }
+                        "Hardware" -> {
+                            if (eventConfigurations.isEmpty()) item { EmptyCard("No event hardware configuration is assigned.") }
+                            items(eventConfigurations, key = { it.optString("id") }) { row -> MobileTechnicalCard(
+                                label = row.optString("status", "planned").humanize(), title = row.optString("name", "Hardware configuration"),
+                                body = row.optString("configuration_ref", "Configuration stays with this event"),
+                                footer = row.optString("notes"),
+                            ) }
+                        }
+                        "Custody" -> {
+                            if (eventCustody.isEmpty()) item { EmptyCard("No equipment changes hands for this event.") }
+                            items(eventCustody, key = { it.optString("id") }) { row -> MobileTechnicalRow(
+                                badge = row.optString("status", "reserved").take(2).uppercase(),
+                                title = itemNames[row.optString("item_id")] ?: "Equipment",
+                                detail = listOf(row.optString("status").humanize(), row.optString("expected_return_utc").takeIf(String::isNotBlank)?.let { "Due $it" }.orEmpty()).filter(String::isNotBlank).joinToString(" · "),
+                                accent = if (row.optString("status") in setOf("missing", "damaged", "quarantined")) Color(0xFFEF6670) else Color(0xFF58E99B),
+                            ) }
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(16.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun MobileStagePlot(elements: List<JSONObject>, connections: List<JSONObject>) {
+    val labels = remember(elements) { elements.associateBy { it.optString("id") } }
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF080B11)), border = BorderStroke(1.dp, Color(0xFF3A455A)), shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text("UPSTAGE", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(4f / 3f).border(1.dp, Color(0xFF303B4F))) {
+                Canvas(Modifier.fillMaxSize()) {
+                    connections.forEach { path ->
+                        val source = labels[path.optString("source_element_id")] ?: return@forEach
+                        val target = labels[path.optString("target_element_id")] ?: return@forEach
+                        val color = when (path.optString("signal_type")) { "power" -> Amber; "network" -> Color(0xFF58E99B); "midi" -> Color(0xFFD87CFF); else -> Cyan }
+                        drawLine(color, Offset(size.width * source.optDouble("position_x", 50.0).toFloat() / 100f, size.height * source.optDouble("position_y", 50.0).toFloat() / 100f), Offset(size.width * target.optDouble("position_x", 50.0).toFloat() / 100f, size.height * target.optDouble("position_y", 50.0).toFloat() / 100f), strokeWidth = 2.dp.toPx())
+                    }
+                }
+                elements.forEach { row ->
+                    val widthFraction = (row.optDouble("width", 18.0) / 100.0).toFloat().coerceIn(.16f, .42f)
+                    Surface(
+                        modifier = Modifier.width(maxWidth * widthFraction).offset(x = maxWidth * (row.optDouble("position_x", 50.0).toFloat() / 100f - widthFraction / 2f), y = maxHeight * (row.optDouble("position_y", 50.0).toFloat() / 100f) - 22.dp),
+                        color = PanelRaised, border = BorderStroke(1.dp, if (row.optString("element_kind") == "performer") Amber else Cyan.copy(alpha = .75f)), shape = RoundedCornerShape(5.dp),
+                    ) { Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(row.optString("element_kind").humanize().uppercase(), color = Cyan, fontSize = 7.sp, fontWeight = FontWeight.Black); Text(row.optString("label"), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center) } }
+                }
+                if (elements.isEmpty()) Text("Stage plot is empty", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.Center))
+            }
+            Text("AUDIENCE", color = Amber, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            if (connections.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { connections.map { it.optString("signal_type", "audio") }.distinct().forEach { Text(it.humanize().uppercase(), color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Black) } }
+        }
+    }
+}
+
+@Composable
+private fun MobileTechnicalRow(badge: String, title: String, detail: String, accent: Color) {
+    Surface(color = PanelRaised, border = BorderStroke(1.dp, Color(0xFF343B4D)), shape = RoundedCornerShape(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            Surface(Modifier.size(42.dp), color = Ink, border = BorderStroke(1.dp, accent), shape = RoundedCornerShape(6.dp)) { Box(contentAlignment = Alignment.Center) { Text(badge, color = accent, fontWeight = FontWeight.Black) } }
+            Column(Modifier.weight(1f)) { Text(title, color = Color.White, fontWeight = FontWeight.Bold); if (detail.isNotBlank()) Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+        }
+    }
+}
+
+@Composable
+private fun MobileTechnicalCard(label: String, title: String, body: String, footer: String) {
+    Card(colors = CardDefaults.cardColors(containerColor = PanelRaised), border = BorderStroke(1.dp, Color(0xFF343B4D)), shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(label.uppercase(), color = Amber, fontSize = 9.sp, fontWeight = FontWeight.Black)
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            if (body.isNotBlank()) Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (footer.isNotBlank()) Text(footer, color = Cyan, fontSize = 11.sp)
         }
     }
 }
@@ -5901,6 +6099,7 @@ private fun EventCard(
     peopleCount: Int = 0,
     people: (() -> Unit)? = null,
     openReadiness: (() -> Unit)? = null,
+    openAdvance: (() -> Unit)? = null,
 ) {
     val liveModeName = stringResource(R.string.live_mode_name)
     Card(
@@ -5929,10 +6128,11 @@ private fun EventCard(
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
-                if (event.optString("set_list_id").isNotBlank() || edit != null || copy != null || host != null || people != null || openReadiness != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (event.optString("set_list_id").isNotBlank() || edit != null || copy != null || host != null || people != null || openReadiness != null || openAdvance != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     if (openSetList != null) SubBrandIconButton(SubBrand.Live, "Open in $liveModeName", openSetList)
                     if (people != null) EventToolIconButton(Icons.Rounded.Groups, "People", people, peopleCount)
                     if (openReadiness != null) EventToolIconButton(Icons.Rounded.RateReview, "Event Readiness", openReadiness)
+                    if (openAdvance != null) EventToolIconButton(Icons.Rounded.SettingsInputComponent, "Production Advance", openAdvance)
                     if (host != null) TextButton(onClick = host) { Text("Host", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold) }
                     if (shareCalendar != null) EventToolIconButton(Icons.Rounded.CalendarMonth, "Share calendar file", shareCalendar)
                     if (edit != null) EventToolIconButton(Icons.Rounded.Edit, "Edit event", edit)

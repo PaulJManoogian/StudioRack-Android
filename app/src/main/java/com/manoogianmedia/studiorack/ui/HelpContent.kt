@@ -149,6 +149,11 @@ internal fun studioLeviathanHelpSections(
                 "Critical and required items determine Ready, At Risk, In Progress, or Not Started. Advisory items stay visible without blocking the event. Assign responsibility, record concise evidence, and give a reason whenever an item is not applicable or deliberately overridden.",
                 "A synchronized board remains readable offline. Status, responsibility, evidence, and exception changes queue on the device and synchronize later. Creating a plan or immutable readiness snapshot requires a connection.",
             )),
+            HelpTopic("Production Advance", listOf(
+                "Open Production Advance from a scheduled event to carry the current stage plot, signal paths, input list, technical correspondence, festival acts, hardware configuration, and equipment custody into the field.",
+                "Android presents the synchronized current revision as a focused offline reference. Build, revise, publish, acknowledge, issue festival intake links, and edit hardware configuration in the web workspace; synchronize before leaving reliable connectivity.",
+                "A published technical plan remains stable. Later changes appear as a new numbered revision so the view always identifies the plan people accepted.",
+            )),
             HelpTopic("Calendar Files", listOf("The event calendar action creates an .ics file from the event's dates, times, location, and supported details. Choose recipients and email or text from the event. Android opens the selected messaging application for review; some texting applications cannot attach calendar files, so email or the Android share sheet may be required.")),
             HelpTopic("Printed Event Packets", listOf("Packets include event and venue details, a concise readiness summary, directions, people in readable columns, kit checklists, set and medley headings, song order and metadata, notes, and selected printable performance material.")),
         ),
