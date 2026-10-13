@@ -181,6 +181,7 @@ internal fun studioLeviathanHelpSections(
                 "Items and Kits provide complete lists and record actions.",
                 "Equipment filters category, type, status, location, assignment, maintenance, curation, age, and value.",
                 "Maintenance and Schedule provide targeted operational filters.",
+                "Mileage records business trips, optional Event links, distance, purpose, vehicle, costs, and reimbursement. Entries synchronize with the web report and can be created or edited offline.",
                 "AI Report turns natural-language questions into controlled criteria and exportable rows while online.",
                 "Overview summarizes totals, current studio value, care, assignments, categories, and activity.",
             )),
@@ -196,7 +197,7 @@ internal fun studioLeviathanHelpSections(
                 "Offline ready: Previously synchronized records and attachments remain available locally.",
                 "Attention: A sync error or conflicting revision needs review.",
             )),
-            HelpTopic("Offline Changes", listOf("Supported Android editors can save songs, written performance material, set lists, events, directory records, maintenance notes, and service completions locally. Changes enter a queue and push when connectivity returns. Secure invitations, billing, share-token creation/revocation, provider authentication, and server AI require a connection. Complete equipment and kit creation remain web management workflows.")),
+            HelpTopic("Offline Changes", listOf("Supported Android editors can save songs, written performance material, set lists, events, mileage, directory records, maintenance notes, and service completions locally. Changes enter a queue and push when connectivity returns. Secure invitations, billing, share-token creation/revocation, provider-file import, provider activation, and server AI require a connection. Complete equipment and kit creation remain web management workflows.")),
             HelpTopic("Performance Preparation", points = listOf(
                 "Synchronize before leaving for the venue.",
                 "Confirm the event's offline packet and attachments are ready.",

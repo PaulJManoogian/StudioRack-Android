@@ -40,6 +40,8 @@ class StudioRackViewModel(
     private val setListSaveMutex = Mutex()
     val events: StateFlow<List<CachedRecord>> = repository.records("studio_event")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val mileageEntries: StateFlow<List<CachedRecord>> = repository.records("mileage_entry")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val songs: StateFlow<List<CachedRecord>> = repository.records("song")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val setLists: StateFlow<List<CachedRecord>> = repository.records("set_list")
@@ -645,6 +647,13 @@ class StudioRackViewModel(
     }
 
     fun deleteEvent(id: String, done: () -> Unit) = deleteRecord("studio_event", id, done)
+
+    fun saveMileageEntry(id: String?, data: JSONObject, done: () -> Unit = {}) {
+        val recordId = id ?: "mileage_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+        saveRecord("mileage_entry", recordId, data.put("id", recordId), done)
+    }
+
+    fun deleteMileageEntry(id: String, done: () -> Unit = {}) = deleteRecord("mileage_entry", id, done)
 
     fun saveDirectoryRecord(entityType: String, id: String?, data: JSONObject, imageUri: String? = null, imageName: String = "", imageMimeType: String = "", contactMethods: List<JSONObject> = emptyList(), done: () -> Unit) {
         val prefix = when (entityType) { "venue" -> "venue"; "contact" -> "contact"; else -> "ensemble" }

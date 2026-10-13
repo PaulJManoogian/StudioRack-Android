@@ -3154,6 +3154,7 @@ private fun ReportsPanel(model: StudioRackViewModel, initialTab: String = "Overv
     val items by model.items.collectAsState()
     val kits by model.kits.collectAsState()
     val events by model.events.collectAsState()
+    val mileageEntries by model.mileageEntries.collectAsState()
     val specs by model.itemSpecs.collectAsState()
     val units by model.itemUnits.collectAsState()
     val brands by model.brands.collectAsState()
@@ -3191,16 +3192,138 @@ private fun ReportsPanel(model: StudioRackViewModel, initialTab: String = "Overv
                 modifier = Modifier.padding(11.dp),
             )
         }
-        ChoiceStrip(listOf("Overview", "Equipment", "Maintenance", "Schedule", "AI", "Import"), tab) { tab = it }
+        ChoiceStrip(listOf("Overview", "Equipment", "Maintenance", "Schedule", "Mileage", "AI", "Import"), tab) { tab = it }
         when (tab) {
             "Overview" -> ReportOverviewTab(itemRows, kits, events.map(::recordJson), units, specRows, categories, statuses, locations, careRows, reportState, online, model)
             "Equipment" -> EquipmentReportTab(itemRows, specRows, categories, types, statuses, locations)
             "Maintenance" -> MaintenanceReport(careRows, model)
             "Schedule" -> ScheduleReportTab(events.map(::recordJson))
+            "Mileage" -> MileageReportTab(mileageEntries, events, model)
             "AI" -> AiReportTab(question, { question = it }, online, reportState, model, runs)
             else -> ImportDataTab(online, reportState, model)
         }
     }
+}
+
+@Composable
+private fun MileageReportTab(
+    entries: List<CachedRecord>,
+    events: List<CachedRecord>,
+    model: StudioRackViewModel,
+) {
+    val rows = entries.map { it to recordJson(it) }.sortedByDescending { it.second.optString("trip_date") }
+    val eventNames = events.associate { it.entityId to recordJson(it).optString("title", "Scheduled event") }
+    var editing by remember { mutableStateOf<Pair<CachedRecord?, JSONObject>?>(null) }
+    val miles = rows.filter { it.second.optString("distance_unit", "mi") == "mi" }.sumOf { it.second.optDouble("distance_value") }
+    val kilometers = rows.filter { it.second.optString("distance_unit") == "km" }.sumOf { it.second.optDouble("distance_value") }
+    val reimbursement = rows.sumOf { it.second.optInt("reimbursement_cents") } / 100.0
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            MetricCard("Trips", rows.size.toString(), Modifier.weight(1f))
+            MetricCard("Miles", "%.1f".format(miles), Modifier.weight(1f))
+            MetricCard("Kilometers", "%.1f".format(kilometers), Modifier.weight(1f))
+        }
+        ReportCard("Travel value", "$${"%.2f".format(reimbursement)}", "Synchronized with the web mileage report")
+        StudioButton(
+            onClick = { editing = null to JSONObject().put("trip_date", LocalDate.now().toString()).put("distance_unit", "mi") },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Record Trip", color = Ink, fontWeight = FontWeight.Black) }
+        rows.forEach { (record, row) ->
+            InfoCard {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.weight(1f)) {
+                        Text(row.optString("trip_date"), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                        Text(eventNames[row.optString("event_id")].orEmpty().ifBlank { "Standalone trip" }, color = Cyan, fontSize = 12.sp)
+                        Text("${row.optString("start_location", "Not recorded")} to ${row.optString("end_location", "Not recorded")}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        Text("${"%.2f".format(row.optDouble("distance_value"))} ${row.optString("distance_unit", "mi")}  |  ${row.optString("purpose", "Purpose not recorded")}", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        StudioButton(onClick = { editing = record to JSONObject(record.json) }, kind = StudioButtonKind.Secondary) { Text("Edit", color = MaterialTheme.colorScheme.onSurface) }
+                        TextButton(onClick = { model.deleteMileageEntry(record.entityId) }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            }
+        }
+        if (rows.isEmpty()) Text("No mileage has been recorded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+
+    editing?.let { (record, original) ->
+        MileageEntryDialog(record, original, events, model) { editing = null }
+    }
+}
+
+@Composable
+private fun MileageEntryDialog(
+    record: CachedRecord?,
+    original: JSONObject,
+    events: List<CachedRecord>,
+    model: StudioRackViewModel,
+    close: () -> Unit,
+) {
+    var tripDate by remember(record) { mutableStateOf(original.optString("trip_date", LocalDate.now().toString())) }
+    var eventId by remember(record) { mutableStateOf(original.optString("event_id")) }
+    var from by remember(record) { mutableStateOf(original.optString("start_location")) }
+    var to by remember(record) { mutableStateOf(original.optString("end_location")) }
+    var distance by remember(record) { mutableStateOf(original.optDouble("distance_value").takeIf { it > 0 }?.toString().orEmpty()) }
+    var unit by remember(record) { mutableStateOf(original.optString("distance_unit", "mi")) }
+    var purpose by remember(record) { mutableStateOf(original.optString("purpose")) }
+    var vehicle by remember(record) { mutableStateOf(original.optString("vehicle")) }
+    var rate by remember(record) { mutableStateOf((original.optLong("reimbursement_rate_micros") / 1_000_000.0).takeIf { it > 0 }?.toString().orEmpty()) }
+    var eventMenu by remember { mutableStateOf(false) }
+    val valid = parseLocalDate(tripDate) != null && (distance.toDoubleOrNull() ?: -1.0) >= 0
+
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(if (record == null) "Record Trip" else "Edit Trip") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(tripDate, { tripDate = it.take(10) }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Box {
+                    StudioButton(onClick = { eventMenu = true }, kind = StudioButtonKind.Secondary, modifier = Modifier.fillMaxWidth()) {
+                        Text(events.firstOrNull { it.entityId == eventId }?.let { recordJson(it).optString("title") } ?: "No linked event", color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    DropdownMenu(expanded = eventMenu, onDismissRequest = { eventMenu = false }) {
+                        DropdownMenuItem(text = { Text("No linked event") }, onClick = { eventId = ""; eventMenu = false })
+                        events.sortedByDescending { recordJson(it).optString("event_date") }.forEach { event ->
+                            DropdownMenuItem(text = { Text("${recordJson(event).optString("event_date")} - ${recordJson(event).optString("title")}") }, onClick = { eventId = event.entityId; eventMenu = false })
+                        }
+                    }
+                }
+                OutlinedTextField(from, { from = it.take(500) }, label = { Text("From") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(to, { to = it.take(500) }, label = { Text("To") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(distance, { distance = it.filter { ch -> ch.isDigit() || ch == '.' }.take(10) }, label = { Text("Distance") }, singleLine = true, modifier = Modifier.weight(1f))
+                    ChoiceStrip(listOf("mi", "km"), unit) { unit = it }
+                }
+                OutlinedTextField(purpose, { purpose = it.take(500) }, label = { Text("Purpose") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(vehicle, { vehicle = it.take(200) }, label = { Text("Vehicle") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(rate, { rate = it.filter { ch -> ch.isDigit() || ch == '.' }.take(10) }, label = { Text("Rate per $unit") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = {
+                val distanceNumber = distance.toDoubleOrNull() ?: 0.0
+                val rateNumber = rate.toDoubleOrNull() ?: 0.0
+                val data = JSONObject(original.toString())
+                    .put("event_id", eventId.ifBlank { JSONObject.NULL })
+                    .put("trip_date", tripDate)
+                    .put("start_location", from.trim())
+                    .put("end_location", to.trim())
+                    .put("distance_value", distanceNumber)
+                    .put("distance_unit", unit)
+                    .put("purpose", purpose.trim())
+                    .put("vehicle", vehicle.trim())
+                    .put("parking_cents", original.optInt("parking_cents"))
+                    .put("tolls_cents", original.optInt("tolls_cents"))
+                    .put("reimbursement_rate_micros", (rateNumber * 1_000_000).toLong())
+                    .put("reimbursement_cents", (distanceNumber * rateNumber * 100).toInt())
+                    .put("notes", original.optString("notes"))
+                model.saveMileageEntry(record?.entityId, data, close)
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = close) { Text("Cancel") } },
+    )
 }
 
 @Composable
