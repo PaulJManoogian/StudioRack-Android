@@ -144,8 +144,13 @@ internal fun studioLeviathanHelpSections(
                 "Configure the $agentName reminder and save. Copy an existing event when most details repeat.",
             )),
             HelpTopic("Finding And Using Events", listOf("Month view provides Previous, Today, and Next navigation plus a Sunday/Monday week-start preference. Select a day to add an event. Agenda view can search and filter by event details, type, and status. Event actions provide details, directions, $liveName, People, calendar-file delivery, editing, copying, sharing, and deletion according to permission. People can text or email direct participants, a selected band/group, venue contacts, everyone, or a custom selection; sliders include or exclude each person.")),
+            HelpTopic("Event Readiness", listOf(
+                "Open Event Readiness from an event to prepare people, music, gear, technical needs, logistics, and business details in one focused board. Start with Local, Solo, Band, or Custom; the selected template becomes that event's plan and does not replace the event's existing records.",
+                "Critical and required items determine Ready, At Risk, In Progress, or Not Started. Advisory items stay visible without blocking the event. Assign responsibility, record concise evidence, and give a reason whenever an item is not applicable or deliberately overridden.",
+                "A synchronized board remains readable offline. Status, responsibility, evidence, and exception changes queue on the device and synchronize later. Creating a plan or immutable readiness snapshot requires a connection.",
+            )),
             HelpTopic("Calendar Files", listOf("The event calendar action creates an .ics file from the event's dates, times, location, and supported details. Choose recipients and email or text from the event. Android opens the selected messaging application for review; some texting applications cannot attach calendar files, so email or the Android share sheet may be required.")),
-            HelpTopic("Printed Event Packets", listOf("Packets include event and venue details, directions, people in readable columns, kit checklists, set and medley headings, song order and metadata, notes, and selected printable performance material.")),
+            HelpTopic("Printed Event Packets", listOf("Packets include event and venue details, a concise readiness summary, directions, people in readable columns, kit checklists, set and medley headings, song order and metadata, notes, and selected printable performance material.")),
         ),
     ),
     HelpSection(
@@ -197,7 +202,7 @@ internal fun studioLeviathanHelpSections(
                 "Offline ready: Previously synchronized records and attachments remain available locally.",
                 "Attention: A sync error or conflicting revision needs review.",
             )),
-            HelpTopic("Offline Changes", listOf("Supported Android editors can save songs, written performance material, set lists, events, mileage, directory records, maintenance notes, and service completions locally. Changes enter a queue and push when connectivity returns. Secure invitations, billing, share-token creation/revocation, provider-file import, provider activation, and server AI require a connection. Complete equipment and kit creation remain web management workflows.")),
+            HelpTopic("Offline Changes", listOf("Supported Android editors can save songs, written performance material, set lists, events, Event Readiness requirement updates, mileage, directory records, maintenance notes, and service completions locally. Changes enter a queue and push when connectivity returns. Creating a readiness plan or snapshot, secure invitations, billing, share-token creation/revocation, provider-file import, provider activation, and server AI require a connection. Complete equipment and kit creation remain web management workflows.")),
             HelpTopic("Performance Preparation", points = listOf(
                 "Synchronize before leaving for the venue.",
                 "Confirm the event's offline packet and attachments are ready.",

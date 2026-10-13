@@ -64,6 +64,20 @@ class SyncClient(
     suspend fun push(mutations: JSONArray): JSONObject =
         request("/sync/push", "POST", JSONObject().put("mutations", mutations))
 
+    suspend fun applyEventReadiness(eventId: String, templateCode: String): JSONObject =
+        request(
+            "/events/${URLEncoder.encode(eventId, Charsets.UTF_8.name())}/readiness/apply",
+            "POST",
+            JSONObject().put("template_code", templateCode),
+        )
+
+    suspend fun captureEventReadinessSnapshot(eventId: String, reason: String): JSONObject =
+        request(
+            "/events/${URLEncoder.encode(eventId, Charsets.UTF_8.name())}/readiness/snapshot",
+            "POST",
+            JSONObject().put("reason", reason),
+        )
+
     suspend fun updatePerformanceSettings(settings: JSONObject): JSONObject =
         request("/settings/performance", "PUT", settings)
 

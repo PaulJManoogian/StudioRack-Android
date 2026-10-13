@@ -54,6 +54,14 @@ class StudioRackViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val eventGearReturns: StateFlow<List<CachedRecord>> = repository.records("event_gear_return")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val readinessTemplates: StateFlow<List<CachedRecord>> = repository.records("readiness_template")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventReadinessPlans: StateFlow<List<CachedRecord>> = repository.records("event_readiness_plan")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventReadinessRequirements: StateFlow<List<CachedRecord>> = repository.records("event_readiness_requirement")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val eventReadinessSnapshots: StateFlow<List<CachedRecord>> = repository.records("event_readiness_snapshot")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val songs: StateFlow<List<CachedRecord>> = repository.records("song")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val setLists: StateFlow<List<CachedRecord>> = repository.records("set_list")
@@ -684,6 +692,26 @@ class StudioRackViewModel(
     }
 
     fun deleteFinanceRecord(entityType: String, id: String, done: () -> Unit = {}) = deleteRecord(entityType, id, done)
+
+    fun applyEventReadiness(eventId: String, templateCode: String) {
+        viewModelScope.launch {
+            runCatching { repository.applyEventReadiness(eventId, templateCode) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Event Readiness board created.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not create Event Readiness.", syncError = true) }
+        }
+    }
+
+    fun saveReadinessRequirement(record: CachedRecord, data: JSONObject) {
+        saveRecord("event_readiness_requirement", record.entityId, data.put("id", record.entityId)) {}
+    }
+
+    fun captureEventReadinessSnapshot(eventId: String, reason: String = "showtime") {
+        viewModelScope.launch {
+            runCatching { repository.captureEventReadinessSnapshot(eventId, reason) }
+                .onSuccess { _uiState.value = _uiState.value.copy(message = "Readiness snapshot captured.", syncError = false) }
+                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Could not capture the snapshot.", syncError = true) }
+        }
+    }
 
     fun saveDirectoryRecord(entityType: String, id: String?, data: JSONObject, imageUri: String? = null, imageName: String = "", imageMimeType: String = "", contactMethods: List<JSONObject> = emptyList(), done: () -> Unit) {
         val prefix = when (entityType) { "venue" -> "venue"; "contact" -> "contact"; else -> "ensemble" }

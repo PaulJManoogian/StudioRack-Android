@@ -1308,6 +1308,10 @@ private fun SessionsScreen(
     val ensembles by model.ensembles.collectAsState()
     val eventEnsembles by model.eventEnsembles.collectAsState()
     val eventContacts by model.eventContacts.collectAsState()
+    val readinessTemplates by model.readinessTemplates.collectAsState()
+    val readinessPlans by model.eventReadinessPlans.collectAsState()
+    val readinessRequirements by model.eventReadinessRequirements.collectAsState()
+    val readinessSnapshots by model.eventReadinessSnapshots.collectAsState()
     val ensembleContacts by model.ensembleContacts.collectAsState()
     val venueContacts by model.venueContacts.collectAsState()
     val setLists by model.setLists.collectAsState()
@@ -1330,6 +1334,7 @@ private fun SessionsScreen(
     var showLocalLive by remember { mutableStateOf(false) }
     var peopleEvent by remember { mutableStateOf<JSONObject?>(null) }
     var viewingEvent by remember { mutableStateOf<JSONObject?>(null) }
+    var readinessEvent by remember { mutableStateOf<JSONObject?>(null) }
     val venueNames = venues.associate { it.entityId to recordJson(it).optString("name") }
     val rows = events.map(::recordJson).onEach { event ->
         val venueName = venueNames[event.optString("venue_id")].orEmpty()
@@ -1402,6 +1407,7 @@ private fun SessionsScreen(
                         host = if (event.optString("set_list_id").isNotBlank()) ({ localLiveEvent = event; showLocalLive = true }) else null,
                         peopleCount = eventPeople.size,
                         people = if (eventPeople.isNotEmpty() || eventGroupNames.isNotEmpty()) ({ peopleEvent = event }) else null,
+                        openReadiness = { readinessEvent = event },
                     )
                 }
             }
@@ -1424,7 +1430,22 @@ private fun SessionsScreen(
         SessionDetailDialog(event, venue, setListName, openSetList = {
             viewingEvent = null
             openGig(event.getString("id"))
+        }, openReadiness = {
+            viewingEvent = null
+            readinessEvent = event
         }) { viewingEvent = null }
+    }
+    readinessEvent?.let { event ->
+        EventReadinessDialog(
+            event = event,
+            templates = readinessTemplates,
+            plans = readinessPlans,
+            requirements = readinessRequirements,
+            snapshots = readinessSnapshots,
+            contacts = contacts,
+            model = model,
+            online = online,
+        ) { readinessEvent = null }
     }
     }
 }
@@ -5610,6 +5631,7 @@ private fun SessionDetailDialog(
     venue: JSONObject?,
     setListName: String,
     openSetList: () -> Unit,
+    openReadiness: (() -> Unit)? = null,
     close: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -5658,6 +5680,13 @@ private fun SessionDetailDialog(
                         Text("Directions", color = Ink, fontWeight = FontWeight.Black)
                     }
                 }
+                if (openReadiness != null) item {
+                    StudioButton(onClick = openReadiness, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Rounded.RateReview, "Open Event Readiness", tint = Ink)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Event Readiness", color = Ink, fontWeight = FontWeight.Black)
+                    }
+                }
                 item {
                     StudioButton(onClick = { shareEventCalendar(context, event, displayLocation) }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
                         Icon(Icons.Rounded.Share, "Share calendar file", tint = MaterialTheme.colorScheme.onSurface)
@@ -5678,6 +5707,188 @@ private fun SessionDetailDialog(
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
+private fun EventReadinessDialog(
+    event: JSONObject,
+    templates: List<CachedRecord>,
+    plans: List<CachedRecord>,
+    requirements: List<CachedRecord>,
+    snapshots: List<CachedRecord>,
+    contacts: List<CachedRecord>,
+    model: StudioRackViewModel,
+    online: Boolean,
+    close: () -> Unit,
+) {
+    val eventId = event.optString("id")
+    val plan = plans.firstOrNull { recordJson(it).optString("event_id") == eventId }
+    val eventRequirements = requirements
+        .filter { recordJson(it).optString("event_id") == eventId }
+        .sortedBy { recordJson(it).optInt("sort_order") }
+    val eventSnapshots = snapshots.filter { recordJson(it).optString("event_id") == eventId }
+    val summary = eventReadinessSummary(eventRequirements.map(::recordJson))
+    val domains = listOf("people", "music", "gear", "technical", "logistics", "business")
+    var activeDomain by remember(eventId) { mutableStateOf(domains.firstOrNull { domain -> eventRequirements.any { recordJson(it).optString("domain") == domain } } ?: "people") }
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = Ink) {
+            LazyColumn(
+                Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = close) { Icon(Icons.Rounded.ArrowBack, "Back to event", tint = Cyan); Spacer(Modifier.width(5.dp)); Text("Event", color = Cyan) }
+                        Spacer(Modifier.weight(1f))
+                        if (plan != null) Text(summary.label.uppercase(), color = when (summary.status) { "ready" -> Color(0xFF58E99B); "at_risk" -> Color(0xFFEF6670); else -> Amber }, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                    }
+                    Text("EVENT READINESS", color = Amber, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                    Text(event.optString("title", "Scheduled event"), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 27.sp)
+                    Text(eventDateSummary(event), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (plan == null) {
+                    item {
+                        Text("Choose a starting point", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                        Text("This adds a practical board to the event without copying your gear, songs, contacts, or finances.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    items(templates.sortedBy { recordJson(it).optString("code") }, key = { it.entityId }) { template ->
+                        val row = recordJson(template)
+                        Card(colors = CardDefaults.cardColors(containerColor = PanelRaised), border = BorderStroke(1.dp, Color(0xFF343B4D)), shape = RoundedCornerShape(8.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(row.optString("name", "Readiness"), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                                Text(row.optString("description"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                StudioButton(onClick = { model.applyEventReadiness(eventId, row.optString("code")) }, enabled = online, modifier = Modifier.fillMaxWidth()) {
+                                    Text(if (online) "Use ${row.optString("name")}" else "Connect to create this board", color = Ink, fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            ReadinessMetric("READY", summary.ready.toString(), Color(0xFF58E99B), Modifier.weight(1f))
+                            ReadinessMetric("BLOCKERS", summary.blockers.toString(), if (summary.blockers > 0) Color(0xFFEF6670) else Color(0xFF58E99B), Modifier.weight(1f))
+                            ReadinessMetric("N/A", summary.notApplicable.toString(), Cyan, Modifier.weight(1f))
+                        }
+                    }
+                    item {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            domains.forEach { domain ->
+                                StudioButton(
+                                    onClick = { activeDomain = domain },
+                                    kind = if (activeDomain == domain) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                                ) { Text(domain.replaceFirstChar(Char::uppercase), color = if (activeDomain == domain) Ink else Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                            }
+                        }
+                    }
+                    val visibleRequirements = eventRequirements.filter { recordJson(it).optString("domain") == activeDomain }
+                    if (visibleRequirements.isEmpty()) item { EmptyCard("No ${activeDomain.humanize()} checks are part of this event yet.") }
+                    items(visibleRequirements, key = { it.entityId }) { record ->
+                        val row = recordJson(record)
+                        val prerequisite = eventRequirements.firstOrNull { it.entityId == row.optString("depends_on_requirement_id") }?.let(::recordJson)
+                        val prerequisiteSatisfied = prerequisite == null || prerequisite.optString("applicability") == "not_applicable" || prerequisite.optString("status") in setOf("ready", "overridden")
+                        EventReadinessRequirementCard(record, contacts, model, dependencyBlocked = !prerequisiteSatisfied)
+                    }
+                    item {
+                        Card(colors = CardDefaults.cardColors(containerColor = PanelRaised), border = BorderStroke(1.dp, Color(0xFF343B4D)), shape = RoundedCornerShape(8.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Stable showtime record", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                Text("Capture the exact board used for the event. Later edits do not change it.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                StudioButton(onClick = { model.captureEventReadinessSnapshot(eventId) }, enabled = online, modifier = Modifier.fillMaxWidth()) { Text("Capture Showtime Snapshot", color = Ink, fontWeight = FontWeight.Black) }
+                                if (eventSnapshots.isNotEmpty()) Text("${eventSnapshots.size} snapshot${if (eventSnapshots.size == 1) "" else "s"} synchronized", color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(20.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadinessMetric(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
+    Surface(modifier, color = PanelRaised, border = BorderStroke(1.dp, accent.copy(alpha = .65f)), shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.padding(10.dp)) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Black); Text(value, color = accent, fontSize = 24.sp, fontWeight = FontWeight.Black) }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun EventReadinessRequirementCard(record: CachedRecord, contacts: List<CachedRecord>, model: StudioRackViewModel, dependencyBlocked: Boolean) {
+    val row = recordJson(record)
+    var expanded by remember(record.entityId) { mutableStateOf(false) }
+    var evidence by remember(record.entityId, row.optString("evidence_text")) { mutableStateOf(row.optString("evidence_text")) }
+    var applicabilityReason by remember(record.entityId, row.optString("applicability_reason")) { mutableStateOf(row.optString("applicability_reason")) }
+    var overrideReason by remember(record.entityId, row.optString("override_reason")) { mutableStateOf(row.optString("override_reason")) }
+    var assignedId by remember(record.entityId, row.optString("assigned_contact_id")) { mutableStateOf(row.optString("assigned_contact_id")) }
+    var alternateId by remember(record.entityId, row.optString("alternate_contact_id")) { mutableStateOf(row.optString("alternate_contact_id")) }
+    var approvalStatus by remember(record.entityId, row.optString("approval_status")) { mutableStateOf(row.optString("approval_status", "not_required")) }
+    var contactMenu by remember { mutableStateOf(false) }
+    var alternateMenu by remember { mutableStateOf(false) }
+    val status = row.optString("status", "not_started")
+    val applicable = row.optString("applicability", "applicable") != "not_applicable"
+    val accent = when { !applicable -> Color(0xFF7B8496); status == "ready" -> Color(0xFF58E99B); status == "at_risk" -> Color(0xFFEF6670); status == "overridden" -> Color(0xFFF4C45E); else -> Cyan }
+    Card(colors = CardDefaults.cardColors(containerColor = PanelRaised), border = BorderStroke(1.dp, accent.copy(alpha = .7f)), shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(row.optString("importance", "required").uppercase(), color = if (row.optString("importance") == "critical") Color(0xFFEF6670) else accent, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    Text(row.optString("title"), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                }
+                Text(if (applicable) status.humanize() else "N/A", color = accent, fontSize = 11.sp, fontWeight = FontWeight.Black)
+            }
+            if (row.optString("description").isNotBlank()) Text(row.optString("description"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            if (dependencyBlocked) Text("WAITING FOR PREREQUISITE", color = Color(0xFFF4C45E), fontSize = 10.sp, fontWeight = FontWeight.Black)
+            row.optString("due_utc").takeIf(String::isNotBlank)?.let { Text("Due ${it.replace('T', ' ').take(16)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                listOf("not_started" to "Not started", "in_progress" to "Working", "at_risk" to "At risk", "ready" to "Ready").forEach { (value, label) ->
+                    StudioButton(
+                        onClick = { model.saveReadinessRequirement(record, JSONObject(row.toString()).put("status", value).put("applicability", "applicable")) },
+                        kind = if (applicable && status == value) StudioButtonKind.Primary else StudioButtonKind.Secondary,
+                    ) { Text(label, color = if (applicable && status == value) Ink else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide details" else "Responsibility, evidence, and exceptions", color = Cyan, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+            if (expanded) {
+                Box {
+                    StudioButton(onClick = { contactMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                        Text(contacts.firstOrNull { it.entityId == assignedId }?.let { recordJson(it).optString("display_name") } ?: "Responsible: Me / unassigned", color = Color.White)
+                    }
+                    DropdownMenu(expanded = contactMenu, onDismissRequest = { contactMenu = false }, modifier = Modifier.background(PanelRaised)) {
+                        DropdownMenuItem(text = { Text("Me / unassigned") }, onClick = { assignedId = ""; contactMenu = false })
+                        contacts.forEach { contact -> DropdownMenuItem(text = { Text(recordJson(contact).optString("display_name")) }, onClick = { assignedId = contact.entityId; contactMenu = false }) }
+                    }
+                }
+                Box {
+                    StudioButton(onClick = { alternateMenu = true }, modifier = Modifier.fillMaxWidth(), kind = StudioButtonKind.Secondary) {
+                        Text(contacts.firstOrNull { it.entityId == alternateId }?.let { recordJson(it).optString("display_name") } ?: "Alternate: None", color = Color.White)
+                    }
+                    DropdownMenu(expanded = alternateMenu, onDismissRequest = { alternateMenu = false }, modifier = Modifier.background(PanelRaised)) {
+                        DropdownMenuItem(text = { Text("No alternate") }, onClick = { alternateId = ""; alternateMenu = false })
+                        contacts.forEach { contact -> DropdownMenuItem(text = { Text(recordJson(contact).optString("display_name")) }, onClick = { alternateId = contact.entityId; alternateMenu = false }) }
+                    }
+                }
+                Text("Approval", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                ChoiceStrip(listOf("Not Required", "Pending", "Approved", "Rejected"), approvalStatus.humanize()) { approvalStatus = it.lowercase().replace(' ', '_') }
+                StudioField("Evidence or confirmation", evidence, singleLine = false) { evidence = it }
+                StudioField("Not-applicable reason", applicabilityReason) { applicabilityReason = it }
+                StudioField("Accepted-risk reason", overrideReason) { overrideReason = it }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    StudioButton(onClick = {
+                        model.saveReadinessRequirement(record, JSONObject(row.toString()).put("assigned_contact_id", assignedId).put("alternate_contact_id", alternateId).put("approval_status", approvalStatus).put("evidence_text", evidence).put("applicability_reason", applicabilityReason).put("override_reason", overrideReason))
+                    }) { Text("Save Details", color = Ink, fontWeight = FontWeight.Black) }
+                    StudioButton(onClick = {
+                        model.saveReadinessRequirement(record, JSONObject(row.toString()).put("applicability", "not_applicable").put("applicability_reason", applicabilityReason))
+                    }, enabled = applicabilityReason.isNotBlank(), kind = StudioButtonKind.Secondary) { Text("Not Applicable", color = Color.White, fontWeight = FontWeight.Bold) }
+                    StudioButton(onClick = {
+                        model.saveReadinessRequirement(record, JSONObject(row.toString()).put("status", "overridden").put("applicability", "applicable").put("override_reason", overrideReason))
+                    }, enabled = overrideReason.isNotBlank(), kind = StudioButtonKind.Secondary) { Text("Accept Risk", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun EventCard(
     event: JSONObject,
     readiness: PacketReadiness,
@@ -5689,6 +5900,7 @@ private fun EventCard(
     host: (() -> Unit)? = null,
     peopleCount: Int = 0,
     people: (() -> Unit)? = null,
+    openReadiness: (() -> Unit)? = null,
 ) {
     val liveModeName = stringResource(R.string.live_mode_name)
     Card(
@@ -5717,9 +5929,10 @@ private fun EventCard(
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
-                if (event.optString("set_list_id").isNotBlank() || edit != null || copy != null || host != null || people != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (event.optString("set_list_id").isNotBlank() || edit != null || copy != null || host != null || people != null || openReadiness != null) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     if (openSetList != null) SubBrandIconButton(SubBrand.Live, "Open in $liveModeName", openSetList)
                     if (people != null) EventToolIconButton(Icons.Rounded.Groups, "People", people, peopleCount)
+                    if (openReadiness != null) EventToolIconButton(Icons.Rounded.RateReview, "Event Readiness", openReadiness)
                     if (host != null) TextButton(onClick = host) { Text("Host", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold) }
                     if (shareCalendar != null) EventToolIconButton(Icons.Rounded.CalendarMonth, "Share calendar file", shareCalendar)
                     if (edit != null) EventToolIconButton(Icons.Rounded.Edit, "Edit event", edit)

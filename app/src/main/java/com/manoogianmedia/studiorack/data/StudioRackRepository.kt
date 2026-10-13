@@ -506,6 +506,16 @@ class StudioRackRepository(
         syncNow()
     }
 
+    suspend fun applyEventReadiness(eventId: String, templateCode: String) {
+        client.applyEventReadiness(eventId, templateCode)
+        sync()
+    }
+
+    suspend fun captureEventReadinessSnapshot(eventId: String, reason: String) {
+        client.captureEventReadinessSnapshot(eventId, reason)
+        sync()
+    }
+
     suspend fun saveBundle(records: List<Triple<String, String, JSONObject>>) {
         var sequence = System.currentTimeMillis()
         val current = records.associate { (type, id, _) -> (type to id) to dao.record(type, id) }
