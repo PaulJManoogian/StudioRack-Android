@@ -55,4 +55,22 @@ class CalendarToolsTest {
         assertTrue(ics.contains("LOCATION:Main Stage\\, Newtown"))
         assertFalse(ics.contains("microsoft_graph"))
     }
+
+    @Test
+    fun careReadinessIncludesOnlyEndedPerformancesWithIncompleteCloseout() {
+        val gig = JSONObject()
+            .put("id", "event_gig")
+            .put("event_type", "performance")
+            .put("event_status", "scheduled")
+            .put("event_date", "2026-10-13")
+            .put("end_time", "21:00")
+        val rehearsal = JSONObject(gig.toString())
+            .put("id", "event_rehearsal")
+            .put("event_type", "rehearsal")
+
+        assertTrue(eventNeedsCloseout(gig, emptySet(), LocalDate.of(2026, 10, 13), java.time.LocalTime.of(22, 0)))
+        assertFalse(eventNeedsCloseout(gig, setOf("event_gig"), LocalDate.of(2026, 10, 13), java.time.LocalTime.of(22, 0)))
+        assertFalse(eventNeedsCloseout(gig, emptySet(), LocalDate.of(2026, 10, 13), java.time.LocalTime.of(20, 0)))
+        assertFalse(eventNeedsCloseout(rehearsal, emptySet(), LocalDate.of(2026, 10, 13), java.time.LocalTime.of(22, 0)))
+    }
 }

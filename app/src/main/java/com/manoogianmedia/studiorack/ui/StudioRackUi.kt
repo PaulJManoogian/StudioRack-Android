@@ -507,7 +507,12 @@ private fun MainShell(
                 } else {
                     key(route) {
                         when (route.section) {
-                            AppSection.DASHBOARD -> DashboardScreen(model, uiState, openGig)
+                            AppSection.DASHBOARD -> DashboardScreen(
+                                model,
+                                uiState,
+                                openGig,
+                                openFinances = { route = AppRoute(AppSection.MORE, PrimarySection.REPORTS, "Finances") },
+                            )
                             AppSection.EQUIPMENT -> EquipmentScreen(model)
                             AppSection.KITS -> KitsScreen(model)
                             AppSection.SESSIONS -> SessionsScreen(model, openGig, route.tab.ifBlank { "Schedule" })
@@ -805,7 +810,12 @@ private fun LoginScreen(model: StudioRackViewModel, uiState: StudioRackUiState) 
 }
 
 @Composable
-private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiState, openGig: (String) -> Unit) {
+private fun DashboardScreen(
+    model: StudioRackViewModel,
+    uiState: StudioRackUiState,
+    openGig: (String) -> Unit,
+    openFinances: () -> Unit,
+) {
     val productName = stringResource(R.string.app_name)
     val agentName = stringResource(R.string.agent_name)
     val events by model.events.collectAsState()
@@ -825,6 +835,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
     val specs by model.itemSpecs.collectAsState()
     val actions by model.buddyActions.collectAsState()
     val maintenanceNotes by model.maintenanceNotes.collectAsState()
+    val closeouts by model.eventCloseouts.collectAsState()
     val entries by model.entries.collectAsState()
     val attachments by model.attachments.collectAsState()
     val cachedAttachments by model.cachedAttachments.collectAsState()
@@ -838,6 +849,12 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
         .sumOf { itemSpecs -> estimatedItemValue(itemSpecs.associate { it.optString("key") to it.optString("value") }) }
     val maintenanceHistory by model.maintenanceHistory.collectAsState()
     val careRows = maintenanceRows(specRows, items.map(::supportingJson), brands.map(::supportingJson), locations.map(::supportingJson), fieldNotes = maintenanceNotes.map(::recordJson), completions = maintenanceHistory.filter { it.revision == 0 }.map(::recordJson))
+    val completedCloseoutIds = closeouts.map(::recordJson)
+        .filter { it.optString("status") == "complete" }
+        .mapTo(mutableSetOf()) { it.optString("event_id", it.optString("id")) }
+    val closeoutEvents = events.map(::recordJson)
+        .filter { eventNeedsCloseout(it, completedCloseoutIds) }
+        .sortedByDescending { it.optString("end_date", it.optString("event_date")) + it.optString("end_time") }
     val tracked = careRows.size
     val openBuddy = actions.map(::supportingJson).count { it.optString("status") !in setOf("handled", "cleared") }
     var peopleEvent by remember { mutableStateOf<JSONObject?>(null) }
@@ -910,7 +927,7 @@ private fun DashboardScreen(model: StudioRackViewModel, uiState: StudioRackUiSta
             )
         }
         item { SectionHeading("CARE READINESS", "What needs hands on it?") }
-        item { CareSummary(careRows, model) }
+        item { CareSummary(careRows, closeoutEvents, openFinances, model) }
         item { SubBrandSectionHeading(SubBrand.Crew, "Recent activity.") }
         if (actions.isEmpty()) item { EmptyCard("No $agentName actions are stored on this device.") }
         items(actions.take(5), key = { it.entityId }) { action -> BuddyActionCard(supportingJson(action), model) }
@@ -4522,7 +4539,12 @@ private fun BuddyActionCard(row: JSONObject, model: StudioRackViewModel) {
 }
 
 @Composable
-private fun CareSummary(rows: List<MaintenanceRow>, model: StudioRackViewModel) {
+private fun CareSummary(
+    rows: List<MaintenanceRow>,
+    closeoutEvents: List<JSONObject>,
+    openFinances: () -> Unit,
+    model: StudioRackViewModel,
+) {
     val attention = rows.filter { it.status in setOf("attention", "overdue", "due", "soon") }
     val counts = listOf(
         "Attention" to rows.count { it.status == "attention" },
@@ -4531,6 +4553,29 @@ private fun CareSummary(rows: List<MaintenanceRow>, model: StudioRackViewModel) 
         "Upcoming" to rows.count { it.status == "soon" },
     )
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (closeoutEvents.isNotEmpty()) {
+            Text("GIG CLOSEOUTS  ${closeoutEvents.size}", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+            closeoutEvents.forEach { event ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = openFinances),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    border = BorderStroke(1.dp, Amber),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(13.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(event.optString("title", "Untitled gig"), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            Text(event.optString("end_date", event.optString("event_date", "Date not set")), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        }
+                        Text("CLOSE OUT", color = Amber, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             counts.forEach { (label, count) ->
                 Column(Modifier.weight(1f)) {
@@ -4539,8 +4584,8 @@ private fun CareSummary(rows: List<MaintenanceRow>, model: StudioRackViewModel) 
                 }
             }
         }
-        if (attention.isEmpty()) {
-            Text("Nothing is past due, due today, or coming up inside the current care window.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (attention.isEmpty() && closeoutEvents.isEmpty()) {
+            Text("No gig closeouts or equipment care items need attention inside the current window.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             attention.take(8).forEach { row ->
                 ExpandableRecordCard(
@@ -4560,6 +4605,24 @@ private fun CareSummary(rows: List<MaintenanceRow>, model: StudioRackViewModel) 
             }
         }
     }
+}
+
+internal fun eventNeedsCloseout(
+    event: JSONObject,
+    completedCloseoutIds: Set<String>,
+    today: LocalDate = LocalDate.now(),
+    now: LocalTime = LocalTime.now(),
+): Boolean {
+    if (event.optString("event_type") != "performance") return false
+    if (event.optString("id") in completedCloseoutIds) return false
+    if (event.optString("event_status") == "ended") return true
+    val endDate = runCatching {
+        LocalDate.parse(event.optString("end_date").ifBlank { event.optString("event_date") })
+    }.getOrNull() ?: return false
+    if (endDate.isBefore(today)) return true
+    if (endDate.isAfter(today)) return false
+    val endTime = runCatching { LocalTime.parse(event.optString("end_time")) }.getOrNull() ?: return false
+    return !endTime.isAfter(now)
 }
 
 internal data class MaintenanceRow(
