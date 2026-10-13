@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -204,6 +205,7 @@ private fun FinanceRecordDialog(
     var issuerRole by remember(record, mode) { mutableStateOf(original.optString("issuer_role", "performer")) }
     var status by remember(record, mode) { mutableStateOf(original.optString("status", if (mode == FinanceEditor.CLOSEOUT) "in_progress" else if (mode == FinanceEditor.CONTRACT) "draft" else "expected")) }
     var eventMenu by remember { mutableStateOf(false) }
+    var showGearItems by remember(record, mode) { mutableStateOf(false) }
     val title = when (mode) { FinanceEditor.INCOME -> "Gig Income"; FinanceEditor.EXPENSE -> "Expense"; FinanceEditor.MILEAGE -> "Mileage"; FinanceEditor.CONTRACT -> "Contract"; FinanceEditor.CLOSEOUT -> "Event Closeout" }
     val closeoutHasPendingGear = mode == FinanceEditor.CLOSEOUT && gearReturns.any {
         val row = financeJson(it)
@@ -273,7 +275,32 @@ private fun FinanceRecordDialog(
                     if (eventReturns.isEmpty()) {
                         Text("No assigned-kit items need reconciliation.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     } else {
-                        eventReturns.forEach { gearReturn ->
+                        val readyCount = eventReturns.count { financeJson(it).optString("return_status") == "returned_ready" }
+                        val pendingCount = eventReturns.count { financeJson(it).optString("return_status", "pending") == "pending" }
+                        val attentionCount = eventReturns.size - readyCount - pendingCount
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            GearReturnMetric("Ready", readyCount, MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+                            GearReturnMetric("Review", pendingCount, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                            GearReturnMetric("Attention", attentionCount, MaterialTheme.colorScheme.error, Modifier.weight(1f))
+                        }
+                        Button(onClick = {
+                            saveGearReturnBatch(eventReturns, model, quantityMode = "all", statusMode = "returned_ready")
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Everything Returned & Ready", fontWeight = FontWeight.Black) }
+                        Text("Use the bulk controls for one column, then adjust only the exceptions.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        Text("RETURNED QUANTITY", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick = { saveGearReturnBatch(eventReturns, model, quantityMode = "all") }) { Text("All Returned") }
+                            TextButton(onClick = { saveGearReturnBatch(eventReturns, model, quantityMode = "none") }) { Text("None Returned") }
+                        }
+                        Text("CONDITION", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick = { saveGearReturnBatch(eventReturns, model, statusMode = "returned_ready") }) { Text("All Ready") }
+                            TextButton(onClick = { saveGearReturnBatch(eventReturns, model, statusMode = "pending") }) { Text("Reset To Review") }
+                        }
+                        TextButton(onClick = { showGearItems = !showGearItems }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (showGearItems) "Hide Individual Gear" else "Review Individual Gear (${pendingCount + attentionCount})", fontWeight = FontWeight.Bold)
+                        }
+                        if (showGearItems) eventReturns.forEach { gearReturn ->
                             GearReturnEditor(gearReturn, items, model)
                         }
                     }
@@ -319,6 +346,7 @@ private fun GearReturnEditor(record: CachedRecord, items: List<SupportingRecord>
     var status by remember(record.json) { mutableStateOf(original.optString("return_status", "pending")) }
     var quantity by remember(record.json) { mutableStateOf(original.optInt("returned_quantity").toString()) }
     var notes by remember(record.json) { mutableStateOf(original.optString("notes")) }
+    var expanded by remember(record.json) { mutableStateOf(status !in setOf("pending", "returned_ready")) }
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -326,27 +354,59 @@ private fun GearReturnEditor(record: CachedRecord, items: List<SupportingRecord>
         shape = RoundedCornerShape(8.dp),
     ) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(itemName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-            Text("Expected $expected", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-            SimpleStatus(listOf("returned_ready", "needs_maintenance", "damaged", "missing", "left_elsewhere", "awaiting_return"), status) {
-                status = it
-                quantity = if (it in setOf("returned_ready", "needs_maintenance", "damaged")) expected.toString() else "0"
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(itemName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text("${status.replace('_', ' ').replaceFirstChar(Char::uppercase)} · ${quantity.ifBlank { "0" }} of $expected returned", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(quantity, { quantity = it.filter(Char::isDigit).take(4) }, label = { Text("Returned") }, modifier = Modifier.weight(0.34f))
-                OutlinedTextField(notes, { notes = it.take(2000) }, label = { Text("Condition or location") }, modifier = Modifier.weight(0.66f))
+            if (expanded) {
+                SimpleStatus(listOf("returned_ready", "needs_maintenance", "damaged", "missing", "left_elsewhere", "awaiting_return"), status) {
+                    status = it
+                    quantity = if (it in setOf("returned_ready", "needs_maintenance", "damaged")) expected.toString() else "0"
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(quantity, { quantity = it.filter(Char::isDigit).take(4) }, label = { Text("Returned") }, modifier = Modifier.weight(0.34f))
+                    OutlinedTextField(notes, { notes = it.take(2000) }, label = { Text("Condition or location") }, modifier = Modifier.weight(0.66f))
+                }
+                TextButton(onClick = {
+                    model.saveFinanceRecord(
+                        "event_gear_return",
+                        record.entityId,
+                        JSONObject(original.toString())
+                            .put("returned_quantity", (quantity.toIntOrNull() ?: 0).coerceIn(0, expected))
+                            .put("return_status", status)
+                            .put("notes", notes.trim()),
+                    )
+                }, modifier = Modifier.fillMaxWidth()) { Text("Save This Item", fontWeight = FontWeight.Bold) }
             }
-            TextButton(onClick = {
-                model.saveFinanceRecord(
-                    "event_gear_return",
-                    record.entityId,
-                    JSONObject(original.toString())
-                        .put("returned_quantity", (quantity.toIntOrNull() ?: 0).coerceIn(0, expected))
-                        .put("return_status", status)
-                        .put("notes", notes.trim()),
-                )
-            }, modifier = Modifier.fillMaxWidth()) { Text("Save Gear Status", fontWeight = FontWeight.Bold) }
         }
+    }
+}
+
+@Composable
+private fun GearReturnMetric(label: String, value: Int, color: Color, modifier: Modifier = Modifier) {
+    Surface(modifier, color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, color)) {
+        Column(Modifier.padding(8.dp)) {
+            Text(value.toString(), color = color, fontSize = 20.sp, fontWeight = FontWeight.Black)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+private fun saveGearReturnBatch(
+    records: List<CachedRecord>,
+    model: StudioRackViewModel,
+    quantityMode: String? = null,
+    statusMode: String? = null,
+) {
+    records.forEach { record ->
+        val data = financeJson(record)
+        val expected = data.optInt("expected_quantity", 1).coerceAtLeast(1)
+        if (quantityMode == "all") data.put("returned_quantity", expected)
+        if (quantityMode == "none") data.put("returned_quantity", 0)
+        if (statusMode != null) data.put("return_status", statusMode)
+        model.saveFinanceRecord("event_gear_return", record.entityId, data)
     }
 }
 
